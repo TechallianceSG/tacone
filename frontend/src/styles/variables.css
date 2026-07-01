@@ -1,0 +1,36 @@
+:root {
+  --tacai-bg:              #f5f7fb;
+  --tacai-panel:           #ffffff;
+  --tacai-text:            #1f2937;
+  --tacai-muted:           #6b7280;
+  --tacai-primary:         #1d4ed8;
+  --tacai-primary-dark:    #1e40af;
+  --tacai-primary-light:   #dbeafe;
+  --tacai-border:          #dbe3ef;
+  --tacai-sidebar:         #0f172a;
+  --tacai-sidebar-muted:   #cbd5e1;
+  --tacai-font: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans JP', 'Noto Sans SC', sans-serif;
+
+  --tacai-green: #0f766e;
+  --tacai-green-bg: #ccfbf1;
+  --tacai-green-text: #134e4a;
+  --tacai-amber: #b45309;
+  --tacai-amber-bg: #fef3c7;
+  --tacai-amber-text: #78350f;
+  --tacai-red: #b91c1c;
+  --tacai-red-bg: #fee2e2;
+  --tacai-red-text: #7f1d1d;
+  --tacai-blue-bg: #dbeafe;
+  --tacai-blue-text: #1e3a5f;
+
+  --tacai-radius-sm: 9px;
+  --tacai-radius: 12px;
+  --tacai-radius-lg: 16px;
+  --tacai-radius-xl: 20px;
+  --tacai-radius-2xl: 24px;
+
+  --tacai-shadow-card:      0 8px 25px rgba(15, 23, 42, 0.05);
+  --tacai-shadow-card-hover: 0 16px 35px rgba(29, 78, 216, 0.12);
+  --tacai-shadow-hero:      0 8px 30px rgba(15, 23, 42, 0.06);
+  --tacai-shadow-login:     0 18px 45px rgba(15, 23, 42, 0.12);
+}

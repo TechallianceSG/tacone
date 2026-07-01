@@ -1,0 +1,17 @@
+{
+  "name": "tacai-project",
+  "version": "1.0.0",
+  "description": "TACAI Project — HR/Payroll/Recruitment multi-service platform",
+  "scripts": {
+    "start": "bash start_tacai_lan.sh start dev",
+    "stop": "bash start_tacai_lan.sh stop dev",
+    "restart": "bash start_tacai_lan.sh restart dev",
+    "status": "bash start_tacai_lan.sh status",
+    "db:test:dev": "set -a && source .env.dev && PGPASSWORD=$DB_PASS /opt/homebrew/opt/postgresql@16/bin/psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME -c \"SELECT 'tacai_dev OK' as dev_status;\"",
+    "db:test:stg": "set -a && source .env.stg && PGPASSWORD=$DB_PASS /opt/homebrew/opt/postgresql@16/bin/psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME -c \"SELECT 'tacai_stg OK' as stg_status;\"",
+    "db:test:prd": "set -a && source .env.prd && PGPASSWORD=$DB_PASS /opt/homebrew/opt/postgresql@16/bin/psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME -c \"SELECT 'tacai_prd OK' as prd_status;\""
+  },
+  "license": "UNLICENSED",
+  "private": true
+}
+
