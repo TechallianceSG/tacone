@@ -1,138 +1,102 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 
 const router = useRouter()
 const { t } = useI18n()
 
-const activeTab = ref('sg')
-
-const countries = [
-  { key: 'sg', label: 'payroll.sg.title', flag: '🇸🇬', desc: 'payroll.sg.desc' },
-  { key: 'jp', label: 'payroll.jp.title', flag: '🇯🇵', desc: 'payroll.jp.desc' },
-  { key: 'cn', label: 'payroll.cn.title', flag: '🇨🇳', desc: 'payroll.cn.desc' },
+const modules = [
+  { key: 'parameters', label: 'payroll.jp.parameters', desc: 'payroll.jp.parameters_desc', icon: '⚙️', color: '#1B6CB2' },
+  { key: 'item-definitions', label: 'payroll.jp.item_definitions', desc: 'payroll.jp.item_definitions_desc', icon: '📋', color: '#6366f1' },
+  { key: 'employees', label: 'payroll.jp.employees', desc: 'payroll.jp.employees_desc', icon: '👥', color: '#0f766e' },
+  { key: 'batches', label: 'payroll.jp.batches', desc: 'payroll.jp.batches_desc', icon: '📅', color: '#e65100' },
+  { key: 'payslips', label: 'payroll.jp.payslips', desc: 'payroll.jp.payslips_desc', icon: '📄', color: '#7c3aed' },
+  { key: 'report', label: 'payroll.jp.calculation_summary', desc: 'payroll.jp.calculation_summary', icon: '📊', color: '#0891b2' },
 ]
 
-const sgModules = [
-  { key: 'salary-master', label: 'payroll.sg.salary_master', desc: 'payroll.sg.salary_master_desc' },
-  { key: 'batches', label: 'payroll.sg.batches', desc: 'payroll.sg.batches_desc' },
-  { key: 'payslips', label: 'payroll.sg.payslips', desc: 'payroll.sg.payslips_desc' },
-]
-
-const jpModules = [
-  { key: 'item-definitions', label: 'payroll.jp.item_definitions', desc: 'payroll.jp.item_definitions_desc' },
-  { key: 'parameters', label: 'payroll.jp.parameters', desc: 'payroll.jp.parameters_desc' },
-  { key: 'employees', label: 'payroll.jp.employees', desc: 'payroll.jp.employees_desc' },
-  { key: 'batches', label: 'payroll.jp.batches', desc: 'payroll.jp.batches_desc' },
-  { key: 'payslips', label: 'payroll.jp.payslips', desc: 'payroll.jp.payslips_desc' },
-]
-
-const cnModules = [
-  { key: 'social-insurance-rules', label: 'payroll.cn.rules', desc: 'payroll.cn.rules_desc' },
-  { key: 'tax-brackets', label: 'payroll.cn.tax_brackets', desc: 'payroll.cn.tax_brackets_desc' },
-  { key: 'employees', label: 'payroll.cn.employees', desc: 'payroll.cn.employees_desc' },
-  { key: 'batches', label: 'payroll.cn.batches', desc: 'payroll.cn.batches_desc' },
-  { key: 'payslips', label: 'payroll.cn.payslips', desc: 'payroll.cn.payslips_desc' },
-]
-
-function navigate(country: string, module: string) {
-  router.push(`/payroll/${country}/${module}`)
+function navigate(module: string) {
+  router.push(`/payroll/jp/${module}`)
 }
 </script>
 
 <template>
-  <div class="payroll-landing">
-    <div class="page-header">
-      <h2>{{ t('nav.payroll') }}</h2>
-      <p>{{ t('payroll.landing.description') }}</p>
-    </div>
+  <div class="launchpad">
+    <!-- Hero -->
+    <header class="lp-hero">
+      <div>
+        <h1>{{ t('payroll.jp.title') }}</h1>
+        <p>{{ t('payroll.jp.desc') }}</p>
+      </div>
+      <span class="lp-badge">FY2026 (Reiwa 8)</span>
+    </header>
 
-    <el-tabs v-model="activeTab" type="border-card" class="country-tabs">
-      <el-tab-pane v-for="country in countries" :key="country.key" :name="country.key">
-        <template #label>
-          <span class="tab-label">
-            <span class="country-flag">{{ country.flag }}</span>
-            {{ t(country.label) }}
-          </span>
-        </template>
-
-        <div class="country-section">
-          <p class="country-desc">{{ t(country.desc) }}</p>
-
-          <el-row :gutter="20">
-            <el-col
-              v-for="mod in (country.key === 'sg' ? sgModules : country.key === 'jp' ? jpModules : cnModules)"
-              :key="mod.key"
-              :xs="24" :sm="12" :md="8"
-            >
-              <el-card class="module-card" shadow="hover" @click="navigate(country.key, mod.key)">
-                <h4>{{ t(mod.label) }}</h4>
-                <p>{{ t(mod.desc) }}</p>
-                <el-button size="small" type="primary" text>
-                  {{ t('action.open') }} →
-                </el-button>
-              </el-card>
-            </el-col>
-          </el-row>
+    <!-- Body: 3-column grid -->
+    <div class="lp-body">
+      <div
+        v-for="mod in modules"
+        :key="mod.key"
+        class="lp-tile"
+        :style="{ '--tile-color': mod.color }"
+        @click="navigate(mod.key)"
+      >
+        <span class="lp-tile-dot" :style="{ background: mod.color }"></span>
+        <span class="lp-tile-icon">{{ mod.icon }}</span>
+        <div class="lp-tile-text">
+          <div class="lp-tile-title">{{ t(mod.label) }}</div>
+          <div class="lp-tile-desc">{{ t(mod.desc) }}</div>
         </div>
-      </el-tab-pane>
-    </el-tabs>
+      </div>
+    </div>
   </div>
 </template>
 
 <style scoped>
-.payroll-landing {
-  padding: 24px;
-  max-width: 1200px;
-  margin: 0 auto;
+.launchpad { max-width: 1200px; margin: 0 auto; padding: 32px 24px; font-size: 15px; }
+
+/* ── Hero ── */
+.lp-hero {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  margin-bottom: 32px; padding-bottom: 20px;
+  border-bottom: 1px solid #e5e7eb;
 }
-.page-header {
-  margin-bottom: 24px;
+.lp-hero h1 { margin: 0 0 4px; font-size: 1.5rem; font-weight: 700; color: #1d2a3a; }
+.lp-hero p { margin: 0; font-size: .92rem; color: #6b7280; }
+.lp-badge {
+  flex-shrink: 0; background: #eff6ff; color: #1B6CB2;
+  padding: 4px 14px; border-radius: 14px; font-size: .82rem; font-weight: 600;
 }
-.page-header h2 {
-  font-size: 1.5rem;
-  font-weight: 700;
-  margin: 0 0 8px;
+
+/* ── 3-column grid ── */
+.lp-body {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
 }
-.page-header p {
-  color: var(--el-text-color-secondary);
-  margin: 0;
+@media (max-width: 860px) { .lp-body { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 540px) { .lp-body { grid-template-columns: 1fr; } }
+
+/* ── Tiles ── */
+.lp-tile {
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+  background: #fff; border: 1px solid #e5e7eb; border-radius: 12px;
+  padding: 28px 20px 24px;
+  cursor: pointer; transition: all .2s ease;
+  position: relative; overflow: hidden;
+  text-align: center;
 }
-.country-tabs {
-  border-radius: 8px;
-}
-.tab-label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.country-flag {
-  font-size: 1.2rem;
-}
-.country-section {
-  padding: 16px 0;
-}
-.country-desc {
-  color: var(--el-text-color-secondary);
-  margin: 0 0 20px;
-}
-.module-card {
-  cursor: pointer;
-  margin-bottom: 16px;
-  border-radius: 8px;
-  transition: transform 0.2s;
-}
-.module-card:hover {
+.lp-tile:hover {
+  border-color: var(--tile-color, #1B6CB2);
+  box-shadow: 0 4px 20px rgba(0,0,0,.08);
   transform: translateY(-2px);
 }
-.module-card h4 {
-  margin: 0 0 8px;
-  font-size: 1.05rem;
+.lp-tile-dot {
+  position: absolute; top: 0; left: 0; right: 0;
+  height: 3px; border-radius: 0 0 3px 3px;
+  opacity: 0; transition: opacity .2s;
 }
-.module-card p {
-  color: var(--el-text-color-secondary);
-  margin: 0 0 12px;
-  font-size: 0.9rem;
-}
+.lp-tile:hover .lp-tile-dot { opacity: 1; }
+.lp-tile-icon { font-size: 2rem; flex-shrink: 0; }
+.lp-tile-text { min-width: 0; }
+.lp-tile-title { font-size: .95rem; font-weight: 700; color: #1d2a3a; margin-bottom: 4px; }
+.lp-tile-desc { font-size: .8rem; color: #9ca3af; line-height: 1.4; }
 </style>

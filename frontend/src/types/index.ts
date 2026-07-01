@@ -11,6 +11,7 @@ export interface EntityOption {
 }
 
 export interface SessionInfo {
+  session_id?: string
   session_id_suffix: string
   login_time: string
   login_time_jst: string
@@ -47,6 +48,7 @@ export interface UserInfo {
   linked_employee_id: string
   employee_id: string
   employee_no: string
+  employee_number?: string
   employee_name: string
   department: string
   department_id: string
@@ -65,6 +67,7 @@ export interface UserInfo {
     entity_name_ja: string
     entity_name_zh: string
   }
+  employee_context?: Record<string, any>
 }
 
 export interface ModuleInfo {

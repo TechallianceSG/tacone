@@ -2,7 +2,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { payrollJpApi } from '@/api/client'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 
 const { t } = useI18n()
 
@@ -10,6 +10,18 @@ const { t } = useI18n()
 const activeTab = ref('social-insurance')
 const loading = ref(false)
 const allParams = ref<any[]>([])
+
+// ── Rate type labels ──
+const rateTypeLabels: Record<string, string> = {
+  pension: '健康保険',
+  health_insurance: '健康保険',
+  pension_insurance: '厚生年金保険',
+  nursing_care: '介護保険',
+  employment: '雇用保険',
+  employment_insurance: '雇用保険',
+  child_allowance: '児童手当拠出金',
+  care_insurance: '介護保険',
+}
 
 // ── Social Insurance ──
 const siLoading = ref(false)
@@ -19,9 +31,11 @@ const siSaving = ref(false)
 const siPage = ref(1)
 const siPageSize = ref(20)
 
-const socialInsuranceData = computed(() => {
-  return allParams.value.filter((p: any) => p.param_type === 'social_insurance_rate')
-})
+const socialInsuranceData = computed(() =>
+  allParams.value.filter((p: any) =>
+    p.param_type === 'social_insurance_rate' || p.rate_type !== undefined
+  )
+)
 
 const siPaged = computed(() => {
   const start = (siPage.value - 1) * siPageSize.value
@@ -36,9 +50,11 @@ const tbSaving = ref(false)
 const tbPage = ref(1)
 const tbPageSize = ref(20)
 
-const taxBracketData = computed(() => {
-  return allParams.value.filter((p: any) => p.param_type === 'withholding_tax_bracket')
-})
+const taxBracketData = computed(() =>
+  allParams.value.filter((p: any) =>
+    p.param_type === 'withholding_tax_bracket' || (p.table_type && p.min_salary !== undefined)
+  )
+)
 
 const tbPaged = computed(() => {
   const start = (tbPage.value - 1) * tbPageSize.value
@@ -53,9 +69,11 @@ const rgSaving = ref(false)
 const rgPage = ref(1)
 const rgPageSize = ref(20)
 
-const remunerationGradeData = computed(() => {
-  return allParams.value.filter((p: any) => p.param_type === 'standard_remuneration_grade')
-})
+const remunerationGradeData = computed(() =>
+  allParams.value.filter((p: any) =>
+    p.param_type === 'standard_remuneration_grade' || p.grade_type !== undefined
+  )
+)
 
 const rgPaged = computed(() => {
   const start = (rgPage.value - 1) * rgPageSize.value
@@ -70,9 +88,11 @@ const aiSaving = ref(false)
 const aiPage = ref(1)
 const aiPageSize = ref(20)
 
-const accidentInsuranceData = computed(() => {
-  return allParams.value.filter((p: any) => p.param_type === 'accident_insurance_rate')
-})
+const accidentInsuranceData = computed(() =>
+  allParams.value.filter((p: any) =>
+    p.param_type === 'accident_insurance_rate' || p.industry_code !== undefined
+  )
+)
 
 const aiPaged = computed(() => {
   const start = (aiPage.value - 1) * aiPageSize.value
@@ -84,19 +104,32 @@ async function load() {
   loading.value = true
   try {
     const res = await payrollJpApi.parameters()
-    allParams.value = res.data.data?.items || []
+    allParams.value = res.data.data?.items || res.data.data || []
   } catch (e: any) { ElMessage.error(e.message) }
   finally { loading.value = false }
+}
+
+// Helper: format rate as percentage
+function fmtPct(val: any, decimals = 2): string {
+  const n = Number(val)
+  if (isNaN(n)) return '-'
+  return n.toFixed(decimals) + '%'
+}
+
+function fmtPermille(val: any): string {
+  const n = Number(val)
+  if (isNaN(n)) return '-'
+  return (n * 1000).toFixed(2) + '‰'
 }
 
 // ── Social Insurance CRUD ──
 function openSiCreate() {
   siForm.value = {
     param_type: 'social_insurance_rate',
-    rate_type: '',
+    rate_type: 'health_insurance',
     prefecture: '',
-    employee_rate: '',
-    employer_rate: '',
+    employee_rate: 0,
+    employer_rate: 0,
     applicable_from: '',
     is_current: true,
   }
@@ -114,7 +147,7 @@ async function saveSi() {
     await payrollJpApi.saveParameter(siForm.value)
     siDialog.value = false
     ElMessage.success(t('action.saved'))
-    load()
+    await load()
   } catch (e: any) { ElMessage.error(e.message) }
   finally { siSaving.value = false }
 }
@@ -123,17 +156,12 @@ async function saveSi() {
 function openTbCreate() {
   tbForm.value = {
     param_type: 'withholding_tax_bracket',
-    table_type: '',
+    table_type: 'monthly',
     min_salary: 0,
     max_salary: 0,
-    tax_dep_0: 0,
-    tax_dep_1: 0,
-    tax_dep_2: 0,
-    tax_dep_3: 0,
-    tax_dep_4: 0,
-    tax_dep_5: 0,
-    tax_dep_6: 0,
-    tax_dep_7: 0,
+    tax_dep_0: 0, tax_dep_1: 0, tax_dep_2: 0, tax_dep_3: 0,
+    tax_dep_4: 0, tax_dep_5: 0, tax_dep_6: 0, tax_dep_7: 0,
+    is_current: true,
   }
   tbDialog.value = true
 }
@@ -149,7 +177,7 @@ async function saveTb() {
     await payrollJpApi.saveParameter(tbForm.value)
     tbDialog.value = false
     ElMessage.success(t('action.saved'))
-    load()
+    await load()
   } catch (e: any) { ElMessage.error(e.message) }
   finally { tbSaving.value = false }
 }
@@ -163,6 +191,7 @@ function openRgCreate() {
     min_monthly_amount: 0,
     max_monthly_amount: 0,
     standard_monthly_amount: 0,
+    is_current: true,
   }
   rgDialog.value = true
 }
@@ -178,7 +207,7 @@ async function saveRg() {
     await payrollJpApi.saveParameter(rgForm.value)
     rgDialog.value = false
     ElMessage.success(t('action.saved'))
-    load()
+    await load()
   } catch (e: any) { ElMessage.error(e.message) }
   finally { rgSaving.value = false }
 }
@@ -189,7 +218,9 @@ function openAiCreate() {
     param_type: 'accident_insurance_rate',
     industry_code: '',
     industry_name_en: '',
-    rate: '',
+    industry_name_ja: '',
+    rate: 0,
+    is_current: true,
   }
   aiDialog.value = true
 }
@@ -205,7 +236,7 @@ async function saveAi() {
     await payrollJpApi.saveParameter(aiForm.value)
     aiDialog.value = false
     ElMessage.success(t('action.saved'))
-    load()
+    await load()
   } catch (e: any) { ElMessage.error(e.message) }
   finally { aiSaving.value = false }
 }
@@ -227,52 +258,51 @@ onMounted(load)
           <el-button type="primary" size="small" @click="openSiCreate">{{ t('action.create') }}</el-button>
         </div>
         <el-table :data="siPaged" v-loading="loading" border stripe size="small">
-          <el-table-column prop="rate_type" :label="t('field.rate_type')" width="160" />
-          <el-table-column prop="prefecture" :label="t('field.prefecture')" width="120" />
-          <el-table-column prop="employee_rate" :label="t('field.employee_rate')" width="120" align="right">
-            <template #default="{row}">{{ row.employee_rate ? (Number(row.employee_rate) * 100).toFixed(2) + '%' : '-' }}</template>
+          <el-table-column :label="t('field.rate_type')" width="180">
+            <template #default="{row}">{{ rateTypeLabels[row.rate_type] || row.rate_type }}</template>
           </el-table-column>
-          <el-table-column prop="employer_rate" :label="t('field.employer_rate')" width="120" align="right">
-            <template #default="{row}">{{ row.employer_rate ? (Number(row.employer_rate) * 100).toFixed(2) + '%' : '-' }}</template>
+          <el-table-column prop="prefecture" :label="t('field.prefecture')" width="100">
+            <template #default="{row}">{{ row.prefecture || '-' }}</template>
           </el-table-column>
-          <el-table-column prop="applicable_from" :label="t('field.applicable_from')" width="110" />
-          <el-table-column prop="is_current" :label="t('field.is_current')" width="90" align="center">
+          <el-table-column :label="t('field.employee_rate')" width="130" align="right">
+            <template #default="{row}">{{ fmtPct(row.employee_rate) }}</template>
+          </el-table-column>
+          <el-table-column :label="t('field.employer_rate')" width="130" align="right">
+            <template #default="{row}">{{ fmtPct(row.employer_rate) }}</template>
+          </el-table-column>
+          <el-table-column prop="applicable_from" :label="t('field.applicable_from')" width="120" />
+          <el-table-column :label="t('field.is_current')" width="80" align="center">
             <template #default="{row}">
               <el-tag :type="row.is_current ? 'success' : 'info'" size="small">
                 {{ row.is_current ? t('field.yes') : t('field.no') }}
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column :label="t('action.actions')" width="80" fixed="right">
+          <el-table-column :label="t('field.actions')" width="80" fixed="right">
             <template #default="{row}">
               <el-button size="small" text @click="openSiEdit(row)">{{ t('action.edit') }}</el-button>
             </template>
           </el-table-column>
         </el-table>
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px">
-          <div></div>
-          <el-pagination v-model:current-page="siPage" :page-size="siPageSize" :total="socialInsuranceData.length" layout="prev, pager, next" small />
-        </div>
+        <el-pagination v-if="socialInsuranceData.length > siPageSize" v-model:current-page="siPage" :page-size="siPageSize" :total="socialInsuranceData.length" layout="prev, pager, next" small style="margin-top:10px" />
 
-        <el-dialog v-model="siDialog" :title="t('payroll.jp.social_insurance')" width="500px">
+        <el-dialog v-model="siDialog" :title="t('payroll.jp.social_insurance')" width="520px">
           <el-form :model="siForm" label-width="160px">
             <el-form-item :label="t('field.rate_type')">
               <el-select v-model="siForm.rate_type" style="width:100%">
-                <el-option label="Health Insurance" value="health_insurance" />
-                <el-option label="Pension Insurance" value="pension_insurance" />
-                <el-option label="Care Insurance" value="care_insurance" />
+                <el-option v-for="(label, key) in rateTypeLabels" :key="key" :label="label" :value="key" />
               </el-select>
             </el-form-item>
             <el-form-item :label="t('field.prefecture')">
-              <el-input v-model="siForm.prefecture" />
+              <el-input v-model="siForm.prefecture" placeholder="13 (Tokyo)" />
             </el-form-item>
             <el-form-item :label="t('field.employee_rate')">
-              <el-input-number v-model="siForm.employee_rate" :min="0" :max="1" :step="0.001" :precision="6" style="width:100%" />
-              <div class="form-hint">{{ t('field.rate_as_decimal_hint') }}</div>
+              <el-input-number v-model="siForm.employee_rate" :min="0" :max="100" :step="0.01" :precision="2" style="width:100%" />
+              <div class="form-hint">{{ t('field.rate_as_pct_hint') }}</div>
             </el-form-item>
             <el-form-item :label="t('field.employer_rate')">
-              <el-input-number v-model="siForm.employer_rate" :min="0" :max="1" :step="0.001" :precision="6" style="width:100%" />
-              <div class="form-hint">{{ t('field.rate_as_decimal_hint') }}</div>
+              <el-input-number v-model="siForm.employer_rate" :min="0" :max="100" :step="0.01" :precision="2" style="width:100%" />
+              <div class="form-hint">{{ t('field.rate_as_pct_hint') }}</div>
             </el-form-item>
             <el-form-item :label="t('field.applicable_from')">
               <el-input v-model="siForm.applicable_from" placeholder="2026-04" />
@@ -295,56 +325,54 @@ onMounted(load)
           <el-button type="primary" size="small" @click="openTbCreate">{{ t('action.create') }}</el-button>
         </div>
         <el-table :data="tbPaged" v-loading="loading" border stripe size="small">
-          <el-table-column prop="table_type" :label="t('field.table_type')" width="120" />
-          <el-table-column prop="min_salary" :label="t('field.min_salary')" width="100" align="right">
-            <template #default="{row}">{{ row.min_salary ? Number(row.min_salary).toLocaleString() : '-' }}</template>
+          <el-table-column prop="table_type" :label="t('field.table_type')" width="100" />
+          <el-table-column :label="t('field.min_salary')" width="110" align="right">
+            <template #default="{row}">{{ row.min_salary ? '¥' + Number(row.min_salary).toLocaleString() : '-' }}</template>
           </el-table-column>
-          <el-table-column prop="max_salary" :label="t('field.max_salary')" width="100" align="right">
-            <template #default="{row}">{{ row.max_salary ? Number(row.max_salary).toLocaleString() : '-' }}</template>
+          <el-table-column :label="t('field.max_salary')" width="110" align="right">
+            <template #default="{row}">{{ row.max_salary ? '¥' + Number(row.max_salary).toLocaleString() : '-' }}</template>
           </el-table-column>
           <el-table-column prop="tax_dep_0" :label="t('field.tax_dep_0')" width="90" align="right">
-            <template #default="{row}">{{ row.tax_dep_0 ? Number(row.tax_dep_0).toLocaleString() : '-' }}</template>
+            <template #default="{row}">{{ row.tax_dep_0 != null ? '¥' + Number(row.tax_dep_0).toLocaleString() : '-' }}</template>
           </el-table-column>
           <el-table-column prop="tax_dep_1" :label="t('field.tax_dep_1')" width="90" align="right">
-            <template #default="{row}">{{ row.tax_dep_1 ? Number(row.tax_dep_1).toLocaleString() : '-' }}</template>
+            <template #default="{row}">{{ row.tax_dep_1 != null ? '¥' + Number(row.tax_dep_1).toLocaleString() : '-' }}</template>
           </el-table-column>
           <el-table-column prop="tax_dep_2" :label="t('field.tax_dep_2')" width="90" align="right">
-            <template #default="{row}">{{ row.tax_dep_2 ? Number(row.tax_dep_2).toLocaleString() : '-' }}</template>
+            <template #default="{row}">{{ row.tax_dep_2 != null ? '¥' + Number(row.tax_dep_2).toLocaleString() : '-' }}</template>
           </el-table-column>
           <el-table-column prop="tax_dep_3" :label="t('field.tax_dep_3')" width="90" align="right">
-            <template #default="{row}">{{ row.tax_dep_3 ? Number(row.tax_dep_3).toLocaleString() : '-' }}</template>
+            <template #default="{row}">{{ row.tax_dep_3 != null ? '¥' + Number(row.tax_dep_3).toLocaleString() : '-' }}</template>
           </el-table-column>
           <el-table-column prop="tax_dep_4" :label="t('field.tax_dep_4')" width="90" align="right">
-            <template #default="{row}">{{ row.tax_dep_4 ? Number(row.tax_dep_4).toLocaleString() : '-' }}</template>
+            <template #default="{row}">{{ row.tax_dep_4 != null ? '¥' + Number(row.tax_dep_4).toLocaleString() : '-' }}</template>
           </el-table-column>
           <el-table-column prop="tax_dep_5" :label="t('field.tax_dep_5')" width="90" align="right">
-            <template #default="{row}">{{ row.tax_dep_5 ? Number(row.tax_dep_5).toLocaleString() : '-' }}</template>
+            <template #default="{row}">{{ row.tax_dep_5 != null ? '¥' + Number(row.tax_dep_5).toLocaleString() : '-' }}</template>
           </el-table-column>
           <el-table-column prop="tax_dep_6" :label="t('field.tax_dep_6')" width="90" align="right">
-            <template #default="{row}">{{ row.tax_dep_6 ? Number(row.tax_dep_6).toLocaleString() : '-' }}</template>
+            <template #default="{row}">{{ row.tax_dep_6 != null ? '¥' + Number(row.tax_dep_6).toLocaleString() : '-' }}</template>
           </el-table-column>
           <el-table-column prop="tax_dep_7" :label="t('field.tax_dep_7')" width="90" align="right">
-            <template #default="{row}">{{ row.tax_dep_7 ? Number(row.tax_dep_7).toLocaleString() : '-' }}</template>
+            <template #default="{row}">{{ row.tax_dep_7 != null ? '¥' + Number(row.tax_dep_7).toLocaleString() : '-' }}</template>
           </el-table-column>
-          <el-table-column :label="t('action.actions')" width="80" fixed="right">
+          <el-table-column :label="t('field.actions')" width="80" fixed="right">
             <template #default="{row}">
               <el-button size="small" text @click="openTbEdit(row)">{{ t('action.edit') }}</el-button>
             </template>
           </el-table-column>
         </el-table>
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px">
-          <div></div>
-          <el-pagination v-model:current-page="tbPage" :page-size="tbPageSize" :total="taxBracketData.length" layout="prev, pager, next" small />
-        </div>
+        <el-pagination v-if="taxBracketData.length > tbPageSize" v-model:current-page="tbPage" :page-size="tbPageSize" :total="taxBracketData.length" layout="prev, pager, next" small style="margin-top:10px" />
 
-        <el-dialog v-model="tbDialog" :title="t('payroll.jp.tax_brackets')" width="650px">
+        <el-dialog v-model="tbDialog" :title="t('payroll.jp.tax_brackets')" width="680px">
           <el-form :model="tbForm" label-width="160px">
             <el-row :gutter="16">
               <el-col :span="12">
                 <el-form-item :label="t('field.table_type')">
                   <el-select v-model="tbForm.table_type" style="width:100%">
-                    <el-option label="Monthly" value="monthly" />
-                    <el-option label="Yearly" value="yearly" />
+                    <el-option label="Monthly (月額表)" value="monthly" />
+                    <el-option label="Daily (日額表)" value="daily" />
+                    <el-option label="Bonus (賞与)" value="bonus" />
                   </el-select>
                 </el-form-item>
               </el-col>
@@ -361,47 +389,15 @@ onMounted(load)
             </el-row>
             <el-divider>{{ t('payroll.jp.tax_amount_by_dependents') }}</el-divider>
             <el-row :gutter="16">
-              <el-col :span="8">
-                <el-form-item :label="t('field.tax_dep_0')">
-                  <el-input-number v-model="tbForm.tax_dep_0" :min="0" :precision="0" style="width:100%" />
-                </el-form-item>
-              </el-col>
-              <el-col :span="8">
-                <el-form-item :label="t('field.tax_dep_1')">
-                  <el-input-number v-model="tbForm.tax_dep_1" :min="0" :precision="0" style="width:100%" />
-                </el-form-item>
-              </el-col>
-              <el-col :span="8">
-                <el-form-item :label="t('field.tax_dep_2')">
-                  <el-input-number v-model="tbForm.tax_dep_2" :min="0" :precision="0" style="width:100%" />
-                </el-form-item>
-              </el-col>
-              <el-col :span="8">
-                <el-form-item :label="t('field.tax_dep_3')">
-                  <el-input-number v-model="tbForm.tax_dep_3" :min="0" :precision="0" style="width:100%" />
-                </el-form-item>
-              </el-col>
-              <el-col :span="8">
-                <el-form-item :label="t('field.tax_dep_4')">
-                  <el-input-number v-model="tbForm.tax_dep_4" :min="0" :precision="0" style="width:100%" />
-                </el-form-item>
-              </el-col>
-              <el-col :span="8">
-                <el-form-item :label="t('field.tax_dep_5')">
-                  <el-input-number v-model="tbForm.tax_dep_5" :min="0" :precision="0" style="width:100%" />
-                </el-form-item>
-              </el-col>
-              <el-col :span="8">
-                <el-form-item :label="t('field.tax_dep_6')">
-                  <el-input-number v-model="tbForm.tax_dep_6" :min="0" :precision="0" style="width:100%" />
-                </el-form-item>
-              </el-col>
-              <el-col :span="8">
-                <el-form-item :label="t('field.tax_dep_7')">
-                  <el-input-number v-model="tbForm.tax_dep_7" :min="0" :precision="0" style="width:100%" />
+              <el-col :span="6" v-for="n in 8" :key="n">
+                <el-form-item :label="t('field.tax_dep_' + (n - 1))">
+                  <el-input-number v-model="tbForm['tax_dep_' + (n - 1)]" :min="0" :precision="0" style="width:100%" />
                 </el-form-item>
               </el-col>
             </el-row>
+            <el-form-item :label="t('field.is_current')">
+              <el-switch v-model="tbForm.is_current" />
+            </el-form-item>
           </el-form>
           <template #footer>
             <el-button @click="tbDialog = false">{{ t('action.cancel') }}</el-button>
@@ -417,34 +413,35 @@ onMounted(load)
           <el-button type="primary" size="small" @click="openRgCreate">{{ t('action.create') }}</el-button>
         </div>
         <el-table :data="rgPaged" v-loading="loading" border stripe size="small">
-          <el-table-column prop="grade_type" :label="t('field.grade_type')" width="120" />
-          <el-table-column prop="grade_number" :label="t('field.grade_number')" width="100" align="center" />
-          <el-table-column prop="min_monthly_amount" :label="t('field.min_monthly_amount')" width="140" align="right">
-            <template #default="{row}">{{ row.min_monthly_amount ? Number(row.min_monthly_amount).toLocaleString() : '-' }}</template>
+          <el-table-column prop="grade_type" :label="t('field.grade_type')" width="180">
+            <template #default="{row}">{{ row.grade_type === 'health_insurance' ? '健康保険 (Health)' : row.grade_type === 'pension_insurance' ? '厚生年金 (Pension)' : row.grade_type }}</template>
           </el-table-column>
-          <el-table-column prop="max_monthly_amount" :label="t('field.max_monthly_amount')" width="140" align="right">
-            <template #default="{row}">{{ row.max_monthly_amount ? Number(row.max_monthly_amount).toLocaleString() : '-' }}</template>
+          <el-table-column prop="grade_number" :label="t('field.grade_number')" width="80" align="center" />
+          <el-table-column :label="t('field.min_monthly_amount')" width="150" align="right">
+            <template #default="{row}">{{ row.min_monthly_amount ? '¥' + Number(row.min_monthly_amount).toLocaleString() : '-' }}</template>
           </el-table-column>
-          <el-table-column prop="standard_monthly_amount" :label="t('field.standard_monthly_amount')" width="160" align="right">
-            <template #default="{row}">{{ row.standard_monthly_amount ? Number(row.standard_monthly_amount).toLocaleString() : '-' }}</template>
+          <el-table-column :label="t('field.max_monthly_amount')" width="150" align="right">
+            <template #default="{row}">{{ row.max_monthly_amount ? '¥' + Number(row.max_monthly_amount).toLocaleString() : '-' }}</template>
           </el-table-column>
-          <el-table-column :label="t('action.actions')" width="80" fixed="right">
+          <el-table-column :label="t('field.standard_monthly_amount')" width="170" align="right">
+            <template #default="{row}">
+              <strong>{{ row.standard_monthly_amount ? '¥' + Number(row.standard_monthly_amount).toLocaleString() : '-' }}</strong>
+            </template>
+          </el-table-column>
+          <el-table-column :label="t('field.actions')" width="80" fixed="right">
             <template #default="{row}">
               <el-button size="small" text @click="openRgEdit(row)">{{ t('action.edit') }}</el-button>
             </template>
           </el-table-column>
         </el-table>
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px">
-          <div></div>
-          <el-pagination v-model:current-page="rgPage" :page-size="rgPageSize" :total="remunerationGradeData.length" layout="prev, pager, next" small />
-        </div>
+        <el-pagination v-if="remunerationGradeData.length > rgPageSize" v-model:current-page="rgPage" :page-size="rgPageSize" :total="remunerationGradeData.length" layout="prev, pager, next" small style="margin-top:10px" />
 
         <el-dialog v-model="rgDialog" :title="t('payroll.jp.remuneration_grades')" width="550px">
           <el-form :model="rgForm" label-width="200px">
             <el-form-item :label="t('field.grade_type')">
               <el-select v-model="rgForm.grade_type" style="width:100%">
-                <el-option label="Health Insurance" value="health_insurance" />
-                <el-option label="Pension Insurance" value="pension_insurance" />
+                <el-option label="健康保険 (Health Insurance)" value="health_insurance" />
+                <el-option label="厚生年金保険 (Pension Insurance)" value="pension_insurance" />
               </el-select>
             </el-form-item>
             <el-form-item :label="t('field.grade_number')">
@@ -474,33 +471,44 @@ onMounted(load)
           <el-button type="primary" size="small" @click="openAiCreate">{{ t('action.create') }}</el-button>
         </div>
         <el-table :data="aiPaged" v-loading="loading" border stripe size="small">
-          <el-table-column prop="industry_code" :label="t('field.industry_code')" width="100" />
-          <el-table-column prop="industry_name_en" :label="t('field.industry_name_en')" min-width="300" show-overflow-tooltip />
-          <el-table-column prop="rate" :label="t('field.rate')" width="120" align="right">
-            <template #default="{row}">{{ row.rate ? (Number(row.rate) * 1000).toFixed(2) + '/1000' : '-' }}</template>
+          <el-table-column prop="industry_code" :label="t('field.industry_code')" width="120" />
+          <el-table-column prop="industry_name_ja" :label="t('payroll.jp.accident_insurance') + ' (JA)'" min-width="200" show-overflow-tooltip />
+          <el-table-column prop="industry_name_en" :label="t('field.industry_name_en')" min-width="200" show-overflow-tooltip />
+          <el-table-column :label="t('field.rate')" width="120" align="right">
+            <template #default="{row}">{{ fmtPermille(row.rate) }}</template>
           </el-table-column>
-          <el-table-column :label="t('action.actions')" width="80" fixed="right">
+          <el-table-column :label="t('field.is_current')" width="80" align="center">
+            <template #default="{row}">
+              <el-tag :type="row.is_current ? 'success' : 'info'" size="small">
+                {{ row.is_current ? t('field.yes') : t('field.no') }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column :label="t('field.actions')" width="80" fixed="right">
             <template #default="{row}">
               <el-button size="small" text @click="openAiEdit(row)">{{ t('action.edit') }}</el-button>
             </template>
           </el-table-column>
         </el-table>
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px">
-          <div></div>
-          <el-pagination v-model:current-page="aiPage" :page-size="aiPageSize" :total="accidentInsuranceData.length" layout="prev, pager, next" small />
-        </div>
+        <el-pagination v-if="accidentInsuranceData.length > aiPageSize" v-model:current-page="aiPage" :page-size="aiPageSize" :total="accidentInsuranceData.length" layout="prev, pager, next" small style="margin-top:10px" />
 
-        <el-dialog v-model="aiDialog" :title="t('payroll.jp.accident_insurance')" width="500px">
-          <el-form :model="aiForm" label-width="160px">
+        <el-dialog v-model="aiDialog" :title="t('payroll.jp.accident_insurance')" width="550px">
+          <el-form :model="aiForm" label-width="180px">
             <el-form-item :label="t('field.industry_code')">
               <el-input v-model="aiForm.industry_code" />
+            </el-form-item>
+            <el-form-item :label="t('payroll.jp.accident_insurance') + ' (JA)'">
+              <el-input v-model="aiForm.industry_name_ja" />
             </el-form-item>
             <el-form-item :label="t('field.industry_name_en')">
               <el-input v-model="aiForm.industry_name_en" />
             </el-form-item>
             <el-form-item :label="t('field.rate')">
               <el-input-number v-model="aiForm.rate" :min="0" :max="1" :step="0.0001" :precision="6" style="width:100%" />
-              <div class="form-hint">{{ t('field.rate_as_decimal_hint') }}</div>
+              <div class="form-hint">{{ t('field.rate_as_decimal_hint') }} (例: 0.0035 = 3.5‰)</div>
+            </el-form-item>
+            <el-form-item :label="t('field.is_current')">
+              <el-switch v-model="aiForm.is_current" />
             </el-form-item>
           </el-form>
           <template #footer>
@@ -514,10 +522,10 @@ onMounted(load)
 </template>
 
 <style scoped>
-.page-container { padding: 24px; max-width: 1400px; margin: 0 auto; }
+.page-container { max-width: 1500px; margin: 0 auto; padding: 24px; font-size: 15px; }
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
-.page-header h3 { margin: 0; font-size: 1.2rem; }
+.page-header h3 { margin: 0; font-size: 1.3rem; font-weight: 700; color: #1d2a3a; }
 .tab-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-.helper-text { color: var(--el-text-color-secondary); font-size: 0.85rem; }
-.form-hint { font-size: 0.78rem; color: var(--el-text-color-secondary); margin-top: 4px; }
+.helper-text { color: #6b7280; font-size: .85rem; }
+.form-hint { font-size: .78rem; color: #6b7280; margin-top: 4px; }
 </style>

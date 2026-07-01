@@ -57,8 +57,6 @@ SHARED_PORT = {
     "masterdata": 8007,
     "tacaimsg": 8012,
     "tacaipay_jp": 8013,
-    "tacaipay_cn": 8014,
-    "tacaipay_sg": 8016,
     "selfservice": 8018,
     "tacaiinvoice": 8019,
 }
@@ -95,12 +93,9 @@ GATEWAY_ROUTES: Dict[str, int] = {
     '/api/masterdata/':     SHARED_PORT['masterdata'],
     '/api/master-data/':    SHARED_PORT['masterdata'],
     '/api/messages/':       SHARED_PORT['tacaimsg'],
-    # ── Payroll (country-specific routes BEFORE generic /api/payroll/) ──
-    '/api/payroll/sg/':     SHARED_PORT['tacaipay_sg'],
+    # ── Payroll ──
     '/api/payroll/jp/':     SHARED_PORT['tacaipay_jp'],
-    '/api/payroll/cn/':     SHARED_PORT['tacaipay_cn'],
-    '/api/payroll/':        SHARED_PORT['tacaipay_sg'],
-    '/api/salary/':         SHARED_PORT['tacaipay_sg'],
+    '/api/payroll/':        SHARED_PORT['tacaipay_jp'],
     # ── Invoice ──
     '/api/invoice/':        SHARED_PORT['tacaiinvoice'],
     '/api/timesheet/':      SHARED_PORT['timesheet'],
@@ -158,9 +153,7 @@ SHARED_SERVICES: Dict[str, ServiceInfo] = {
     "employee_admin": ServiceInfo("employee_admin", 8004, "backend/services/employee_admin", "python3 app.py --host 0.0.0.0 --port 8004"),
     "masterdata": ServiceInfo("masterdata", 8007, "backend/services/masterdata", "python3 app.py --host 0.0.0.0 --port 8007"),
     "tacaimsg": ServiceInfo("tacaimsg", 8012, "backend/services/messaging", "python3 app.py --host 0.0.0.0 --port 8012"),
-    "tacaipay_sg": ServiceInfo("tacaipay_sg", 8016, "backend/services/payroll/sg", "python3 app.py --host 0.0.0.0 --port 8016"),
     "tacaipay_jp": ServiceInfo("tacaipay_jp", 8013, "backend/services/payroll/jp", "python3 app.py --host 0.0.0.0 --port 8013"),
-    "tacaipay_cn": ServiceInfo("tacaipay_cn", 8014, "backend/services/payroll/cn", "python3 app.py --host 0.0.0.0 --port 8014"),
     "tacaiinvoice": ServiceInfo("tacaiinvoice", 8019, "backend/services/invoice", "python3 app.py --host 0.0.0.0 --port 8019"),
     "selfservice": ServiceInfo("selfservice", 8018, "backend/services/self_service", "python3 app.py --host 0.0.0.0 --port 8018"),
 }

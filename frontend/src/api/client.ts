@@ -102,54 +102,43 @@ export const masterdataApi = {
   teams: () => client.get('/api/masterdata/teams'),
 }
 
-// ── Payroll SG API ──
-export const payrollSgApi = {
-  salaryMaster: (params?: Record<string, any>) => client.get('/api/payroll/sg/salary-master', { params }),
-  saveSalaryMaster: (data: Record<string, any>) => client.post('/api/payroll/sg/salary-master', data),
-  batches: (params?: Record<string, any>) => client.get('/api/payroll/sg/batches', { params }),
-  createBatch: (data: Record<string, any>) => client.post('/api/payroll/sg/batches', data),
-  getBatch: (batchId: string) => client.get(`/api/payroll/sg/batches/${batchId}`),
-  calculateBatch: (batchId: string, data?: Record<string, any>) =>
-    client.post(`/api/payroll/sg/batches/${batchId}/calculate`, data || {}),
-  sheets: (params?: Record<string, any>) => client.get('/api/payroll/sg/sheets', { params }),
-  getSheet: (sheetId: string) => client.get(`/api/payroll/sg/sheets/${sheetId}`),
-  confirmSheet: (sheetId: string) => client.post(`/api/payroll/sg/sheets/${sheetId}/confirm`, {}),
-  releaseSheet: (sheetId: string) => client.post(`/api/payroll/sg/sheets/${sheetId}/release`, {}),
-  payslips: (params?: Record<string, any>) => client.get('/api/payroll/sg/payslips', { params }),
-  emailPayslip: (payslipId: string) => client.post(`/api/payroll/sg/payslips/${payslipId}/email`, {}),
-  batchEmailPayslips: (data: Record<string, any>) => client.post('/api/payroll/sg/payslips/batch-email', data),
-}
-
 // ── Payroll JP API ──
 export const payrollJpApi = {
+  // Item Definitions
   itemDefinitions: (params?: Record<string, any>) => client.get('/api/payroll/jp/item-definitions', { params }),
   saveItemDefinition: (data: Record<string, any>) => client.post('/api/payroll/jp/item-definitions', data),
+  // Parameters
   parameters: (params?: Record<string, any>) => client.get('/api/payroll/jp/parameters', { params }),
   saveParameter: (data: Record<string, any>) => client.post('/api/payroll/jp/parameters', data),
+  // Employees (Salary Master)
   employees: (params?: Record<string, any>) => client.get('/api/payroll/jp/employees', { params }),
   saveEmployee: (data: Record<string, any>) => client.post('/api/payroll/jp/employees', data),
+  getEmployee: (id: string) => client.get(`/api/payroll/jp/employees/${id}`),
+  deactivateEmployee: (id: string, data: Record<string, any>) => client.post(`/api/payroll/jp/employees/${id}/deactivate`, data),
+  calcPreview: (id: string, params?: Record<string, any>) => client.get(`/api/payroll/jp/employees/${id}/calc-preview`, { params }),
+  importableEmployees: (params?: Record<string, any>) => client.get('/api/payroll/jp/employees/importable', { params }),
+  importEmployees: (data: { employee_ids: string[] }) => client.post('/api/payroll/jp/employees/import', data),
+  // Batches (Monthly Sheets)
   batches: (params?: Record<string, any>) => client.get('/api/payroll/jp/batches', { params }),
+  getBatch: (id: string) => client.get(`/api/payroll/jp/batches/${id}`),
   createBatch: (data: Record<string, any>) => client.post('/api/payroll/jp/batches', data),
   calculateBatch: (batchId: string) => client.post(`/api/payroll/jp/batches/${batchId}/calculate`, {}),
+  // Sheet operations
   sheets: (params?: Record<string, any>) => client.get('/api/payroll/jp/sheets', { params }),
+  getSheet: (sheetId: string) => client.get(`/api/payroll/jp/sheets/${sheetId}`),
   confirmSheet: (sheetId: string) => client.post(`/api/payroll/jp/sheets/${sheetId}/confirm`, {}),
+  voidSheet: (sheetId: string, data: { reason: string }) => client.post(`/api/payroll/jp/sheets/${sheetId}/void`, data),
+  deleteSheet: (sheetId: string) => client.delete(`/api/payroll/jp/sheets/${sheetId}`),
+  importEmployeesToSheet: (sheetId: string, data: { employee_ids: string[] }) => client.post(`/api/payroll/jp/sheets/${sheetId}/import-employees`, data),
+  saveSheetRecords: (sheetId: string, data: { records: any[] }) => client.post(`/api/payroll/jp/sheets/${sheetId}/records/bulk-save`, data),
+  // Release & Payslips
+  releasePage: (sheetId: string) => client.get(`/api/payroll/jp/sheets/${sheetId}/release`),
   payslips: (params?: Record<string, any>) => client.get('/api/payroll/jp/payslips', { params }),
-  emailPayslip: (payslipId: string) => client.post(`/api/payroll/jp/payslips/${payslipId}/email`, {}),
-}
-
-// ── Payroll CN API ──
-export const payrollCnApi = {
-  socialInsuranceRules: (params?: Record<string, any>) => client.get('/api/payroll/cn/social-insurance-rules', { params }),
-  saveSIRule: (data: Record<string, any>) => client.post('/api/payroll/cn/social-insurance-rules', data),
-  taxBrackets: (params?: Record<string, any>) => client.get('/api/payroll/cn/tax-brackets', { params }),
-  saveTaxBracket: (data: Record<string, any>) => client.post('/api/payroll/cn/tax-brackets', data),
-  employees: (params?: Record<string, any>) => client.get('/api/payroll/cn/employees', { params }),
-  saveEmployee: (data: Record<string, any>) => client.post('/api/payroll/cn/employees', data),
-  batches: (params?: Record<string, any>) => client.get('/api/payroll/cn/batches', { params }),
-  createBatch: (data: Record<string, any>) => client.post('/api/payroll/cn/batches', data),
-  calculateBatch: (batchId: string) => client.post(`/api/payroll/cn/batches/${batchId}/calculate`, {}),
-  payslips: (params?: Record<string, any>) => client.get('/api/payroll/cn/payslips', { params }),
-  emailPayslip: (payslipId: string) => client.post(`/api/payroll/cn/payslips/${payslipId}/email`, {}),
+  viewPayslipHtml: (recordId: string) => client.get(`/api/payroll/jp/payslips/${recordId}/html`),
+  downloadPayslipPdf: (recordId: string) => client.get(`/api/payroll/jp/payslips/${recordId}/pdf`, { responseType: 'blob' }),
+  sendPayslipEmail: (recordId: string) => client.post(`/api/payroll/jp/payslips/${recordId}/email`, {}),
+  sendAllPayslipEmails: (sheetId: string) => client.post(`/api/payroll/jp/sheets/${sheetId}/send-all-emails`, {}),
+  exportCsv: (sheetId: string) => client.get(`/api/payroll/jp/sheets/${sheetId}/csv-export`, { responseType: 'blob' }),
 }
 
 // ── Invoice API ──
