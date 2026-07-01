@@ -998,8 +998,13 @@ class PortalHandler(BaseHTTPRequestHandler):
         Returns True if the request was handled (gateway route matched),
         False if no gateway route matched (caller should fall through).
         """
+        # Normalize: strip query string so /api/employees?page=1 matches /api/employees/
+        parsed = urlparse(self.path)
+        path_only = parsed.path
+
         for prefix, port in GATEWAY_ROUTES.items():
-            if self.path.startswith(prefix):
+            # Match either exact path (without trailing slash) or path with sub-routes
+            if path_only == prefix.rstrip('/') or path_only.startswith(prefix):
                 # Read body for write methods
                 body = None
                 if method in ("POST", "PUT", "PATCH"):
@@ -1007,7 +1012,7 @@ class PortalHandler(BaseHTTPRequestHandler):
                     body = self.rfile.read(length) if length else None
 
                 # Longer timeout for file uploads
-                timeout = 120 if self.path.startswith("/api/employees/import") else 30
+                timeout = 120 if path_only.startswith("/api/employees/import") else 30
 
                 status, resp_headers, resp_body = _proxy_to_service(
                     port, self.path, method,
@@ -1169,6 +1174,13 @@ class PortalHandler(BaseHTTPRequestHandler):
 
         # ── All other POST requests → Vue 3 SPA (proxy to Vite dev) ──
         self._serve_or_proxy("POST")
+
+    def do_DELETE(self) -> None:  # noqa: N802 - inherited API name
+        # ── API Gateway: forward to internal backend services ──
+        if self._proxy_gateway("DELETE"):
+            return
+        self.send_response(405)
+        self.end_headers()
 
 
 def parse_args() -> argparse.Namespace:

@@ -4,7 +4,8 @@ import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useI18nStore } from '@/stores/i18n'
 import { employeeApi, masterdataApi } from '@/api/client'
-import { Plus, Upload, Search, RefreshLeft } from '@element-plus/icons-vue'
+import { Plus, Upload, Search, RefreshLeft, Delete, Edit } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 
 // ── i18n ──
@@ -87,10 +88,11 @@ async function handleCreate() {
   try { await formRef.value.validate() } catch { return }
   submitting.value = true; formErrors.value = []
   try {
+    // Send flat dot-notation keys directly — backend handles unflatten
     const payload: Record<string, any> = {}
     for (const [key, val] of Object.entries(createForm)) { if (val) payload[key] = val }
     const { data } = await (employeeApi as any).create(payload)
-    if (data?.success) { dialogVisible.value = false; loadEmployees() }
+    if (data?.success || data?.employee) { dialogVisible.value = false; loadEmployees() }
     else { formErrors.value = data?.errors || ['Failed'] }
   } catch (e: any) { formErrors.value = e?.response?.data?.errors || [e?.message || 'Failed'] }
   finally { submitting.value = false }
@@ -128,6 +130,22 @@ function handleSizeChange(s: number) { pageSize.value = s; page.value = 1; loadE
 function applyFilter() { page.value = 1; loadEmployees() }
 function clearFilter() { Object.assign(filters, { q: '', entity_id: '', country_code: '', department_id: '', team_id: '', status: '', show_resigned: false, employment_type: '', japanese_level: '', english_level: '', skill: '' }); page.value = 1; loadEmployees() }
 function viewEmployee(id: string) { router.push(`/employees/${id}`) }
+async function deleteEmployee(emp: Employee) {
+  try {
+    await ElMessageBox.confirm(
+      t('employee.delete_confirm', { name: getName(emp), number: emp.employee_number }),
+      t('employee.delete_title'),
+      { confirmButtonText: t('action.delete'), cancelButtonText: t('action.cancel'), type: 'warning' }
+    )
+    await (employeeApi as any).delete(emp.employee_id)
+    ElMessage.success(t('employee.delete_success'))
+    loadEmployees()
+  } catch (e: any) {
+    if (e !== 'cancel' && e?.message !== 'cancel') {
+      ElMessage.error(e?.response?.data?.error || e?.message || t('employee.delete_failed'))
+    }
+  }
+}
 function importPage() { router.push('/employees/import') }
 function getName(e: Employee) { return e.profile?.name?.display_name || '-' }
 function getEmail(e: Employee) { return e.profile?.email || '-' }
@@ -214,24 +232,28 @@ onMounted(() => { loadFilterOptions(); loadEmployees() })
 
     <!-- Table -->
     <el-card shadow="never">
-      <el-table :data="employees" v-loading="loading" stripe border style="width:100%" @row-click="(row: Employee) => viewEmployee(row.employee_id)">
-        <el-table-column prop="employee_number" :label="t('field.employee_number')" width="140" sortable="custom" />
-        <el-table-column :label="t('field.employee_name')" min-width="160">
+      <el-table :data="employees" v-loading="loading" stripe border style="width:100%">
+        <el-table-column :label="t('field.employee_number')" width="140" sortable="custom">
+          <template #default="{ row }">
+            <span class="emp-number-link" @click="viewEmployee(row.employee_id)">{{ row.employee_number }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column :label="t('field.employee_name')" width="160" show-overflow-tooltip>
           <template #default="{ row }"><strong>{{ getName(row) }}</strong></template>
         </el-table-column>
-        <el-table-column :label="t('field.email')" min-width="180">
+        <el-table-column :label="t('field.email')" width="200" show-overflow-tooltip>
           <template #default="{ row }">{{ getEmail(row) }}</template>
         </el-table-column>
-        <el-table-column :label="t('field.entity')" min-width="140">
+        <el-table-column :label="t('field.entity')" width="160" show-overflow-tooltip>
           <template #default="{ row }">{{ entityDisp(row) }}</template>
         </el-table-column>
-        <el-table-column :label="t('field.department')" min-width="120">
+        <el-table-column :label="t('field.department')" width="140" show-overflow-tooltip>
           <template #default="{ row }">{{ deptDisp(row) }}</template>
         </el-table-column>
-        <el-table-column :label="t('field.team')" min-width="120">
+        <el-table-column :label="t('field.team')" width="140" show-overflow-tooltip>
           <template #default="{ row }">{{ teamDisp(row) }}</template>
         </el-table-column>
-        <el-table-column :label="t('field.position')" prop="employment.position" min-width="120" />
+        <el-table-column :label="t('field.position')" prop="employment.position" width="140" show-overflow-tooltip />
         <el-table-column :label="t('field.employment_type')" width="120">
           <template #default="{ row }">{{ Lbl('employment_type', row.employment?.employment_type) }}</template>
         </el-table-column>
@@ -246,10 +268,12 @@ onMounted(() => { loadFilterOptions(); loadEmployees() })
         <el-table-column :label="t('field.english_level')" width="100">
           <template #default="{ row }">{{ Lbl('english_level', row.language_profile?.english_level) }}</template>
         </el-table-column>
-        <el-table-column :label="t('field.skill')" prop="skills_profile.primary_skill" min-width="120" />
-        <el-table-column :label="t('field.actions')" width="100" fixed="right">
+        <el-table-column :label="t('field.skill')" prop="skills_profile.primary_skill" width="140" show-overflow-tooltip />
+        <el-table-column :label="t('field.actions')" width="180" fixed="right">
           <template #default="{ row }">
-            <el-button type="primary" link size="small" @click.stop="viewEmployee(row.employee_id)">{{ t('action.view') }}</el-button>
+            <el-button type="primary" link size="small" @click="viewEmployee(row.employee_id)">{{ t('action.view') }}</el-button>
+            <el-button type="primary" link size="small" @click="router.push(`/employees/${row.employee_id}/edit`)"><el-icon><Edit /></el-icon>{{ t('action.edit') }}</el-button>
+            <el-button type="danger" link size="small" @click="deleteEmployee(row)"><el-icon><Delete /></el-icon>{{ t('action.delete') }}</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -370,5 +394,7 @@ onMounted(() => { loadFilterOptions(); loadEmployees() })
 </template>
 
 <style scoped>
+.emp-number-link { color: var(--el-color-primary); cursor: pointer; }
+.emp-number-link:hover { text-decoration: underline; }
 .el-collapse { border: 1px solid var(--el-border-color-light); border-radius: 8px; padding: 8px 16px; }
 </style>

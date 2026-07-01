@@ -2810,12 +2810,17 @@ class UserAdminHandler(BaseHTTPRequestHandler):
         password = str(data.get("password", ""))
         entity_code = str(data.get("entity_code", "")).strip()
         user = find_user_by_email(email)
-        if not user or user.get("account_locked") or user.get("status") not in {"active"}:
+        if not user:
             self.send_json(401, {"error": "Invalid credentials", "message": t(messages, "validation.invalid_login")})
+            return
+        if user.get("account_locked") or user.get("status") not in {"active"}:
+            self.send_json(401, {"error": "Account locked", "message": t(messages, "validation.account_locked")})
             return
         if not verify_password(password, str(user.get("password_hash", ""))):
             self.record_failed_login(user)
-            self.send_json(401, {"error": "Invalid credentials", "message": t(messages, "validation.invalid_login")})
+            locked_after = int(user.get("failed_login_count", 0)) + 1 >= MAX_FAILED_LOGINS
+            msg = t(messages, "validation.account_locked") if locked_after else t(messages, "validation.invalid_login")
+            self.send_json(401, {"error": "Invalid credentials", "message": msg})
             return
         entity_context, entity_errors = validate_login_entity(user, entity_code, messages)
         if entity_errors or not entity_context:

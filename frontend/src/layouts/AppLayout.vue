@@ -146,7 +146,8 @@ async function handleLogout() {
 }
 
 .unified-content {
-  max-width: 1400px;
+  min-width: 1400px;
+  width: 100%;
   margin: 0 auto;
   padding: 20px;
 }

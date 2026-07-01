@@ -1,34 +1,47 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { employeeApi } from '@/api/client'
+import { employeeApi, masterdataApi } from '@/api/client'
+import { ElMessage } from 'element-plus'
 
-interface Employee {
-  employee_id: string
-  employee_number: string
-  profile: Record<string, any>
-  employment: Record<string, any>
-  payroll: Record<string, any>
-  visa: Record<string, any>
-  dispatch_compliance: Record<string, any>
-  language_profile: Record<string, any>
-  skills_profile: Record<string, any>
-  documents: any[]
-  metadata: Record<string, any>
-  created_at: string
-  updated_at: string
+// Import locale messages directly — bypass vue-i18n dot-path resolution
+import enMessages from '@/i18n/en.json'
+import jaMessages from '@/i18n/ja.json'
+import zhMessages from '@/i18n/zh.json'
+
+const MSG: Record<string, Record<string, string>> = {
+  en: enMessages as any, ja: jaMessages as any, zh: zhMessages as any,
 }
 
-const { t } = useI18n()
+interface Employee {
+  employee_id: string; employee_number: string
+  profile: Record<string, any>; employment: Record<string, any>
+  payroll: Record<string, any>; visa: Record<string, any>
+  dispatch_compliance: Record<string, any>; language_profile: Record<string, any>
+  skills_profile: Record<string, any>; documents: any[]; metadata: Record<string, any>
+  created_at: string; updated_at: string
+}
+
+const { t, locale } = useI18n()
 const route = useRoute()
 const router = useRouter()
 
+const isEdit = computed(() => route.path.endsWith('/edit'))
 const employeeId = route.params.id as string
 const employee = ref<Employee | null>(null)
 const loading = ref(true)
+const saving = ref(false)
 const error = ref('')
 const activeTab = ref('profile')
+
+// ── Edit mode: flat form data ──
+const flatForm = ref<Record<string, any>>({})
+
+// ── Dropdown options for edit mode ──
+const entityOptions = ref<{ entity_id: string; entity_code: string; entity_name_en: string }[]>([])
+const deptOptions = ref<{ department_id: string; department_code: string; department_name_en: string }[]>([])
+const teamOptions = ref<{ team_id: string; team_code: string; team_name_en: string }[]>([])
 
 const tabs = [
   { key: 'profile', label: () => t('employee.section_profile') },
@@ -39,26 +52,83 @@ const tabs = [
   { key: 'skills_profile', label: () => t('employee.section_skills') || 'Skills' },
 ]
 
-onMounted(async () => {
-  loading.value = true
-  try {
-    const response = await employeeApi.get(employeeId)
-    employee.value = response.data?.employee as Employee
-  } catch (e: any) {
-    error.value = e?.message || 'Employee not found'
-  } finally {
-    loading.value = false
-  }
-})
-
-function fieldLabel(key: string): string {
-  return key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+// ── i18n helpers ──
+const FIELD_ALIASES: Record<string, string> = {
+  firstname: 'name__given_name', lastname: 'name__family_name',
+  first_name_kana: 'name__given_name_kana', last_name_kana: 'name__family_name_kana',
+  given_name: 'name__given_name', family_name: 'name__family_name',
+  given_name_kana: 'name__given_name_kana', family_name_kana: 'name__family_name_kana',
+  display_name: 'name__display_name', romaji_name: 'name__romaji_name',
+  birthday: 'date_of_birth', contract_type: 'employment_type', joined_at: 'join_date',
+  picture_url: 'picture_url',
 }
 
+function _msg(key: string): string | null {
+  const cur = MSG[locale.value] || MSG.en || {}
+  return cur[key] || MSG.en[key] || null
+}
+
+function fieldLabel(tabKey: string, fieldKey: string): string {
+  const flatFieldKey = fieldKey.replace(/\./g, '__')
+  const alias = FIELD_ALIASES[flatFieldKey]
+  const effectiveKey = alias || flatFieldKey
+  const fullKey = `field.${tabKey}__${effectiveKey}`
+  const v = _msg(fullKey)
+  if (v) return v
+  const shortKey = `field.${effectiveKey}`
+  const v2 = _msg(shortKey)
+  if (v2) return v2
+  const lastPart = fieldKey.split('.').pop() || fieldKey
+  return lastPart.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+}
+
+// ── Flatten / unflatten helpers ──
+function flattenObject(obj: Record<string, any>, prefix = ''): Record<string, any> {
+  const result: Record<string, any> = {}
+  for (const [key, value] of Object.entries(obj)) {
+    const fullKey = prefix ? `${prefix}.${key}` : key
+    if (value !== null && value !== undefined && typeof value === 'object' && !Array.isArray(value)) {
+      Object.assign(result, flattenObject(value, fullKey))
+    } else {
+      result[fullKey] = value
+    }
+  }
+  return result
+}
+
+function unflattenObject(flat: Record<string, any>): Record<string, any> {
+  const result: Record<string, any> = {}
+  for (const [key, value] of Object.entries(flat)) {
+    const parts = key.split('.')
+    let current = result
+    for (let i = 0; i < parts.length - 1; i++) {
+      if (!current[parts[i]] || typeof current[parts[i]] !== 'object') current[parts[i]] = {}
+      current = current[parts[i]]
+    }
+    current[parts[parts.length - 1]] = value
+  }
+  return result
+}
+
+function initFlatForm(emp: Employee) {
+  const flat: Record<string, any> = {}
+  for (const section of tabs.map(t => t.key)) {
+    const sectionData = (emp as any)[section]
+    if (sectionData && typeof sectionData === 'object' && !Array.isArray(sectionData)) {
+      Object.assign(flat, flattenObject(sectionData, section))
+    }
+  }
+  // Also include top-level flat fields
+  if (emp.employee_number) flat['employee_number'] = emp.employee_number
+  flatForm.value = flat
+}
+
+// ── View-mode helpers ──
 function formatValue(value: any): string {
   if (value === null || value === undefined) return '-'
+  if (typeof value === 'string' && value.trim() === '') return '-'
   if (typeof value === 'boolean') return value ? 'Yes' : 'No'
-  if (Array.isArray(value)) return value.join(', ')
+  if (Array.isArray(value)) return value.length > 0 ? value.map(v => typeof v === 'object' ? JSON.stringify(v) : String(v)).join(', ') : '-'
   if (typeof value === 'object') return JSON.stringify(value)
   return String(value)
 }
@@ -69,9 +139,141 @@ function tabFields(tabKey: string): FieldEntry[] {
   if (!employee.value) return []
   const section = (employee.value as any)[tabKey]
   if (!section || typeof section !== 'object' || Array.isArray(section)) return []
-  return Object.entries(section as Record<string, any>)
-    .filter(([, v]) => v !== null && v !== undefined && v !== '')
-    .map(([key, value]) => ({ key, value }))
+  const entries: FieldEntry[] = []
+  for (const [key, value] of Object.entries(section as Record<string, any>)) {
+    if (value !== null && value !== undefined && typeof value === 'object' && !Array.isArray(value)) {
+      for (const [nestedKey, nestedValue] of Object.entries(value)) {
+        entries.push({ key: `${key}.${nestedKey}`, value: nestedValue })
+      }
+    } else {
+      entries.push({ key, value })
+    }
+  }
+  return entries
+}
+
+// ── Edit-mode field helpers ──
+function editFields(tabKey: string): { key: string; fullKey: string; value: any; inputType: string }[] {
+  const prefix = `${tabKey}.`
+  const fields: { key: string; fullKey: string; value: any; inputType: string }[] = []
+  for (const [fullKey, value] of Object.entries(flatForm.value)) {
+    if (fullKey.startsWith(prefix)) {
+      const key = fullKey.slice(prefix.length)
+      fields.push({ key, fullKey, value, inputType: fieldInputType(tabKey, key, value) })
+    }
+  }
+  // Sort: put required/common fields first
+  return fields
+}
+
+function fieldInputType(tabKey: string, fieldKey: string, value: any): string {
+  if (typeof value === 'boolean') return 'switch'
+  const lastPart = fieldKey.split('.').pop() || ''
+  if (lastPart.endsWith('_date') || lastPart === 'date_of_birth' || lastPart === 'joined_at') return 'date'
+  if (lastPart === 'entity_id') return 'entity_select'
+  if (lastPart === 'department_id') return 'dept_select'
+  if (lastPart === 'team_id') return 'team_select'
+  if (lastPart === 'gender') return 'gender_select'
+  if (lastPart === 'status') return 'status_select'
+  if (lastPart === 'employment_type' || lastPart === 'contract_type') return 'emp_type_select'
+  if (lastPart === 'business_line') return 'biz_line_select'
+  if (lastPart === 'country_code' || lastPart === 'work_country') return 'country_select'
+  if (lastPart === 'japanese_level') return 'jp_select'
+  if (lastPart === 'english_level') return 'en_select'
+  return 'text'
+}
+
+const GENDER_OPTS = ['male', 'female', 'other']
+const STATUS_OPTS = ['active', 'probation', 'resigned', 'suspended', 'inactive']
+const TYPE_OPTS = ['employee', 'contractor', 'dispatch', 'part_time', 'intern']
+const BIZ_LINES = ['recruitment', 'rpo', 'haken', 'payroll', 'internal', 'ai_platform']
+const JP_OPTS = ['native', 'business', 'daily_conversation', 'beginner', 'none']
+const EN_OPTS = ['native', 'business', 'daily_conversation', 'beginner', 'none']
+const COUNTRY_OPTS = ['JP', 'CN', 'SG']
+
+// ── Label lookup for enum values (edit mode selects) ──
+const L = {
+  japanese_level: { native: () => t('enum.japanese.native'), business: () => t('enum.japanese.business'), daily_conversation: () => t('enum.japanese.daily'), beginner: () => t('enum.japanese.beginner'), none: () => t('enum.japanese.none') },
+  english_level: { native: () => t('enum.english.native'), business: () => t('enum.english.business'), daily_conversation: () => t('enum.english.daily'), beginner: () => t('enum.english.beginner'), none: () => t('enum.english.none') },
+  status: { active: () => t('enum.status.active'), probation: () => t('enum.status.probation'), resigned: () => t('enum.status.resigned'), suspended: () => t('enum.status.suspended'), inactive: () => t('enum.status.inactive') },
+  employment_type: { employee: () => t('enum.employment_type.seishain'), contractor: () => t('enum.employment_type.keiyaku'), dispatch: () => t('enum.employment_type.haken'), part_time: () => t('enum.employment_type.part_time'), intern: () => t('enum.employment_type.intern') },
+}
+function Lbl(cat: string, val: string): string {
+  const m = (L as any)[cat]
+  if (m && m[val] && typeof m[val] === 'function') return m[val]()
+  return val || '-'
+}
+
+// ── Data loading ──
+onMounted(async () => {
+  loading.value = true; error.value = ''
+  try {
+    const [empRes, er, dr, tr] = await Promise.all([
+      employeeApi.get(employeeId),
+      masterdataApi.entities(),
+      masterdataApi.departments(),
+      masterdataApi.teams(),
+    ])
+    employee.value = empRes.data?.employee as Employee
+    entityOptions.value = er.data?.entities || []
+    deptOptions.value = dr.data?.departments || []
+    teamOptions.value = tr.data?.teams || []
+
+    if (isEdit.value && employee.value) {
+      initFlatForm(employee.value)
+    }
+  } catch (e: any) {
+    error.value = e?.message || 'Employee not found'
+  } finally { loading.value = false }
+})
+
+// Re-init flat form when switching to edit mode (same component, no remount)
+watch(isEdit, (editing) => {
+  if (editing && employee.value) {
+    initFlatForm(employee.value)
+  }
+})
+
+// ── Save (edit mode) ──
+async function handleSave() {
+  saving.value = true
+  try {
+    // Group flat form by section
+    const grouped: Record<string, any> = {}
+    for (const [fullKey, value] of Object.entries(flatForm.value)) {
+      const dotIdx = fullKey.indexOf('.')
+      if (dotIdx === -1) continue
+      const section = fullKey.slice(0, dotIdx)
+      const fieldKey = fullKey.slice(dotIdx + 1)
+      if (!grouped[section]) grouped[section] = {}
+      grouped[section][fieldKey] = value
+    }
+    // Unflatten each section
+    const payload: Record<string, any> = {}
+    for (const [section, flat] of Object.entries(grouped)) {
+      payload[section] = unflattenObject(flat)
+    }
+    // Also include employee_number
+    if (flatForm.value['employee_number']) {
+      payload['employee_number'] = flatForm.value['employee_number']
+    }
+
+    const { data } = await (employeeApi as any).update(employeeId, payload)
+    if (data?.employee) {
+      ElMessage.success(t('employee.update_success') || 'Updated')
+      // Refresh view data and switch to view mode
+      employee.value = data.employee as Employee
+      router.replace(`/employees/${employeeId}`)
+    } else {
+      ElMessage.error(data?.error || 'Update failed')
+    }
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.error || e?.message || 'Update failed')
+  } finally { saving.value = false }
+}
+
+function handleCancel() {
+  router.push(`/employees/${employeeId}`)
 }
 
 const employeeName = () => {
@@ -94,7 +296,12 @@ const employeeName = () => {
           <template v-if="employee.employment?.department_name">&middot; {{ employee.employment.department_name }}</template>
         </p>
       </div>
-      <el-button @click="router.push('/employees')">{{ t('action.back') }}</el-button>
+      <div style="display:flex;gap:8px">
+        <el-button v-if="!isEdit" type="primary" @click="router.push(`/employees/${employeeId}/edit`)">{{ t('action.edit') }}</el-button>
+        <el-button v-if="isEdit" type="primary" @click="handleSave" :loading="saving">{{ t('common.save') }}</el-button>
+        <el-button v-if="isEdit" @click="handleCancel">{{ t('action.cancel') }}</el-button>
+        <el-button v-else @click="router.push('/employees')">{{ t('action.back') }}</el-button>
+      </div>
     </div>
 
     <!-- Loading -->
@@ -105,46 +312,144 @@ const employeeName = () => {
     <!-- Error -->
     <el-alert v-else-if="error" :title="error" type="error" show-icon style="margin-bottom: 16px" />
 
-    <!-- Employee Detail -->
-    <template v-else-if="employee">
+    <!-- Content -->
+    <div class="detail-content" v-if="employee">
       <el-tabs v-model="activeTab" type="card">
         <el-tab-pane v-for="tab in tabs" :key="tab.key" :label="tab.label()" :name="tab.key">
           <el-card shadow="never">
-            <template v-if="tabFields(tab.key).length > 0">
-              <el-descriptions :column="2" border>
+            <!-- View mode -->
+            <template v-if="!isEdit">
+              <el-descriptions v-if="tabFields(tab.key).length > 0" :column="2" border>
                 <el-descriptions-item
                   v-for="field in tabFields(tab.key)"
                   :key="field.key"
-                  :label="fieldLabel(field.key)"
+                  :label="fieldLabel(tab.key, field.key)"
                 >
                   {{ formatValue(field.value) }}
                 </el-descriptions-item>
               </el-descriptions>
+              <el-empty v-else :description="t('common.no_records')" />
             </template>
-            <el-empty v-else :description="t('common.no_records')" />
+
+            <!-- Edit mode -->
+            <template v-else>
+              <el-form v-if="editFields(tab.key).length > 0" label-position="top">
+                <el-row :gutter="16">
+                  <el-col :span="12" v-for="f in editFields(tab.key)" :key="f.fullKey">
+                    <el-form-item :label="fieldLabel(tab.key, f.key)">
+
+                      <!-- Text input -->
+                      <el-input
+                        v-if="f.inputType === 'text'"
+                        v-model="flatForm[f.fullKey]"
+                      />
+
+                      <!-- Date picker -->
+                      <el-date-picker
+                        v-else-if="f.inputType === 'date'"
+                        v-model="flatForm[f.fullKey]"
+                        type="date"
+                        value-format="YYYY-MM-DD"
+                        style="width:100%"
+                      />
+
+                      <!-- Boolean switch -->
+                      <el-switch
+                        v-else-if="f.inputType === 'switch'"
+                        v-model="flatForm[f.fullKey]"
+                      />
+
+                      <!-- Entity select -->
+                      <el-select
+                        v-else-if="f.inputType === 'entity_select'"
+                        v-model="flatForm[f.fullKey]"
+                        style="width:100%"
+                      >
+                        <el-option v-for="e in entityOptions" :key="e.entity_id" :label="`${e.entity_code} - ${e.entity_name_en}`" :value="e.entity_id" />
+                      </el-select>
+
+                      <!-- Department select -->
+                      <el-select
+                        v-else-if="f.inputType === 'dept_select'"
+                        v-model="flatForm[f.fullKey]"
+                        clearable style="width:100%"
+                      >
+                        <el-option v-for="d in deptOptions" :key="d.department_id" :label="`${d.department_code} - ${d.department_name_en}`" :value="d.department_id" />
+                      </el-select>
+
+                      <!-- Team select -->
+                      <el-select
+                        v-else-if="f.inputType === 'team_select'"
+                        v-model="flatForm[f.fullKey]"
+                        clearable style="width:100%"
+                      >
+                        <el-option v-for="tm in teamOptions" :key="tm.team_id" :label="`${tm.team_code} - ${tm.team_name_en}`" :value="tm.team_id" />
+                      </el-select>
+
+                      <!-- Gender select -->
+                      <el-select v-else-if="f.inputType === 'gender_select'" v-model="flatForm[f.fullKey]" clearable style="width:100%">
+                        <el-option v-for="g in GENDER_OPTS" :key="g" :label="g" :value="g" />
+                      </el-select>
+
+                      <!-- Status select -->
+                      <el-select v-else-if="f.inputType === 'status_select'" v-model="flatForm[f.fullKey]" style="width:100%">
+                        <el-option v-for="s in STATUS_OPTS" :key="s" :label="Lbl('status', s)" :value="s" />
+                      </el-select>
+
+                      <!-- Employment type select -->
+                      <el-select v-else-if="f.inputType === 'emp_type_select'" v-model="flatForm[f.fullKey]" style="width:100%">
+                        <el-option v-for="tp in TYPE_OPTS" :key="tp" :label="Lbl('employment_type', tp)" :value="tp" />
+                      </el-select>
+
+                      <!-- Business line select -->
+                      <el-select v-else-if="f.inputType === 'biz_line_select'" v-model="flatForm[f.fullKey]" clearable style="width:100%">
+                        <el-option v-for="b in BIZ_LINES" :key="b" :label="b" :value="b" />
+                      </el-select>
+
+                      <!-- Country select -->
+                      <el-select v-else-if="f.inputType === 'country_select'" v-model="flatForm[f.fullKey]" clearable style="width:100%">
+                        <el-option v-for="c in COUNTRY_OPTS" :key="c" :label="t('country.' + c.toLowerCase())" :value="c" />
+                      </el-select>
+
+                      <!-- Japanese level -->
+                      <el-select v-else-if="f.inputType === 'jp_select'" v-model="flatForm[f.fullKey]" clearable style="width:100%">
+                        <el-option v-for="l in JP_OPTS" :key="l" :label="Lbl('japanese_level', l)" :value="l" />
+                      </el-select>
+
+                      <!-- English level -->
+                      <el-select v-else-if="f.inputType === 'en_select'" v-model="flatForm[f.fullKey]" clearable style="width:100%">
+                        <el-option v-for="l in EN_OPTS" :key="l" :label="Lbl('english_level', l)" :value="l" />
+                      </el-select>
+
+                    </el-form-item>
+                  </el-col>
+                </el-row>
+              </el-form>
+              <el-empty v-else :description="t('common.no_records')" />
+            </template>
           </el-card>
         </el-tab-pane>
       </el-tabs>
 
       <!-- Record info -->
       <el-card shadow="never" style="margin-top: 16px" v-if="activeTab === 'profile'">
-        <template #header>Record Info</template>
+        <template #header>{{ t('employee.record_info') }}</template>
         <el-descriptions :column="2" border>
-          <el-descriptions-item label="Employee ID">
+          <el-descriptions-item :label="t('field.employee_id')">
             <code>{{ employee.employee_id }}</code>
           </el-descriptions-item>
-          <el-descriptions-item label="Created At">
+          <el-descriptions-item :label="t('common.created_at')">
             {{ employee.created_at || '-' }}
           </el-descriptions-item>
-          <el-descriptions-item label="Updated At">
+          <el-descriptions-item :label="t('common.updated_at')">
             {{ employee.updated_at || '-' }}
           </el-descriptions-item>
-          <el-descriptions-item v-if="employee.metadata?.deleted" label="Deleted">
+          <el-descriptions-item v-if="employee.metadata?.deleted" :label="t('common.deleted')">
             <el-tag type="danger" size="small">Yes</el-tag>
           </el-descriptions-item>
         </el-descriptions>
       </el-card>
-    </template>
+    </div>
   </div>
 </template>
 
@@ -163,5 +468,12 @@ const employeeName = () => {
 .subtitle {
   color: var(--el-text-color-secondary);
   margin: 4px 0 0;
+}
+.detail-content {
+  width: 100%;
+}
+.detail-content :deep(.el-descriptions) {
+  table-layout: fixed;
+  width: 100%;
 }
 </style>

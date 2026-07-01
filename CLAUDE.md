@@ -147,6 +147,21 @@ bash start_tacai_lan.sh stop
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/DIRECTORY_STRUCTURE.md](docs/DIRECTORY_STRUCTURE.md) for full details.
 
+### API JSON Format Convention
+
+All API communication between frontend and backend uses **flat dot-notation keys**:
+
+```
+✅ "profile.name.display_name": "John"
+✅ "employment.entity_id": "ENT-0001"
+❌ { profile: { name: { display_name: "John" } } }
+❌ { employment: { entity_id: "ENT-0001" } }
+```
+
+- **Frontend**: Always send flat keys. Forms with nested data use `flatten()` to convert before sending.
+- **Backend**: Convert flat keys to nested storage format via `_unflatten_body()` in the handler (centralized, single responsibility).
+- **Rationale**: Flat JSON is simpler to construct, validate, and debug. Nesting exists only at the database level (JSONB columns); the conversion boundary is the backend handler.
+
 ## Local port convention
 
 | Service | DEV | STG | PRD |

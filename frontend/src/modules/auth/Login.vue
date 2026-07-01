@@ -7,8 +7,6 @@ import { useI18n } from 'vue-i18n'
 import { publicApi } from '@/api/client'
 import type { SupportedLang } from '@/types'
 
-const BYPASS_AUTH = import.meta.env.VITE_DEV_BYPASS_AUTH === 'true'
-
 interface EntityOption {
   entity_id: string
   entity_code: string
@@ -25,10 +23,10 @@ const auth = useAuthStore()
 const i18nStore = useI18nStore()
 const { t, locale } = useI18n()
 
-const languages: { code: SupportedLang; label: string }[] = [
-  { code: 'ja', label: '日本語' },
-  { code: 'zh', label: '中文' },
-  { code: 'en', label: 'English' },
+const languages: { code: SupportedLang }[] = [
+  { code: 'ja' },
+  { code: 'zh' },
+  { code: 'en' },
 ]
 
 const STORAGE_KEY = 'tacai_user_admin_last_entity_by_email'
@@ -127,10 +125,10 @@ async function loadEntities() {
     entities.value = list
     entityCodes.value = list.map(e => e.entity_code).filter(Boolean)
     if (list.length === 0) {
-      loadError.value = 'No active entities found.'
+      loadError.value = t('login.error_no_entities')
     }
   } catch {
-    loadError.value = 'Failed to load entities. Please try again.'
+    loadError.value = t('login.error_load_failed')
   } finally {
     loadingEntities.value = false
   }
@@ -178,13 +176,6 @@ function initEntityField() {
 }
 
 onMounted(async () => {
-  // ── Dev bypass: skip login form, auto-authenticate and go to dashboard ──
-  if (BYPASS_AUTH) {
-    await auth.login(email.value, '', entityCode.value)
-    const redirect = (route.query.redirect as string) || '/dashboard'
-    router.push(redirect)
-    return
-  }
   await loadEntities()
   initEntityField()
 })
@@ -194,7 +185,6 @@ onMounted(async () => {
   <main class="login-page">
     <section class="login-card">
       <div class="brand-mark">TACAI</div>
-      <div v-if="BYPASS_AUTH" class="dev-bypass-badge">🔧 DEV MODE — Auth Bypassed</div>
       <h1>{{ t('login.title') }}</h1>
       <p class="muted login-subtitle">{{ t('login.subtitle') }}</p>
 
@@ -207,7 +197,7 @@ onMounted(async () => {
           :class="{ active: i18nStore.locale === lang.code }"
           href="#"
           @click.prevent="i18nStore.setLocale(lang.code)"
-        >{{ lang.label }}</a>
+        >{{ t('language.' + lang.code) }}</a>
       </div>
 
       <!-- Loading state -->
@@ -231,7 +221,7 @@ onMounted(async () => {
               :value="canonicalEntityCode(entityCode) || ''"
               @change="setEntity(($event.target as HTMLSelectElement).value)"
             >
-              <option value="">--</option>
+              <option value="">{{ t('login.select_entity') }}</option>
               <option
                 v-for="entity in entities"
                 :key="entity.entity_id"

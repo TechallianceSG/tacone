@@ -2,7 +2,11 @@
   "name": "tacai-project",
   "version": "1.0.0",
   "description": "TACAI Project — HR/Payroll/Recruitment multi-service platform",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "scripts": {
+    "dev": "cd frontend && npm run dev",
     "start": "bash start_tacai_lan.sh start dev",
     "stop": "bash start_tacai_lan.sh stop dev",
     "restart": "bash start_tacai_lan.sh restart dev",

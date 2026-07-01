@@ -86,6 +86,8 @@ export const employeeApi = {
     headers: { 'Content-Type': 'multipart/form-data' },
     timeout: 120000,
   }),
+  delete: (employeeId: string) => client.delete(`/api/employees/${employeeId}`),
+  update: (employeeId: string, data: Record<string, any>) => client.post(`/api/employees/${employeeId}`, data),
 }
 
 // ── Portal API ──

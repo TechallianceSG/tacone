@@ -66,6 +66,12 @@ const routes: RouteRecordRaw[] = [
         meta: { requiresAuth: true, permission: 'employee_management.edit', titleKey: 'employees.import' },
       },
       {
+        path: 'employees/:id/edit',
+        name: 'EmployeeEdit',
+        component: () => import('@/modules/employees/EmployeeDetail.vue'),
+        meta: { requiresAuth: true, permission: 'employee_management.edit', titleKey: 'employees.edit' },
+      },
+      {
         path: 'employees/:id',
         name: 'EmployeeDetail',
         component: () => import('@/modules/employees/EmployeeDetail.vue'),
