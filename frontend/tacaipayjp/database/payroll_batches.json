@@ -1,0 +1,82 @@
+[
+  {
+    "batch_id": "PAYSG-202605-ENT-0002",
+    "country_code": "SG",
+    "entity_id": "ENT-0002",
+    "payroll_month": "2026-05",
+    "status": "calculated",
+    "version": 1,
+    "employee_count": 15,
+    "gross_total": 2708045.32,
+    "deduction_total": 5000.0,
+    "net_total": 2703045.32,
+    "employer_cost_total": 2708045.32,
+    "currency_totals": {
+      "JPY": {
+        "gross": 2150205.0,
+        "deduction": 0.0,
+        "net": 2150205.0,
+        "employer_cost": 2150205.0,
+        "count": 5
+      },
+      "INR": {
+        "gross": 519826.0,
+        "deduction": 5000.0,
+        "net": 514826.0,
+        "employer_cost": 519826.0,
+        "count": 4
+      },
+      "USD": {
+        "gross": 38014.32,
+        "deduction": 0.0,
+        "net": 38014.32,
+        "employer_cost": 38014.32,
+        "count": 6
+      }
+    },
+    "created_at": "2026-06-26T10:07:15+00:00",
+    "updated_at": "2026-06-28T05:49:14.138570+00:00",
+    "created_by": "HR Payroll Admin",
+    "notes": "Bridged from monthly sheet MSS-SG-202605-ENT-0002; Status sync fix: rolled back from approved to hr_reviewed to match monthly sheet MSS-SG-202605-ENT-0002 (2026-06-28); Status restored to calculated per user request (2026-06-28); Status restored from voided to calculated per user request (2026-06-28)"
+  },
+  {
+    "batch_id": "PAYSG-202606-ENT-0002",
+    "country_code": "SG",
+    "entity_id": "ENT-0002",
+    "payroll_month": "2026-06",
+    "status": "payslips_generated",
+    "version": 1,
+    "employee_count": 15,
+    "gross_total": 3121523.64,
+    "deduction_total": 0.0,
+    "net_total": 3121523.64,
+    "employer_cost_total": 3121523.64,
+    "currency_totals": {
+      "JPY": {
+        "gross": 2598720.0,
+        "deduction": 0.0,
+        "net": 2598720.0,
+        "employer_cost": 2598720.0,
+        "count": 5
+      },
+      "INR": {
+        "gross": 480363.64,
+        "deduction": 0.0,
+        "net": 480363.64,
+        "employer_cost": 480363.64,
+        "count": 4
+      },
+      "USD": {
+        "gross": 42440.0,
+        "deduction": 0.0,
+        "net": 42440.0,
+        "employer_cost": 42440.0,
+        "count": 6
+      }
+    },
+    "created_at": "2026-06-28T10:31:32+00:00",
+    "updated_at": "2026-06-28T11:37:01+00:00",
+    "created_by": "HR Payroll Admin",
+    "notes": "Bridged from monthly sheet MSS-SG-202606-ENT-0002"
+  }
+]

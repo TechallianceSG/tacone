@@ -20,9 +20,7 @@ const MOCK_USER: UserInfo = {
     'masterdata.maintain', 'masterdata.admin', 'employee_management.access',
     'employee_management.view', 'employee_management.edit',
     'timesheet.access', 'payroll.access', 'payroll.view',
-    'tacaipay_sg.access', 'tacaipay_sg.view', 'tacaipay_sg.manage',
     'tacaipay_jp.access', 'tacaipay_jp.view', 'tacaipay_jp.manage',
-    'tacaipay_cn.access', 'tacaipay_cn.view', 'tacaipay_cn.manage',
     'invoice.access', 'invoice.view', 'invoice.maintain', 'invoice.approve',
   ],
   entity: {
@@ -71,7 +69,7 @@ export const useAuthStore = defineStore('auth', () => {
     // ── Dev bypass: skip API, auto-authenticate ──
     if (BYPASS_AUTH) {
       user.value = { ...MOCK_USER }
-      session.value = { session_id: 'dev-bypass', login_time: new Date().toISOString() }
+      session.value = { session_id: 'dev-bypass', login_time: new Date().toISOString() } as SessionInfo
       initialized.value = true
       console.log('[DEV] Auth bypass enabled — logged in as', MOCK_USER.email)
       return true
@@ -97,7 +95,7 @@ export const useAuthStore = defineStore('auth', () => {
     // ── Dev bypass: always succeed ──
     if (BYPASS_AUTH) {
       user.value = { ...MOCK_USER, email: email || MOCK_USER.email, entity_code: entityCode || MOCK_USER.entity_code }
-      session.value = { session_id: 'dev-bypass', login_time: new Date().toISOString() }
+      session.value = { session_id: 'dev-bypass', login_time: new Date().toISOString() } as SessionInfo
       initialized.value = true
       console.log('[DEV] Auth bypass — login skipped for', email || MOCK_USER.email)
       return true

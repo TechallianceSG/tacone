@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TACAI Pay JP — 日本薪资管理</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Hiragino Sans', 'Noto Sans CJK SC', sans-serif; background: #f5f6fa; color: #333; line-height: 1.6; }
+    .container { max-width: 800px; margin: 60px auto; padding: 0 20px; }
+    .card { background: #fff; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); padding: 40px; margin-bottom: 20px; }
+    h1 { font-size: 24px; margin-bottom: 8px; color: #1a1a2e; }
+    .status { display: inline-flex; align-items: center; gap: 6px; background: #e8f5e9; color: #2e7d32; padding: 4px 12px; border-radius: 20px; font-size: 14px; margin-bottom: 20px; }
+    .status::before { content: ''; width: 8px; height: 8px; background: #2e7d32; border-radius: 50%; }
+    h2 { font-size: 18px; margin: 20px 0 12px; color: #444; border-bottom: 2px solid #eee; padding-bottom: 8px; }
+    .routes { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .route-item { display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: #f8f9fc; border-radius: 8px; font-size: 14px; }
+    .method { font-weight: 700; font-size: 11px; padding: 2px 6px; border-radius: 4px; text-transform: uppercase; }
+    .get { background: #e3f2fd; color: #1565c0; }
+    .post { background: #e8f5e9; color: #2e7d32; }
+    .put { background: #fff3e0; color: #e65100; }
+    .endpoint { font-family: 'SF Mono', 'Menlo', monospace; font-size: 13px; }
+    .footer { text-align: center; color: #999; font-size: 12px; margin-top: 20px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="card">
+      <h1>🏯 TACAI Pay JP</h1>
+      <p style="color:#666;margin-bottom:4px;">日本薪资管理系统 — Japanese Payroll Management</p>
+      <div class="status">运行中</div>
+
+      <h2>📋 API 路由</h2>
+      <div class="routes">
+        <div class="route-item"><span class="method get">GET</span><span class="endpoint">/api/health</span></div>
+        <div class="route-item"><span class="method get">GET</span><span class="endpoint">/api/dashboard</span></div>
+        <div class="route-item"><span class="method get">GET</span><span class="endpoint">/api/salary-master</span></div>
+        <div class="route-item"><span class="method post">POST</span><span class="endpoint">/api/salary-master</span></div>
+        <div class="route-item"><span class="method get">GET</span><span class="endpoint">/api/salary-master/page</span></div>
+        <div class="route-item"><span class="method get">GET</span><span class="endpoint">/api/monthly-sheets</span></div>
+        <div class="route-item"><span class="method get">GET</span><span class="endpoint">/api/release</span></div>
+        <div class="route-item"><span class="method get">GET</span><span class="endpoint">/api/social-insurance</span></div>
+        <div class="route-item"><span class="method get">GET</span><span class="endpoint">/api/remuneration-grades</span></div>
+        <div class="route-item"><span class="method get">GET</span><span class="endpoint">/api/tax-brackets</span></div>
+        <div class="route-item"><span class="method get">GET</span><span class="endpoint">/api/accident-insurance</span></div>
+        <div class="route-item"><span class="method get">GET</span><span class="endpoint">/api/auth/*</span></div>
+      </div>
+    </div>
+    <div class="footer">TACAI Pay JP v0.1.0 · PostgreSQL · FastAPI + Vue 3</div>
+  </div>
+</body>
+</html>

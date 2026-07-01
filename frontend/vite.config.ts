@@ -7,13 +7,24 @@ export default defineConfig(({ mode }) => {
   // Load env vars: .env.development / .env.staging / .env.production
   const env = loadEnv(mode, process.cwd(), '')
   const portalPort = env.VITE_PORTAL_PORT || '3000'
+  const isProduction = mode === 'production'
 
   return {
     plugins: [vue()],
+    // Base public path — `/` because Portal hosts the SPA at root
+    base: '/',
     resolve: {
       alias: {
         '@': fileURLToPath(new URL('./src', import.meta.url)),
       },
+    },
+    build: {
+      // Output to dist/ (default), Portal serves from frontend/dist/
+      outDir: 'dist',
+      // Generate sourcemaps only in dev/staging for debugging
+      sourcemap: !isProduction,
+      // Chunk size warning limit (500KB)
+      chunkSizeWarningLimit: 500,
     },
     server: {
       port: 5173,

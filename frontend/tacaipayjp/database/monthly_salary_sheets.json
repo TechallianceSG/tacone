@@ -1,0 +1,384 @@
+[
+  {
+    "sheet_id": "MSS-SG-202605-ENT-0002",
+    "country_code": "SG",
+    "entity_id": "ENT-0002",
+    "payroll_month": "2026-05",
+    "status": "draft",
+    "version": 2,
+    "employee_count": 15,
+    "standard_work_days": 20,
+    "standard_work_hours": 160,
+    "attendance_source": "manual",
+    "attendance_locked": false,
+    "basic_info_confirmed_at": "",
+    "basic_info_confirmed_by": "",
+    "calculated_at": "",
+    "calculated_by": "",
+    "gross_total": 2708045.32,
+    "deduction_total": 5000.0,
+    "net_total": 2703045.32,
+    "employer_cost_total": 2708045.32,
+    "currency_totals": {
+      "JPY": {
+        "gross": 2150205.0,
+        "deduction": 0.0,
+        "net": 2150205.0,
+        "employer_cost": 2150205.0,
+        "count": 5
+      },
+      "INR": {
+        "gross": 519826.0,
+        "deduction": 5000.0,
+        "net": 514826.0,
+        "employer_cost": 519826.0,
+        "count": 4
+      },
+      "USD": {
+        "gross": 38014.32,
+        "deduction": 0.0,
+        "net": 38014.32,
+        "employer_cost": 38014.32,
+        "count": 6
+      }
+    },
+    "created_at": "2026-06-26T10:02:39+00:00",
+    "created_by": "HR Payroll Admin",
+    "updated_at": "2026-06-28T07:26:32+00:00",
+    "notes": "Status restored to calculated per user request (2026-06-28)",
+    "last_calculation_summary": {
+      "total": 15,
+      "warnings_count": 15,
+      "warning_details": [
+        {
+          "record_id": "MSS-SG-202605-ENT-0002-EMP-0043",
+          "employee_name": "HASSAN KABEER ABID",
+          "employee_number": "TAKK260502",
+          "salary_type": "monthly_hour",
+          "warnings": [
+            "CPF not applicable; CPF amounts set to zero."
+          ]
+        },
+        {
+          "record_id": "MSS-SG-202605-ENT-0002-EMP-0028",
+          "employee_name": "Pooja Ahuja",
+          "employee_number": "TASG231002",
+          "salary_type": "monthly",
+          "warnings": [
+            "CPF not applicable; CPF amounts set to zero."
+          ]
+        },
+        {
+          "record_id": "MSS-SG-202605-ENT-0002-EMP-0032",
+          "employee_name": "UNOH MA",
+          "employee_number": "TASG241003",
+          "salary_type": "daily",
+          "warnings": [
+            "CPF not applicable; CPF amounts set to zero."
+          ]
+        },
+        {
+          "record_id": "MSS-SG-202605-ENT-0002-EMP-0029",
+          "employee_name": "Pranshu Shukla",
+          "employee_number": "TASG241118",
+          "salary_type": "monthly",
+          "warnings": [
+            "CPF not applicable; CPF amounts set to zero."
+          ]
+        },
+        {
+          "record_id": "MSS-SG-202605-ENT-0002-EMP-0033",
+          "employee_name": "YING TSAO",
+          "employee_number": "TASG250217",
+          "salary_type": "daily",
+          "warnings": [
+            "CPF not applicable; CPF amounts set to zero."
+          ]
+        },
+        {
+          "record_id": "MSS-SG-202605-ENT-0002-EMP-0039",
+          "employee_name": "Siva Rama Krishna Ganta",
+          "employee_number": "TASG250901",
+          "salary_type": "hourly",
+          "warnings": [
+            "CPF not applicable; CPF amounts set to zero."
+          ]
+        },
+        {
+          "record_id": "MSS-SG-202605-ENT-0002-EMP-0038",
+          "employee_name": "Venkata Subba Raju",
+          "employee_number": "TASG251014",
+          "salary_type": "monthly",
+          "warnings": [
+            "CPF not applicable; CPF amounts set to zero."
+          ]
+        },
+        {
+          "record_id": "MSS-SG-202605-ENT-0002-EMP-0030",
+          "employee_name": "Premali Shrishail Shintre",
+          "employee_number": "TASG251118",
+          "salary_type": "monthly",
+          "warnings": [
+            "CPF not applicable; CPF amounts set to zero."
+          ]
+        },
+        {
+          "record_id": "MSS-SG-202605-ENT-0002-EMP-0034",
+          "employee_name": "CHENG FENG LEE",
+          "employee_number": "TASG251201",
+          "salary_type": "daily",
+          "warnings": [
+            "CPF not applicable; CPF amounts set to zero."
+          ]
+        },
+        {
+          "record_id": "MSS-SG-202605-ENT-0002-EMP-0035",
+          "employee_name": "KuanHua Tseng",
+          "employee_number": "TASG251215",
+          "salary_type": "daily",
+          "warnings": [
+            "CPF not applicable; CPF amounts set to zero."
+          ]
+        },
+        {
+          "record_id": "MSS-SG-202605-ENT-0002-EMP-0036",
+          "employee_name": "Tzuling Wang",
+          "employee_number": "TASG260108",
+          "salary_type": "daily",
+          "warnings": [
+            "CPF not applicable; CPF amounts set to zero."
+          ]
+        },
+        {
+          "record_id": "MSS-SG-202605-ENT-0002-EMP-0037",
+          "employee_name": "Surya Ansana",
+          "employee_number": "TASG260115",
+          "salary_type": "daily",
+          "warnings": [
+            "CPF not applicable; CPF amounts set to zero."
+          ]
+        },
+        {
+          "record_id": "MSS-SG-202605-ENT-0002-EMP-0040",
+          "employee_name": "Sushovan Das",
+          "employee_number": "TASG260301",
+          "salary_type": "hourly",
+          "warnings": [
+            "CPF not applicable; CPF amounts set to zero."
+          ]
+        },
+        {
+          "record_id": "MSS-SG-202605-ENT-0002-EMP-0047",
+          "employee_name": "LUAN ZENGZHI",
+          "employee_number": "TAKK260201",
+          "salary_type": "monthly_hour",
+          "warnings": [
+            "CPF not applicable; CPF amounts set to zero."
+          ]
+        },
+        {
+          "record_id": "MSS-SG-202605-ENT-0002-EMP-0042",
+          "employee_name": "Ankit Attri",
+          "employee_number": "TAKK260501",
+          "salary_type": "monthly_hour",
+          "warnings": [
+            "CPF not applicable; CPF amounts set to zero."
+          ]
+        }
+      ],
+      "timestamp": "2026-06-28T07:15:16+00:00"
+    }
+  },
+  {
+    "sheet_id": "MSS-SG-202606-ENT-0002",
+    "country_code": "SG",
+    "entity_id": "ENT-0002",
+    "payroll_month": "2026-06",
+    "status": "finalized",
+    "version": 2,
+    "employee_count": 15,
+    "standard_work_days": 22,
+    "standard_work_hours": 176,
+    "attendance_source": "manual",
+    "attendance_locked": true,
+    "basic_info_confirmed_at": "2026-06-28T10:25:22+00:00",
+    "basic_info_confirmed_by": "System Admin",
+    "calculated_at": "2026-06-28T10:26:57+00:00",
+    "calculated_by": "HR Payroll Admin",
+    "gross_total": 3121523.64,
+    "deduction_total": 0.0,
+    "net_total": 3121523.64,
+    "employer_cost_total": 3121523.64,
+    "currency_totals": {
+      "JPY": {
+        "gross": 2598720.0,
+        "deduction": 0.0,
+        "net": 2598720.0,
+        "employer_cost": 2598720.0,
+        "count": 5
+      },
+      "INR": {
+        "gross": 480363.64,
+        "deduction": 0.0,
+        "net": 480363.64,
+        "employer_cost": 480363.64,
+        "count": 4
+      },
+      "USD": {
+        "gross": 42440.0,
+        "deduction": 0.0,
+        "net": 42440.0,
+        "employer_cost": 42440.0,
+        "count": 6
+      }
+    },
+    "created_at": "2026-06-28T10:14:52+00:00",
+    "created_by": "HR Payroll Admin",
+    "updated_at": "2026-06-28T10:31:32+00:00",
+    "notes": "",
+    "last_calculation_summary": {
+      "total": 15,
+      "warnings_count": 15,
+      "warning_details": [
+        {
+          "record_id": "MSS-SG-202606-ENT-0002-EMP-0043",
+          "employee_name": "HASSAN KABEER ABID",
+          "employee_number": "TAKK260502",
+          "salary_type": "monthly_hour",
+          "warnings": [
+            "CPF not applicable; CPF amounts set to zero."
+          ]
+        },
+        {
+          "record_id": "MSS-SG-202606-ENT-0002-EMP-0028",
+          "employee_name": "Pooja Ahuja",
+          "employee_number": "TASG231002",
+          "salary_type": "monthly",
+          "warnings": [
+            "CPF not applicable; CPF amounts set to zero."
+          ]
+        },
+        {
+          "record_id": "MSS-SG-202606-ENT-0002-EMP-0032",
+          "employee_name": "UNOH MA",
+          "employee_number": "TASG241003",
+          "salary_type": "daily",
+          "warnings": [
+            "CPF not applicable; CPF amounts set to zero."
+          ]
+        },
+        {
+          "record_id": "MSS-SG-202606-ENT-0002-EMP-0029",
+          "employee_name": "Pranshu Shukla",
+          "employee_number": "TASG241118",
+          "salary_type": "monthly",
+          "warnings": [
+            "CPF not applicable; CPF amounts set to zero."
+          ]
+        },
+        {
+          "record_id": "MSS-SG-202606-ENT-0002-EMP-0033",
+          "employee_name": "YING TSAO",
+          "employee_number": "TASG250217",
+          "salary_type": "daily",
+          "warnings": [
+            "CPF not applicable; CPF amounts set to zero."
+          ]
+        },
+        {
+          "record_id": "MSS-SG-202606-ENT-0002-EMP-0039",
+          "employee_name": "Siva Rama Krishna Ganta",
+          "employee_number": "TASG250901",
+          "salary_type": "hourly",
+          "warnings": [
+            "CPF not applicable; CPF amounts set to zero."
+          ]
+        },
+        {
+          "record_id": "MSS-SG-202606-ENT-0002-EMP-0038",
+          "employee_name": "Venkata Subba Raju",
+          "employee_number": "TASG251014",
+          "salary_type": "monthly",
+          "warnings": [
+            "CPF not applicable; CPF amounts set to zero."
+          ]
+        },
+        {
+          "record_id": "MSS-SG-202606-ENT-0002-EMP-0030",
+          "employee_name": "Premali Shrishail Shintre",
+          "employee_number": "TASG251118",
+          "salary_type": "monthly",
+          "warnings": [
+            "CPF not applicable; CPF amounts set to zero."
+          ]
+        },
+        {
+          "record_id": "MSS-SG-202606-ENT-0002-EMP-0034",
+          "employee_name": "CHENG FENG LEE",
+          "employee_number": "TASG251201",
+          "salary_type": "daily",
+          "warnings": [
+            "CPF not applicable; CPF amounts set to zero."
+          ]
+        },
+        {
+          "record_id": "MSS-SG-202606-ENT-0002-EMP-0035",
+          "employee_name": "KuanHua Tseng",
+          "employee_number": "TASG251215",
+          "salary_type": "daily",
+          "warnings": [
+            "CPF not applicable; CPF amounts set to zero."
+          ]
+        },
+        {
+          "record_id": "MSS-SG-202606-ENT-0002-EMP-0036",
+          "employee_name": "Tzuling Wang",
+          "employee_number": "TASG260108",
+          "salary_type": "daily",
+          "warnings": [
+            "CPF not applicable; CPF amounts set to zero."
+          ]
+        },
+        {
+          "record_id": "MSS-SG-202606-ENT-0002-EMP-0037",
+          "employee_name": "Surya Ansana",
+          "employee_number": "TASG260115",
+          "salary_type": "daily",
+          "warnings": [
+            "CPF not applicable; CPF amounts set to zero."
+          ]
+        },
+        {
+          "record_id": "MSS-SG-202606-ENT-0002-EMP-0040",
+          "employee_name": "Sushovan Das",
+          "employee_number": "TASG260301",
+          "salary_type": "hourly",
+          "warnings": [
+            "CPF not applicable; CPF amounts set to zero."
+          ]
+        },
+        {
+          "record_id": "MSS-SG-202606-ENT-0002-EMP-0047",
+          "employee_name": "LUAN ZENGZHI",
+          "employee_number": "TAKK260201",
+          "salary_type": "monthly_hour",
+          "warnings": [
+            "CPF not applicable; CPF amounts set to zero."
+          ]
+        },
+        {
+          "record_id": "MSS-SG-202606-ENT-0002-EMP-0042",
+          "employee_name": "Ankit Attri",
+          "employee_number": "TAKK260501",
+          "salary_type": "monthly_hour",
+          "warnings": [
+            "CPF not applicable; CPF amounts set to zero."
+          ]
+        }
+      ],
+      "timestamp": "2026-06-28T10:26:57+00:00"
+    },
+    "manager_approved_at": "2026-06-28T10:31:32+00:00",
+    "manager_approved_by": "HR Payroll Admin"
+  }
+]

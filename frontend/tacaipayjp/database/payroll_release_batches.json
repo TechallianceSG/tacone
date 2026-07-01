@@ -1,0 +1,45 @@
+[
+  {
+    "release_id": "REL-SG-202606-ENT-0002",
+    "source_sheet_id": "MSS-SG-202606-ENT-0002",
+    "country_code": "SG",
+    "entity_id": "ENT-0002",
+    "payroll_month": "2026-06",
+    "status": "payslips_generated",
+    "employee_count": 15,
+    "payslip_count": 15,
+    "email_sent_count": 0,
+    "email_failed_count": 0,
+    "gross_total": 3121523.64,
+    "deduction_total": 0.0,
+    "net_total": 3121523.64,
+    "employer_cost_total": 3121523.64,
+    "currency_totals": {
+      "JPY": {
+        "gross": 2598720.0,
+        "deduction": 0.0,
+        "net": 2598720.0,
+        "employer_cost": 2598720.0,
+        "count": 5
+      },
+      "INR": {
+        "gross": 480363.64,
+        "deduction": 0.0,
+        "net": 480363.64,
+        "employer_cost": 480363.64,
+        "count": 4
+      },
+      "USD": {
+        "gross": 42440.0,
+        "deduction": 0.0,
+        "net": 42440.0,
+        "employer_cost": 42440.0,
+        "count": 6
+      }
+    },
+    "created_at": "2026-06-28T10:31:32+00:00",
+    "created_by": "HR Payroll Admin",
+    "updated_at": "2026-06-28T10:32:09+00:00",
+    "notes": ""
+  }
+]

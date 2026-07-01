@@ -1,0 +1,302 @@
+[
+  {
+    "delivery_id": "DEL-000001",
+    "payslip_id": "PS-PAYSG-202605-ENT-0002-EMP-0043",
+    "batch_id": "PAYSG-202605-ENT-0002",
+    "recipient": "abidkabeer2012@gmail.com",
+    "status": "voided",
+    "message": "SMTP not configured; kept in queue.",
+    "created_at": "2026-06-26T13:42:20+00:00",
+    "sent_at": ""
+  },
+  {
+    "delivery_id": "DEL-000002",
+    "payslip_id": "PS-PAYSG-202605-ENT-0002-EMP-0028",
+    "batch_id": "PAYSG-202605-ENT-0002",
+    "recipient": "pooja.ahuja@tacjob.com",
+    "status": "voided",
+    "message": "SMTP not configured; kept in queue.",
+    "created_at": "2026-06-26T13:42:20+00:00",
+    "sent_at": ""
+  },
+  {
+    "delivery_id": "DEL-000003",
+    "payslip_id": "PS-PAYSG-202605-ENT-0002-EMP-0032",
+    "batch_id": "PAYSG-202605-ENT-0002",
+    "recipient": "Ma.Unoh@ltm.com",
+    "status": "voided",
+    "message": "SMTP not configured; kept in queue.",
+    "created_at": "2026-06-26T13:42:20+00:00",
+    "sent_at": ""
+  },
+  {
+    "delivery_id": "DEL-000004",
+    "payslip_id": "PS-PAYSG-202605-ENT-0002-EMP-0029",
+    "batch_id": "PAYSG-202605-ENT-0002",
+    "recipient": "pranshu.s@tacjob.com",
+    "status": "voided",
+    "message": "SMTP not configured; kept in queue.",
+    "created_at": "2026-06-26T13:42:20+00:00",
+    "sent_at": ""
+  },
+  {
+    "delivery_id": "DEL-000005",
+    "payslip_id": "PS-PAYSG-202605-ENT-0002-EMP-0033",
+    "batch_id": "PAYSG-202605-ENT-0002",
+    "recipient": "exist02593@gmail.com",
+    "status": "voided",
+    "message": "SMTP not configured; kept in queue.",
+    "created_at": "2026-06-26T13:42:20+00:00",
+    "sent_at": ""
+  },
+  {
+    "delivery_id": "DEL-000006",
+    "payslip_id": "PS-PAYSG-202605-ENT-0002-EMP-0039",
+    "batch_id": "PAYSG-202605-ENT-0002",
+    "recipient": "siva.r@tacjob.com",
+    "status": "voided",
+    "message": "SMTP not configured; kept in queue.",
+    "created_at": "2026-06-26T13:42:20+00:00",
+    "sent_at": ""
+  },
+  {
+    "delivery_id": "DEL-000007",
+    "payslip_id": "PS-PAYSG-202605-ENT-0002-EMP-0038",
+    "batch_id": "PAYSG-202605-ENT-0002",
+    "recipient": "raju.v@tacjob.com",
+    "status": "voided",
+    "message": "SMTP not configured; kept in queue.",
+    "created_at": "2026-06-26T13:42:20+00:00",
+    "sent_at": ""
+  },
+  {
+    "delivery_id": "DEL-000008",
+    "payslip_id": "PS-PAYSG-202605-ENT-0002-EMP-0030",
+    "batch_id": "PAYSG-202605-ENT-0002",
+    "recipient": "premali.shintre@tacjob.com",
+    "status": "voided",
+    "message": "SMTP not configured; kept in queue.",
+    "created_at": "2026-06-26T13:42:20+00:00",
+    "sent_at": ""
+  },
+  {
+    "delivery_id": "DEL-000009",
+    "payslip_id": "PS-PAYSG-202605-ENT-0002-EMP-0034",
+    "batch_id": "PAYSG-202605-ENT-0002",
+    "recipient": "bill25493@gmail.com",
+    "status": "voided",
+    "message": "SMTP not configured; kept in queue.",
+    "created_at": "2026-06-26T13:42:20+00:00",
+    "sent_at": ""
+  },
+  {
+    "delivery_id": "DEL-000010",
+    "payslip_id": "PS-PAYSG-202605-ENT-0002-EMP-0035",
+    "batch_id": "PAYSG-202605-ENT-0002",
+    "recipient": "kino618@gmail.com",
+    "status": "voided",
+    "message": "SMTP not configured; kept in queue.",
+    "created_at": "2026-06-26T13:42:20+00:00",
+    "sent_at": ""
+  },
+  {
+    "delivery_id": "DEL-000011",
+    "payslip_id": "PS-PAYSG-202605-ENT-0002-EMP-0036",
+    "batch_id": "PAYSG-202605-ENT-0002",
+    "recipient": "zzillling@gmail.com",
+    "status": "voided",
+    "message": "SMTP not configured; kept in queue.",
+    "created_at": "2026-06-26T13:42:20+00:00",
+    "sent_at": ""
+  },
+  {
+    "delivery_id": "DEL-000012",
+    "payslip_id": "PS-PAYSG-202605-ENT-0002-EMP-0037",
+    "batch_id": "PAYSG-202605-ENT-0002",
+    "recipient": "surya.ansana@live.com",
+    "status": "voided",
+    "message": "SMTP not configured; kept in queue.",
+    "created_at": "2026-06-26T13:42:20+00:00",
+    "sent_at": ""
+  },
+  {
+    "delivery_id": "DEL-000013",
+    "payslip_id": "PS-PAYSG-202605-ENT-0002-EMP-0040",
+    "batch_id": "PAYSG-202605-ENT-0002",
+    "recipient": "sdas@tacjob.com",
+    "status": "voided",
+    "message": "SMTP not configured; kept in queue.",
+    "created_at": "2026-06-26T13:42:20+00:00",
+    "sent_at": ""
+  },
+  {
+    "delivery_id": "DEL-000014",
+    "payslip_id": "PS-PAYSG-202605-ENT-0002-EMP-0047",
+    "batch_id": "PAYSG-202605-ENT-0002",
+    "recipient": "nick.luan888@gmail.com",
+    "status": "voided",
+    "message": "SMTP not configured; kept in queue.",
+    "created_at": "2026-06-26T13:42:20+00:00",
+    "sent_at": ""
+  },
+  {
+    "delivery_id": "DEL-000015",
+    "payslip_id": "PS-PAYSG-202605-ENT-0002-EMP-0042",
+    "batch_id": "PAYSG-202605-ENT-0002",
+    "recipient": "ankit.attri06@gmail.com",
+    "status": "voided",
+    "message": "SMTP not configured; kept in queue.",
+    "created_at": "2026-06-26T13:42:20+00:00",
+    "sent_at": ""
+  },
+  {
+    "delivery_id": "DEL-000016",
+    "payslip_id": "PS-PAYSG-202605-ENT-0002-EMP-0043",
+    "batch_id": "PAYSG-202605-ENT-0002",
+    "recipient": "abidkabeer2012@gmail.com",
+    "status": "voided",
+    "message": "SMTP not configured; kept in queue.",
+    "created_at": "2026-06-26T14:44:20+00:00",
+    "sent_at": ""
+  },
+  {
+    "delivery_id": "DEL-000017",
+    "payslip_id": "PS-PAYSG-202605-ENT-0002-EMP-0028",
+    "batch_id": "PAYSG-202605-ENT-0002",
+    "recipient": "pooja.ahuja@tacjob.com",
+    "status": "voided",
+    "message": "SMTP not configured; kept in queue.",
+    "created_at": "2026-06-26T14:44:20+00:00",
+    "sent_at": ""
+  },
+  {
+    "delivery_id": "DEL-000018",
+    "payslip_id": "PS-PAYSG-202605-ENT-0002-EMP-0032",
+    "batch_id": "PAYSG-202605-ENT-0002",
+    "recipient": "Ma.Unoh@ltm.com",
+    "status": "voided",
+    "message": "SMTP not configured; kept in queue.",
+    "created_at": "2026-06-26T14:44:20+00:00",
+    "sent_at": ""
+  },
+  {
+    "delivery_id": "DEL-000019",
+    "payslip_id": "PS-PAYSG-202605-ENT-0002-EMP-0029",
+    "batch_id": "PAYSG-202605-ENT-0002",
+    "recipient": "pranshu.s@tacjob.com",
+    "status": "voided",
+    "message": "SMTP not configured; kept in queue.",
+    "created_at": "2026-06-26T14:44:20+00:00",
+    "sent_at": ""
+  },
+  {
+    "delivery_id": "DEL-000020",
+    "payslip_id": "PS-PAYSG-202605-ENT-0002-EMP-0033",
+    "batch_id": "PAYSG-202605-ENT-0002",
+    "recipient": "exist02593@gmail.com",
+    "status": "voided",
+    "message": "SMTP not configured; kept in queue.",
+    "created_at": "2026-06-26T14:44:20+00:00",
+    "sent_at": ""
+  },
+  {
+    "delivery_id": "DEL-000021",
+    "payslip_id": "PS-PAYSG-202605-ENT-0002-EMP-0039",
+    "batch_id": "PAYSG-202605-ENT-0002",
+    "recipient": "siva.r@tacjob.com",
+    "status": "voided",
+    "message": "SMTP not configured; kept in queue.",
+    "created_at": "2026-06-26T14:44:20+00:00",
+    "sent_at": ""
+  },
+  {
+    "delivery_id": "DEL-000022",
+    "payslip_id": "PS-PAYSG-202605-ENT-0002-EMP-0038",
+    "batch_id": "PAYSG-202605-ENT-0002",
+    "recipient": "raju.v@tacjob.com",
+    "status": "voided",
+    "message": "SMTP not configured; kept in queue.",
+    "created_at": "2026-06-26T14:44:20+00:00",
+    "sent_at": ""
+  },
+  {
+    "delivery_id": "DEL-000023",
+    "payslip_id": "PS-PAYSG-202605-ENT-0002-EMP-0030",
+    "batch_id": "PAYSG-202605-ENT-0002",
+    "recipient": "premali.shintre@tacjob.com",
+    "status": "voided",
+    "message": "SMTP not configured; kept in queue.",
+    "created_at": "2026-06-26T14:44:20+00:00",
+    "sent_at": ""
+  },
+  {
+    "delivery_id": "DEL-000024",
+    "payslip_id": "PS-PAYSG-202605-ENT-0002-EMP-0034",
+    "batch_id": "PAYSG-202605-ENT-0002",
+    "recipient": "bill25493@gmail.com",
+    "status": "voided",
+    "message": "SMTP not configured; kept in queue.",
+    "created_at": "2026-06-26T14:44:20+00:00",
+    "sent_at": ""
+  },
+  {
+    "delivery_id": "DEL-000025",
+    "payslip_id": "PS-PAYSG-202605-ENT-0002-EMP-0035",
+    "batch_id": "PAYSG-202605-ENT-0002",
+    "recipient": "kino618@gmail.com",
+    "status": "voided",
+    "message": "SMTP not configured; kept in queue.",
+    "created_at": "2026-06-26T14:44:20+00:00",
+    "sent_at": ""
+  },
+  {
+    "delivery_id": "DEL-000026",
+    "payslip_id": "PS-PAYSG-202605-ENT-0002-EMP-0036",
+    "batch_id": "PAYSG-202605-ENT-0002",
+    "recipient": "zzillling@gmail.com",
+    "status": "voided",
+    "message": "SMTP not configured; kept in queue.",
+    "created_at": "2026-06-26T14:44:20+00:00",
+    "sent_at": ""
+  },
+  {
+    "delivery_id": "DEL-000027",
+    "payslip_id": "PS-PAYSG-202605-ENT-0002-EMP-0037",
+    "batch_id": "PAYSG-202605-ENT-0002",
+    "recipient": "surya.ansana@live.com",
+    "status": "voided",
+    "message": "SMTP not configured; kept in queue.",
+    "created_at": "2026-06-26T14:44:20+00:00",
+    "sent_at": ""
+  },
+  {
+    "delivery_id": "DEL-000028",
+    "payslip_id": "PS-PAYSG-202605-ENT-0002-EMP-0040",
+    "batch_id": "PAYSG-202605-ENT-0002",
+    "recipient": "sdas@tacjob.com",
+    "status": "voided",
+    "message": "SMTP not configured; kept in queue.",
+    "created_at": "2026-06-26T14:44:20+00:00",
+    "sent_at": ""
+  },
+  {
+    "delivery_id": "DEL-000029",
+    "payslip_id": "PS-PAYSG-202605-ENT-0002-EMP-0047",
+    "batch_id": "PAYSG-202605-ENT-0002",
+    "recipient": "nick.luan888@gmail.com",
+    "status": "voided",
+    "message": "SMTP not configured; kept in queue.",
+    "created_at": "2026-06-26T14:44:20+00:00",
+    "sent_at": ""
+  },
+  {
+    "delivery_id": "DEL-000030",
+    "payslip_id": "PS-PAYSG-202605-ENT-0002-EMP-0042",
+    "batch_id": "PAYSG-202605-ENT-0002",
+    "recipient": "ankit.attri06@gmail.com",
+    "status": "voided",
+    "message": "SMTP not configured; kept in queue.",
+    "created_at": "2026-06-26T14:44:20+00:00",
+    "sent_at": ""
+  }
+]

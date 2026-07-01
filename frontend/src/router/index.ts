@@ -78,32 +78,13 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/modules/payroll/PayrollLanding.vue'),
         meta: { requiresAuth: true, permission: 'payroll.access', titleKey: 'nav.payroll' },
       },
-      // SG Payroll
-      {
-        path: 'payroll/sg/salary-master',
-        name: 'SgSalaryMaster',
-        component: () => import('@/modules/payroll/sg/SalaryMaster.vue'),
-        meta: { requiresAuth: true, permission: 'tacaipay_sg.view', titleKey: 'payroll.sg.salary_master' },
-      },
-      {
-        path: 'payroll/sg/batches',
-        name: 'SgPayrollBatches',
-        component: () => import('@/modules/payroll/sg/PayrollBatches.vue'),
-        meta: { requiresAuth: true, permission: 'tacaipay_sg.view', titleKey: 'payroll.sg.batches' },
-      },
-      {
-        path: 'payroll/sg/batches/:id',
-        name: 'SgPayrollBatchDetail',
-        component: () => import('@/modules/payroll/sg/PayrollBatchDetail.vue'),
-        meta: { requiresAuth: true, permission: 'tacaipay_sg.view', titleKey: 'payroll.sg.batch_detail' },
-      },
-      {
-        path: 'payroll/sg/payslips',
-        name: 'SgPayslips',
-        component: () => import('@/modules/payroll/sg/Payslips.vue'),
-        meta: { requiresAuth: true, permission: 'tacaipay_sg.view', titleKey: 'payroll.sg.payslips' },
-      },
       // JP Payroll
+      {
+        path: 'payroll/jp',
+        name: 'JpDashboard',
+        component: () => import('@/modules/payroll/jp/JpDashboard.vue'),
+        meta: { requiresAuth: true, permission: 'tacaipay_jp.view', titleKey: 'payroll.jp.title' },
+      },
       {
         path: 'payroll/jp/item-definitions',
         name: 'JpItemDefinitions',
@@ -140,42 +121,17 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/modules/payroll/jp/JpPayslips.vue'),
         meta: { requiresAuth: true, permission: 'tacaipay_jp.view', titleKey: 'payroll.jp.payslips' },
       },
-      // CN Payroll
       {
-        path: 'payroll/cn/social-insurance-rules',
-        name: 'CnSIRules',
-        component: () => import('@/modules/payroll/cn/SocialInsuranceRules.vue'),
-        meta: { requiresAuth: true, permission: 'tacaipay_cn.view', titleKey: 'payroll.cn.rules' },
+        path: 'payroll/jp/batches/:id/release',
+        name: 'JpRelease',
+        component: () => import('@/modules/payroll/jp/JpRelease.vue'),
+        meta: { requiresAuth: true, permission: 'tacaipay_jp.view', titleKey: 'payroll.jp.release_title' },
       },
       {
-        path: 'payroll/cn/tax-brackets',
-        name: 'CnTaxBrackets',
-        component: () => import('@/modules/payroll/cn/TaxBrackets.vue'),
-        meta: { requiresAuth: true, permission: 'tacaipay_cn.view', titleKey: 'payroll.cn.tax_brackets' },
-      },
-      {
-        path: 'payroll/cn/employees',
-        name: 'CnEmployees',
-        component: () => import('@/modules/payroll/cn/CnEmployees.vue'),
-        meta: { requiresAuth: true, permission: 'tacaipay_cn.view', titleKey: 'payroll.cn.employees' },
-      },
-      {
-        path: 'payroll/cn/batches',
-        name: 'CnPayrollBatches',
-        component: () => import('@/modules/payroll/cn/CnPayrollBatches.vue'),
-        meta: { requiresAuth: true, permission: 'tacaipay_cn.view', titleKey: 'payroll.cn.batches' },
-      },
-      {
-        path: 'payroll/cn/batches/:id',
-        name: 'CnPayrollBatchDetail',
-        component: () => import('@/modules/payroll/cn/CnPayrollBatchDetail.vue'),
-        meta: { requiresAuth: true, permission: 'tacaipay_cn.view', titleKey: 'payroll.cn.batch_detail' },
-      },
-      {
-        path: 'payroll/cn/payslips',
-        name: 'CnPayslips',
-        component: () => import('@/modules/payroll/cn/CnPayslips.vue'),
-        meta: { requiresAuth: true, permission: 'tacaipay_cn.view', titleKey: 'payroll.cn.payslips' },
+        path: 'payroll/jp/report',
+        name: 'JpSalaryReport',
+        component: () => import('@/modules/payroll/jp/SalaryReport.vue'),
+        meta: { requiresAuth: true, permission: 'tacaipay_jp.view', titleKey: 'payroll.jp.calculation_summary' },
       },
       // ── Invoice Management ──
       {
