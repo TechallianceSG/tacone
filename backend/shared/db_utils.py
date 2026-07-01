@@ -20,7 +20,6 @@ from __future__ import annotations
 import json
 import os
 import sys
-from pathlib import Path
 from typing import Any, Optional
 
 import psycopg2
@@ -319,61 +318,6 @@ def _serialize_for_db(val: Any) -> Any:
     if isinstance(val, (dict, list)):
         return json.dumps(val, ensure_ascii=False, default=str)
     return str(val)
-
-
-# ── Module prefix mapping ───────────────────────────────────
-
-_MODULE_PREFIX_MAP = {
-    "TAC-timesheet": "ts",
-    "TAC-employeeadmin": "emp",
-    "TAC-reimbursement": "rmb",
-    "tacaipaysg": "pay_sg",
-    "User_admin": "ua",
-    "masterdata": "md",
-    "tacai-portal": "pt",
-    "tacaimsg": "msg",
-    "InterviewReady": "iv",
-    "TacSelfVacation": "ss",
-}
-
-
-def path_to_table(path: Path) -> str:
-    """Convert a JSON database path to a PostgreSQL table name.
-
-    Example:
-        .../TAC-timesheet/database/timesheet_entries.json → ts_timesheet_entries
-        .../TACAIPAY/tacaipaysg/database/audit_logs.json → pay_sg_audit_logs
-    """
-    file_stem = path.stem
-    path_str = str(path)
-    for module_dir, prefix in _MODULE_PREFIX_MAP.items():
-        if module_dir in path_str:
-            return f"{prefix}_{file_stem}"
-    return f"tbl_{file_stem}"
-
-
-# ── Bulk import from JSON to PostgreSQL ─────────────────────
-
-def import_json_to_pg(json_path: Path, table_name: str) -> int:
-    """One-time import: read JSON file and write to PostgreSQL table.
-    Returns number of rows imported.
-    """
-    try:
-        text = json_path.read_text(encoding="utf-8")
-        data = json.loads(text) if text.strip() else []
-    except Exception:
-        return 0
-
-    if isinstance(data, dict):
-        vals = list(data.values())
-        if vals and all(isinstance(v, dict) for v in vals[:5]):
-            data = list(data.values())
-        else:
-            data = [data]
-    if not isinstance(data, list):
-        return 0
-
-    return save_table(table_name, data)
 
 
 # ── Startup status ──────────────────────────────────────────

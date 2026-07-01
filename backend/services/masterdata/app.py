@@ -27,6 +27,7 @@ from html import escape
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+import sys as _sys
 from typing import Any, Optional
 from urllib.error import URLError
 from urllib.parse import parse_qs, quote, unquote, urlencode, urlparse
@@ -43,9 +44,13 @@ except Exception:
     _sys.exit(1)
 # ============================================
 
-ROOT_DIR = Path(__file__).resolve().parents[1]
+ROOT_DIR = Path(__file__).resolve().parents[0]
 DATABASE_DIR = ROOT_DIR / "database"
 I18N_DIR = ROOT_DIR / "i18n"
+
+# ── PostgreSQL table prefix ──
+MODULE_PREFIX = "md"
+
 ENTITIES_PATH = DATABASE_DIR / "entities.json"
 DEPARTMENTS_PATH = DATABASE_DIR / "departments.json"
 TEAMS_PATH = DATABASE_DIR / "teams.json"
@@ -208,8 +213,8 @@ def selected(current: Any, value: str) -> str:
 
 
 def load_json_array(path: Path) -> list:
-    """Load records from PostgreSQL. 'path' is used to derive the table name."""
-    table_name = _db.path_to_table(path)
+    """Load records from PostgreSQL. Table name = MODULE_PREFIX + filename stem."""
+    table_name = f"{MODULE_PREFIX}_{path.stem}"
     try:
         result = _db.load_table(table_name)
         return result if result is not None else []
@@ -218,8 +223,8 @@ def load_json_array(path: Path) -> list:
         raise
 
 def save_json_array(path: Path, records: list[dict[str, Any]]) -> None:
-    """Save records to PostgreSQL. 'path' is used to derive the table name."""
-    table_name = _db.path_to_table(path)
+    """Save records to PostgreSQL. Table name = MODULE_PREFIX + filename stem."""
+    table_name = f"{MODULE_PREFIX}_{path.stem}"
     try:
         _db.save_table(table_name, records)
     except Exception:
@@ -244,7 +249,12 @@ def ensure_database_files() -> None:
     CUSTOMER_OCR_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     for path in (ENTITIES_PATH, DEPARTMENTS_PATH, TEAMS_PATH, CUSTOMERS_PATH, VENDORS_PATH, AUDIT_LOGS_PATH, MASTERDATA_VERSIONS_PATH):
         if not path.exists():
-            save_json_array(path, [])
+            # Only initialize empty table if it doesn't already have data
+            existing = _db.load_table(f"{MODULE_PREFIX}_{path.stem}")
+            if not existing:
+                save_json_array(path, [])
+            # Touch the marker file to prevent re-initialization on next startup
+            path.touch()
 
 
 def load_i18n(lang: str) -> dict[str, str]:

@@ -17,6 +17,7 @@ import json
 import os
 from pathlib import Path
 import secrets
+import sys as _sys
 from typing import Any
 from urllib.parse import parse_qs, quote, unquote, urlencode, urlparse
 # === PostgreSQL integration ===
@@ -58,7 +59,7 @@ except ImportError:
     def api_get_query_param(handler, key, default=""): return default
 # ============================================
 
-ROOT_DIR = Path(__file__).resolve().parents[1]
+ROOT_DIR = Path(__file__).resolve().parents[0]
 DATABASE_DIR = ROOT_DIR / "database"
 I18N_DIR = ROOT_DIR / "i18n"
 USERS_PATH = DATABASE_DIR / "users.json"
@@ -69,9 +70,11 @@ ROLE_PERMISSION_MAPPING_PATH = DATABASE_DIR / "role_permission_mapping.json"
 USER_ENTITY_MAPPING_PATH = DATABASE_DIR / "user_entity_mapping.json"
 USER_SESSIONS_PATH = DATABASE_DIR / "user_sessions.json"
 USER_AUDIT_LOGS_PATH = DATABASE_DIR / "user_audit_logs.json"
-MASTERDATA_ENTITIES_PATH = ROOT_DIR.parent / "masterdata" / "database" / "entities.json"
-MASTERDATA_DEPARTMENTS_PATH = ROOT_DIR.parent / "masterdata" / "database" / "departments.json"
-EMPLOYEEADMIN_EMPLOYEES_PATH = ROOT_DIR.parents[1] / "TAC-employeeadmin" / "database" / "employees.json"
+
+# ── PostgreSQL table prefixes ──
+MODULE_PREFIX = "ua"
+MD_PREFIX = "md"
+EMP_PREFIX = "emp"
 
 DEFAULT_LANG = "en"
 SUPPORTED_LANGS = {"en", "ja", "zh"}
@@ -94,7 +97,7 @@ LOCAL_ALLOWED_HOSTS = {"127.0.0.1", "localhost", TACAI_PUBLIC_HOST}
 try:
     from config import ALLOWED_PORTS as LOCAL_ALLOWED_PORTS
 except ImportError:
-    LOCAL_ALLOWED_PORTS = {3000, 3001, 4000, 4001, 5000, 5001, 5173, 4173, 6000, 6001, 8000, 8001, 8002, 8003, 8004, 8005, 8006, 8007, 8008, 8009, 8011, 8012, 8015, 8016, 8018}
+    LOCAL_ALLOWED_PORTS = {3000, 3001, 4000, 4001, 5000, 5001, 4173, 6000, 6001, 8000, 8001, 8002, 8003, 8004, 8005, 8006, 8007, 8008, 8009, 8011, 8012, 8015, 8016, 8018}
 
 
 def base_url_host(value: str) -> str:
@@ -249,6 +252,22 @@ PERMISSION_DEFINITIONS = [
     ("tacaipay_jp.release_payment", "tacaipay_jp", "release_payment"),
     ("tacaipay_jp.reports.view", "tacaipay_jp", "reports_view"),
     ("tacaipay_jp.audit.view", "tacaipay_jp", "audit_view"),
+    ("tacaipay_cn.access", "tacaipay_cn", "access"),
+    ("tacaipay_cn.view", "tacaipay_cn", "view"),
+    ("tacaipay_cn.manage", "tacaipay_cn", "manage"),
+    ("tacaipay_cn.calculate", "tacaipay_cn", "calculate"),
+    ("tacaipay_cn.approve", "tacaipay_cn", "approve"),
+    ("tacaipay_cn.release_payment", "tacaipay_cn", "release_payment"),
+    ("tacaipay_cn.reports.view", "tacaipay_cn", "reports_view"),
+    ("tacaipay_cn.audit.view", "tacaipay_cn", "audit_view"),
+    ("invoice.access", "invoice", "access"),
+    ("invoice.view", "invoice", "view"),
+    ("invoice.maintain", "invoice", "maintain"),
+    ("invoice.approve", "invoice", "approve"),
+    ("invoice.payment", "invoice", "payment"),
+    ("invoice.send", "invoice", "send"),
+    ("invoice.reports.view", "invoice", "reports_view"),
+    ("invoice.audit.view", "invoice", "audit_view"),
 ]
 
 ROLE_PERMISSION_KEYS = {
@@ -420,8 +439,8 @@ def h(value: Any) -> str:
 
 
 def load_json_array(path: Path) -> list:
-    """Load records from PostgreSQL. 'path' is used to derive the table name."""
-    table_name = _db.path_to_table(path)
+    """Load records from PostgreSQL. Table name = MODULE_PREFIX + filename stem."""
+    table_name = f"{MODULE_PREFIX}_{path.stem}"
     try:
         result = _db.load_table(table_name)
         return result if result is not None else []
@@ -430,8 +449,8 @@ def load_json_array(path: Path) -> list:
         raise
 
 def save_json_array(path: Path, records: list[dict[str, Any]]) -> None:
-    """Save records to PostgreSQL. 'path' is used to derive the table name."""
-    table_name = _db.path_to_table(path)
+    """Save records to PostgreSQL. Table name = MODULE_PREFIX + filename stem."""
+    table_name = f"{MODULE_PREFIX}_{path.stem}"
     try:
         _db.save_table(table_name, records)
     except Exception:
@@ -480,15 +499,24 @@ def save_user_entity_mappings(records: list[dict[str, Any]]) -> None:
 
 
 def load_masterdata_entities() -> list[dict[str, Any]]:
-    return load_json_array(MASTERDATA_ENTITIES_PATH)
+    try:
+        return _db.load_table(f"{MD_PREFIX}_entities")
+    except Exception:
+        return []
 
 
 def load_masterdata_departments() -> list[dict[str, Any]]:
-    return load_json_array(MASTERDATA_DEPARTMENTS_PATH)
+    try:
+        return _db.load_table(f"{MD_PREFIX}_departments")
+    except Exception:
+        return []
 
 
 def load_employeeadmin_employees() -> list[dict[str, Any]]:
-    return load_json_array(EMPLOYEEADMIN_EMPLOYEES_PATH)
+    try:
+        return _db.load_table(f"{EMP_PREFIX}_employees")
+    except Exception:
+        return []
 
 
 def get_nested(record: dict[str, Any], path: str, default: Any = "") -> Any:
@@ -1551,29 +1579,16 @@ class UserAdminHandler(BaseHTTPRequestHandler):
         if path == "/health":
             self.send_text(200, "OK")
         elif path in {"/", "/login"}:
-            next_url = safe_next_url(query.get("next", [""])[0], url_with_lang("/dashboard", lang))
-            if user:
-                self.redirect(next_url)
-            else:
-                self.send_login(lang, messages, [], next_url)
-        elif path == "/dashboard":
-            self.require_user_or_login(lang, messages, user) and self.send_dashboard(lang, messages, user)
-        elif path == "/users":
-            self.require_permission_or_forbidden(lang, messages, user, "user_management.manage_users") and self.send_users(lang, messages, user)
-        elif path == "/users/new":
-            self.require_permission_or_forbidden(lang, messages, user, "user_management.manage_users") and self.send_user_form(lang, messages, user, "create", {}, [], [])
-        elif path == "/users/edit":
-            self.require_permission_or_forbidden(lang, messages, user, "user_management.manage_users") and self.send_edit_user_form(lang, messages, user, query)
-        elif path == "/roles":
-            self.require_permission_or_forbidden(lang, messages, user, "user_management.manage_roles") and self.send_roles(lang, messages, user)
-        elif path == "/roles/permissions":
-            self.require_permission_or_forbidden(lang, messages, user, "user_management.manage_permissions") and self.send_role_permissions(lang, messages, user, query, [])
-        elif path == "/audit-logs":
-            self.require_permission_or_forbidden(lang, messages, user, "user_management.audit.view") and self.send_audit_logs(lang, messages, user)
-        elif path == "/login-sessions":
-            self.require_user_or_login(lang, messages, user) and self.send_login_sessions(lang, messages, user, query)
-        elif path == "/change-password":
-            self.require_user_or_login(lang, messages, user) and self.send_change_password(lang, messages, user, [])
+            # ── Redirect to Vue 3 SPA login (unified login page) ──
+            next_url = safe_next_url(query.get("next", [""])[0], "/dashboard")
+            redirect_params = urlencode({"redirect": next_url} if next_url and next_url != "/dashboard" else {})
+            target = f"{PORTAL_PUBLIC_BASE_URL}/login"
+            if redirect_params:
+                target = f"{target}?{redirect_params}"
+            self.redirect(target)
+        elif path in {"/dashboard", "/users", "/users/new", "/users/edit", "/roles", "/roles/permissions", "/audit-logs", "/login-sessions", "/change-password"}:
+            # ── All HTML pages → redirect to Vue 3 SPA ──
+            self.redirect(f"{PORTAL_PUBLIC_BASE_URL}{path}")
         elif path == "/api/public/entities":
             # Public endpoint — no auth required, used by login page entity selector
             entities_list = []
@@ -1738,11 +1753,12 @@ class UserAdminHandler(BaseHTTPRequestHandler):
         _session, user = self.current_session_user()
 
         if path == "/login":
-            self.handle_login(lang, messages, query.get("next", [""])[0])
+            # ── Old HTML form login → redirect to Vue 3 SPA login ──
+            self.redirect(f"{PORTAL_PUBLIC_BASE_URL}/login")
         elif path == "/logout":
-            self.handle_logout(lang, messages, user, query.get("next", [""])[0])
+            self.handle_logout(lang, messages, user, f"{PORTAL_PUBLIC_BASE_URL}/login")
         elif path == "/change-password":
-            self.require_user_or_login(lang, messages, user) and self.handle_change_password(lang, messages, user)
+            self.redirect(f"{PORTAL_PUBLIC_BASE_URL}/change-password")
         elif path == "/users/create":
             self.require_permission_or_forbidden(lang, messages, user, "user_management.manage_users") and self.handle_create_user(lang, messages, user)
         elif path == "/users/update":
@@ -1814,7 +1830,8 @@ class UserAdminHandler(BaseHTTPRequestHandler):
     def require_user_or_login(self, lang: str, messages: dict[str, str], user: dict[str, Any] | None) -> bool:
         if user:
             return True
-        self.redirect(url_with_lang("/login", lang, {"next": self.path}))
+        # Redirect to Vue 3 SPA login
+        self.redirect(f"{PORTAL_PUBLIC_BASE_URL}/login?redirect={quote(self.path)}")
         return False
 
     def require_permission_or_forbidden(self, lang: str, messages: dict[str, str], user: dict[str, Any] | None, permission_key: str) -> bool:
@@ -3178,7 +3195,7 @@ try:
 except ImportError:
     # Fallback definitions if cors_middleware.py is not found
     def add_cors_headers(handler) -> None:
-        handler.send_header("Access-Control-Allow-Origin", "http://localhost:5173")
+        handler.send_header("Access-Control-Allow-Origin", "*")
         handler.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS")
         handler.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
         handler.send_header("Access-Control-Allow-Credentials", "true")

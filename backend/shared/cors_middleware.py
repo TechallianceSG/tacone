@@ -1,10 +1,13 @@
 """
 TACAI Shared CORS Middleware
 ============================
-Drop-in CORS support for all TACAI Python standard-library modules.
-Adds CORS headers to allow Vue 3 SPA (Vite dev server) to make cross-origin requests.
+Drop-in CORS support for TACAI Python standard-library modules.
 
-Usage (in each module's app.py):
+With the API Gateway pattern, Portal (:3000) is the single entry point.
+Only Portal and the Vite dev server need CORS headers; internal services
+are accessed exclusively by Portal via localhost.
+
+Usage:
 
     from cors_middleware import add_cors_headers, handle_preflight
 
@@ -13,7 +16,6 @@ Usage (in each module's app.py):
         def do_OPTIONS(self):
             handle_preflight(self)
 
-        # In each do_GET / do_POST, call add_cors_headers before sending:
         def send_response(self, status):
             super().send_response(status)
             add_cors_headers(self)
@@ -21,20 +23,25 @@ Usage (in each module's app.py):
 
 from http import HTTPStatus
 
-# Allowed origins (Vite dev server + production builds)
+# Allowed origins — Portal (gateway) + Vite dev server
 ALLOWED_ORIGINS = {
+    # Vite dev server
     "http://localhost:5173",
     "http://127.0.0.1:5173",
-    "http://localhost:4173",  # Vite preview
+    # Vite preview
+    "http://localhost:4173",
     "http://127.0.0.1:4173",
+    # Portal (serves built SPA in production)
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
 }
 
-# Add LAN IP origins if needed
+# Add LAN IP origins if configured
 import os as _os
 _TACAI_PUBLIC_HOST = _os.environ.get("TACAI_PUBLIC_HOST", "").strip()
 if _TACAI_PUBLIC_HOST and _TACAI_PUBLIC_HOST not in {"127.0.0.1", "localhost"}:
     ALLOWED_ORIGINS.add(f"http://{_TACAI_PUBLIC_HOST}:5173")
-    ALLOWED_ORIGINS.add(f"http://{_TACAI_PUBLIC_HOST}:4173")
+    ALLOWED_ORIGINS.add(f"http://{_TACAI_PUBLIC_HOST}:3000")
 
 
 def add_cors_headers(handler) -> None:

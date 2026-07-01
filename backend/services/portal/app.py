@@ -30,13 +30,18 @@ except Exception:
     print("[portal] FATAL: db_utils is required. PostgreSQL must be available.", file=_sys.stderr)
     _sys.exit(1)
 
-BASE_DIR = Path(__file__).resolve().parents[1]
+BASE_DIR = Path(__file__).resolve().parents[0]
 DATABASE_DIR = BASE_DIR / "database"
 FRONTEND_DIR = BASE_DIR / "frontend"
 AUDIT_LOG_FILE = DATABASE_DIR / "audit_logs.json"
 MODULES_FILE = DATABASE_DIR / "modules.json"
 USER_ADMIN_SESSION_COOKIE = "tacai_session_id"
 LANGUAGE_COOKIE = "tacai_portal_lang"
+# ── PostgreSQL table prefixes ──
+MODULE_PREFIX = "pt"
+MSG_PREFIX = "msg"
+UA_PREFIX = "ua"
+
 MODULE_NAME = "tacai-portal"
 TACAI_PUBLIC_HOST = os.environ.get("TACAI_PUBLIC_HOST", "127.0.0.1").strip() or "127.0.0.1"
 TACAI_INTERNAL_HOST = os.environ.get("TACAI_INTERNAL_HOST", "127.0.0.1").strip() or "127.0.0.1"
@@ -45,7 +50,13 @@ LOCAL_ALLOWED_HOSTS = {"127.0.0.1", "localhost", TACAI_PUBLIC_HOST, TACAI_INTERN
 try:
     from config import ALLOWED_PORTS as LOCAL_ALLOWED_PORTS
 except ImportError:
-    LOCAL_ALLOWED_PORTS = {3000, 3001, 4000, 4001, 5000, 5001, 5173, 4173, 6000, 6001, 8000, 8001, 8002, 8003, 8004, 8005, 8006, 8007, 8012, 8016, 8018}
+    LOCAL_ALLOWED_PORTS = {3000, 4000, 5000, 6000}
+
+# ── API Gateway route table ──
+try:
+    from config import GATEWAY_ROUTES
+except ImportError:
+    GATEWAY_ROUTES = {}
 CONFIGURED_PUBLIC_HOSTS = {host.strip().lower() for host in os.environ.get("TACAI_ALLOWED_PUBLIC_HOSTS", "").split(",") if host.strip()}
 
 
@@ -72,7 +83,6 @@ PORTAL_BASE_URL = (os.environ.get("PORTAL_BASE_URL") or "").strip().rstrip("/") 
 USER_ADMIN_BASE_URL = public_base_url("USER_ADMIN_PUBLIC_BASE_URL", _AUTH_FALLBACK_PORT)
 USER_ADMIN_INTERNAL_BASE_URL = os.environ.get("USER_ADMIN_INTERNAL_BASE_URL", internal_base_url(_AUTH_FALLBACK_PORT)).strip().rstrip("/")
 TACAIMSG_BASE_URL = public_base_url("TACAIMSG_PUBLIC_BASE_URL", 8012)
-TACAIMSG_MESSAGES_PATH = BASE_DIR.parent / "tacaimsg" / "database" / "messages.json"
 PUBLIC_ALLOWED_HOSTS = CONFIGURED_PUBLIC_HOSTS | {host for host in [base_url_host(PORTAL_BASE_URL), base_url_host(USER_ADMIN_BASE_URL)] if host}
 SUPPORTED_LANGUAGES = {"ja", "zh", "en"}
 DEFAULT_LANGUAGE = "ja"
@@ -286,8 +296,8 @@ def utc_now_iso() -> str:
 
 
 def read_json(path: Path, default):
-    """Read records from PostgreSQL. 'path' is used to derive the table name."""
-    table_name = _db.path_to_table(path)
+    """Read records from PostgreSQL. Table name = MODULE_PREFIX + filename stem."""
+    table_name = f"{MODULE_PREFIX}_{path.stem}"
     try:
         result = _db.load_table(table_name)
         return result if result is not None else default
@@ -299,8 +309,7 @@ def read_json(path: Path, default):
 def get_msg_center_unread_count(user_id: str) -> int:
     """Read tacaimsg messages from PG and count unread messages for a user."""
     try:
-        table_name = _db.path_to_table(TACAIMSG_MESSAGES_PATH)
-        messages = _db.load_table(table_name)
+        messages = _db.load_table(f"{MSG_PREFIX}_messages")
         return sum(1 for m in messages
                    if str(m.get("recipient_user_id", "")) == str(user_id)
                    and m.get("status") == "unread")
@@ -427,19 +436,31 @@ def portal_url(path: str, lang: str, request_host: str | None = None) -> str:
     return f"http://{host}:{port}{with_lang(path, lang)}"
 
 
+# ── Vue 3 SPA frontend login URL (unified single login page) ──
+
+VUE_DEV_SERVER_URL = os.environ.get("VUE_DEV_SERVER_URL", "http://localhost:5173").rstrip("/")
+
+
+def vue_login_url(lang: str, redirect_path: str | None = None) -> str:
+    """Return the Vue 3 SPA login page URL (unified single login page)."""
+    params: dict[str, str] = {"lang": normalize_lang(lang)}
+    if redirect_path:
+        params["redirect"] = redirect_path
+    qs = urlencode(params)
+    return f"{VUE_DEV_SERVER_URL}/login?{qs}"
+
+
 def user_admin_login_url(lang: str, request_host: str | None = None) -> str:
-    host = _resolve_host(request_host)
-    port = urlparse(USER_ADMIN_BASE_URL).port or 8006
-    base = f"http://{host}:{port}"
-    next_url = portal_url("/dashboard", lang, request_host)
-    return f"{base}/login?next={quote(next_url, safe='')}"
+    """Deprecated — login now handled by Vue 3 SPA. Use vue_login_url()."""
+    return vue_login_url(lang, "/dashboard")
 
 
 def user_admin_logout_url(lang: str, request_host: str | None = None) -> str:
+    """Logout via User_admin, then redirect to Vue 3 SPA login."""
     host = _resolve_host(request_host)
     port = urlparse(USER_ADMIN_BASE_URL).port or 8006
     base = f"http://{host}:{port}"
-    next_url = portal_url("/login", lang, request_host)
+    next_url = vue_login_url(lang)
     return f"{base}/logout?next={quote(next_url, safe='')}"
 
 
@@ -500,8 +521,8 @@ def visible_modules_for(user: dict, request_host: str | None = None) -> list[dic
 
 
 def write_json(path: Path, data) -> None:
-    """Write records to PostgreSQL. 'path' is used to derive the table name."""
-    table_name = _db.path_to_table(path)
+    """Write records to PostgreSQL. Table name = MODULE_PREFIX + filename stem."""
+    table_name = f"{MODULE_PREFIX}_{path.stem}"
     try:
         _db.save_table(table_name, data)
     except Exception:
@@ -574,24 +595,15 @@ python3 backend/app.py --host 127.0.0.1 --port ${{AUTH_PORT:-3001}}</pre>
     return page_shell(translate(lang, "unavailable.title"), body, lang)
 
 
-# Paths to User_admin database files (for role/permission resolution)
-_USER_ADMIN_DB = BASE_DIR.parent / "User_admin" / "database"
-_USER_ADMIN_USERS_PATH = _USER_ADMIN_DB / "users.json"
-_USER_ADMIN_ROLES_PATH = _USER_ADMIN_DB / "roles.json"
-_USER_ADMIN_PERMISSIONS_PATH = _USER_ADMIN_DB / "permissions.json"
-_USER_ADMIN_URM_PATH = _USER_ADMIN_DB / "user_role_mapping.json"
-_USER_ADMIN_RPM_PATH = _USER_ADMIN_DB / "role_permission_mapping.json"
-
-
 def _resolve_user_roles_and_permissions(user_id: str) -> tuple[list[str], list[str]]:
-    """Resolve role_keys and permission_keys for a user from User_admin mapping files."""
+    """Resolve role_keys and permission_keys for a user from User_admin PG tables."""
     role_keys: list[str] = []
     permission_keys: list[str] = []
 
     # Build role_id → role_key lookup
     role_id_to_key: dict[str, str] = {}
     try:
-        roles = read_json(_USER_ADMIN_ROLES_PATH, [])
+        roles = _db.load_table(f"{UA_PREFIX}_roles")
         for r in roles:
             rid = str(r.get("role_id", "")).strip()
             rkey = str(r.get("role_key", "")).strip()
@@ -602,7 +614,7 @@ def _resolve_user_roles_and_permissions(user_id: str) -> tuple[list[str], list[s
 
     # Read user-role mappings
     try:
-        urm = read_json(_USER_ADMIN_URM_PATH, [])
+        urm = _db.load_table(f"{UA_PREFIX}_user_role_mapping")
         user_role_ids: set[str] = set()
         for m in urm:
             if str(m.get("user_id", "")) == user_id and m.get("active", True):
@@ -613,8 +625,8 @@ def _resolve_user_roles_and_permissions(user_id: str) -> tuple[list[str], list[s
 
     # Read role-permission mappings and permission definitions
     try:
-        rpm = read_json(_USER_ADMIN_RPM_PATH, [])
-        permissions = read_json(_USER_ADMIN_PERMISSIONS_PATH, [])
+        rpm = _db.load_table(f"{UA_PREFIX}_role_permission_mapping")
+        permissions = _db.load_table(f"{UA_PREFIX}_permissions")
         perm_id_to_key: dict[str, str] = {}
         for p in permissions:
             pid = str(p.get("permission_id", "")).strip()
@@ -844,12 +856,52 @@ def render_simple_page(lang: str, title_key: str, text_key: str, status: HTTPSta
     return page_shell(title, body, lang), status
 
 
+# ── API Gateway: forward requests to internal backend services ──
+
+def _proxy_to_service(target_port: int, path: str, method: str = "GET",
+                       req_headers: dict | None = None, body: bytes | None = None,
+                       timeout: int = 30) -> tuple[int, dict, bytes]:
+    """Forward an API request to an internal backend service.
+
+    Returns (status_code, response_headers_dict, response_body_bytes).
+    On connection failure returns (502, {}, error_json_bytes).
+    """
+    import urllib.request as _ur
+    from urllib.error import HTTPError
+
+    target_url = f"http://127.0.0.1:{target_port}{path}"
+    try:
+        req = _ur.Request(target_url, data=body, method=method)
+        # Forward relevant headers
+        if req_headers:
+            for header in ("Content-Type", "Accept", "Accept-Language", "Cookie", "Authorization", "X-Requested-With"):
+                val = req_headers.get(header)
+                if val:
+                    req.add_header(header, val)
+        with _ur.urlopen(req, timeout=timeout) as resp:
+            return resp.status, dict(resp.headers), resp.read()
+    except HTTPError as e:
+        # HTTP error from upstream — relay it
+        return e.code, dict(e.headers), e.read()
+    except Exception:
+        return 502, {"Content-Type": "application/json"}, b'{"error":"Bad Gateway","message":"Backend service unavailable"}'
+
+
 class PortalHandler(BaseHTTPRequestHandler):
     server_version = "TACAIPortal/0.1"
 
-    # === CORS support for Vue 3 SPA ===
+    # === CORS support for Vue 3 SPA (Gateway pattern) ===
+    # Allow the Vite dev server (:5173) and Portal itself (:3000).
+    _CORS_ORIGINS = {
+        "http://localhost:5173", "http://127.0.0.1:5173",
+        "http://localhost:4173", "http://127.0.0.1:4173",
+        "http://localhost:3000", "http://127.0.0.1:3000",
+    }
+
     def add_cors(self) -> None:
-        self.send_header("Access-Control-Allow-Origin", "http://localhost:5173")
+        origin = self.headers.get("Origin", "")
+        allowed = origin if origin in self._CORS_ORIGINS else "http://localhost:5173"
+        self.send_header("Access-Control-Allow-Origin", allowed)
         self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
         self.send_header("Access-Control-Allow-Credentials", "true")
@@ -935,14 +987,138 @@ class PortalHandler(BaseHTTPRequestHandler):
         if not user_admin_available():
             self.send_html(render_user_admin_unavailable(lang, current_path), HTTPStatus.SERVICE_UNAVAILABLE, lang)
             return None
-        self.redirect(user_admin_login_url(lang, rh), lang)
+        self.redirect(vue_login_url(lang, current_path), lang)
         return None
+
+    # ── API Gateway: forward /api/* requests to internal services ──
+
+    def _proxy_gateway(self, method: str = "GET") -> bool:
+        """Check if the request path matches a gateway route and proxy it.
+
+        Returns True if the request was handled (gateway route matched),
+        False if no gateway route matched (caller should fall through).
+        """
+        for prefix, port in GATEWAY_ROUTES.items():
+            if self.path.startswith(prefix):
+                # Read body for write methods
+                body = None
+                if method in ("POST", "PUT", "PATCH"):
+                    length = int(self.headers.get("Content-Length", "0") or "0")
+                    body = self.rfile.read(length) if length else None
+
+                # Longer timeout for file uploads
+                timeout = 120 if self.path.startswith("/api/employees/import") else 30
+
+                status, resp_headers, resp_body = _proxy_to_service(
+                    port, self.path, method,
+                    req_headers=dict(self.headers),
+                    body=body, timeout=timeout,
+                )
+
+                # Relay response
+                self.send_response(status)
+                self.add_cors()
+                skip = {"connection", "keep-alive", "transfer-encoding",
+                        "proxy-authenticate", "proxy-authorization", "te", "trailers"}
+                for key, val in resp_headers.items():
+                    if key.lower() in skip:
+                        continue
+                    self.send_header(key, val)
+                self.end_headers()
+                self.wfile.write(resp_body)
+                return True
+        return False
+
+    def _proxy_to_vite(self, method: str = "GET") -> bool:
+        """Proxy the current request to the Vite dev server. Returns True on success, False only if Vite is unreachable (connection refused)."""
+        import urllib.request as _ur
+        from urllib.error import HTTPError
+        vite_url = f"{VUE_DEV_SERVER_URL}{self.path}"
+        body = None
+        if method in ("POST", "PUT", "PATCH"):
+            length = int(self.headers.get("Content-Length", "0") or "0")
+            body = self.rfile.read(length) if length else None
+        req = _ur.Request(vite_url, data=body, method=method)
+        for header in ("Content-Type", "Accept", "Accept-Language", "Cookie", "User-Agent"):
+            val = self.headers.get(header)
+            if val:
+                req.add_header(header, val)
+        try:
+            with _ur.urlopen(req, timeout=30) as resp:
+                status = resp.status
+                resp_headers = dict(resp.headers)
+                resp_body = resp.read()
+        except HTTPError as e:
+            # HTTP 4xx/5xx are valid responses — relay them, not a proxy failure
+            status = e.code
+            resp_headers = dict(e.headers)
+            resp_body = e.read()
+        except URLError:
+            # Connection refused / DNS failure — Vite is down
+            return False
+        except Exception:
+            return False
+        # Relay response
+        self.send_response(status)
+        skip_headers = {"connection", "keep-alive", "transfer-encoding", "proxy-authenticate", "proxy-authorization", "te", "trailers"}
+        for key, val in resp_headers.items():
+            if key.lower() in skip_headers:
+                continue
+            self.send_header(key, val)
+        self.end_headers()
+        self.wfile.write(resp_body)
+        return True
+
+    def _serve_static_fallback(self) -> None:
+        """Serve the Vue 3 SPA from built static files (frontend/dist/)."""
+        FRONTEND_DIST = Path(__file__).resolve().parents[5] / "frontend" / "dist"
+        parsed = urlparse(self.path)
+        req_path = parsed.path.lstrip("/")
+
+        # /assets/* → static files
+        if req_path.startswith("assets/") and FRONTEND_DIST.exists():
+            asset_path = FRONTEND_DIST / req_path
+            if asset_path.is_file():
+                content = asset_path.read_bytes()
+                suffix = asset_path.suffix
+                ct_map = {".css": "text/css", ".js": "application/javascript", ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon", ".woff2": "font/woff2"}
+                content_type = ct_map.get(suffix, "application/octet-stream")
+                self.send_response(HTTPStatus.OK)
+                self.send_header("Content-Type", content_type)
+                self.send_header("Content-Length", str(len(content)))
+                self.end_headers()
+                self.wfile.write(content)
+                return
+
+        # SPA fallback: serve index.html for all non-asset routes
+        index_path = FRONTEND_DIST / "index.html"
+        if index_path.exists():
+            content = index_path.read_bytes()
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(content)))
+            self.end_headers()
+            self.wfile.write(content)
+            return
+
+        # Nothing works
+        self.send_html(
+            render_simple_page("en", "unavailable.title", "unavailable.text", HTTPStatus.SERVICE_UNAVAILABLE)[0],
+            HTTPStatus.SERVICE_UNAVAILABLE, "en",
+        )
+
+    def _serve_or_proxy(self, method: str = "GET") -> None:
+        """Try Vite proxy first; fall back to static built files if Vite is down."""
+        if self._proxy_to_vite(method):
+            return
+        self._serve_static_fallback()
 
     def do_GET(self) -> None:  # noqa: N802 - inherited API name
         parsed = urlparse(self.path)
         path = parsed.path
         lang = self.language_from_request(parsed)
 
+        # ── Portal-specific API routes ──
         if path == "/health":
             self.send_json({"status": "ok", "module": MODULE_NAME})
             return
@@ -970,58 +1146,29 @@ class PortalHandler(BaseHTTPRequestHandler):
             self.wfile.write(payload)
             return
 
-        if path == "/":
-            if self.current_user():
-                self.redirect(with_lang("/dashboard", lang), lang)
-            else:
-                self.send_html(render_login(lang, self.path, request_host=self.request_host), lang=lang)
+        # ── API Gateway: forward to internal backend services ──
+        if self._proxy_gateway("GET"):
             return
 
-        if path == "/login":
-            if self.current_user():
-                self.redirect(with_lang("/dashboard", lang), lang)
-            elif not user_admin_available():
-                self.send_html(render_user_admin_unavailable(lang, self.path), HTTPStatus.SERVICE_UNAVAILABLE, lang)
-            else:
-                self.redirect(user_admin_login_url(lang, self.request_host), lang)
-            return
-
-        if path == "/dashboard":
-            user = self.require_user(lang, self.path)
-            if user:
-                self.send_html(render_dashboard(user, lang, self.path, self.request_host), lang=lang)
-            return
-
-        if path.startswith("/modules/"):
-            user = self.require_user(lang, self.path)
-            if user:
-                module_key = path.removeprefix("/modules/")
-                self.send_html(render_module_placeholder(user, module_key, lang, self.path, self.request_host), lang=lang)
-            return
-
-        html_text, status = render_simple_page(lang, "not_found.title", "not_found.text", HTTPStatus.NOT_FOUND)
-        self.send_html(html_text, status, lang)
+        # ── All other requests → Vue 3 SPA (proxy to Vite dev or serve built dist) ──
+        self._serve_or_proxy("GET")
 
     def do_POST(self) -> None:  # noqa: N802 - inherited API name
         parsed = urlparse(self.path)
         path = parsed.path
         lang = self.language_from_request(parsed)
 
-        if not self.csrf_origin_allowed():
-            html_text, status = render_simple_page(lang, "forbidden.title", "forbidden.text", HTTPStatus.FORBIDDEN)
-            self.send_html(html_text, status, lang)
-            return
-
-        if path == "/login":
-            self.redirect(user_admin_login_url(lang, self.request_host), lang)
-            return
-
+        # ── Portal-specific POST routes (logout) ──
         if path == "/logout":
             self.redirect(user_admin_logout_url(lang, self.request_host), lang)
             return
 
-        html_text, status = render_simple_page(lang, "not_found.title", "not_found.text", HTTPStatus.NOT_FOUND)
-        self.send_html(html_text, status, lang)
+        # ── API Gateway: forward to internal backend services ──
+        if self._proxy_gateway("POST"):
+            return
+
+        # ── All other POST requests → Vue 3 SPA (proxy to Vite dev) ──
+        self._serve_or_proxy("POST")
 
 
 def parse_args() -> argparse.Namespace:

@@ -7,6 +7,8 @@ import { useI18n } from 'vue-i18n'
 import { publicApi } from '@/api/client'
 import type { SupportedLang } from '@/types'
 
+const BYPASS_AUTH = import.meta.env.VITE_DEV_BYPASS_AUTH === 'true'
+
 interface EntityOption {
   entity_id: string
   entity_code: string
@@ -176,6 +178,13 @@ function initEntityField() {
 }
 
 onMounted(async () => {
+  // ── Dev bypass: skip login form, auto-authenticate and go to dashboard ──
+  if (BYPASS_AUTH) {
+    await auth.login(email.value, '', entityCode.value)
+    const redirect = (route.query.redirect as string) || '/dashboard'
+    router.push(redirect)
+    return
+  }
   await loadEntities()
   initEntityField()
 })
@@ -185,6 +194,7 @@ onMounted(async () => {
   <main class="login-page">
     <section class="login-card">
       <div class="brand-mark">TACAI</div>
+      <div v-if="BYPASS_AUTH" class="dev-bypass-badge">🔧 DEV MODE — Auth Bypassed</div>
       <h1>{{ t('login.title') }}</h1>
       <p class="muted login-subtitle">{{ t('login.subtitle') }}</p>
 

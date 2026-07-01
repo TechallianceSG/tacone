@@ -130,7 +130,7 @@ python3 app.py --host 127.0.0.1 --port 8012
 
 ```bash
 cd frontend
-npm run dev          # Dev server on :5173
+npm run dev          # Dev server on :3000
 npm run build        # Production build
 npx vue-tsc --noEmit # Type check
 ```

@@ -1091,5 +1091,573 @@ status TEXT,
 );
 
 -- ============================================================
+-- 薪资JP 扩展表 (pay_jp*)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS pay_jp_employees (
+    employee_id TEXT NOT NULL,
+    entity_id TEXT,
+    employee_number TEXT,
+    employee_name TEXT,
+    email TEXT,
+    department_label TEXT,
+    team_label TEXT,
+    salary_type TEXT,
+    basic_salary NUMERIC,
+    hourly_rate NUMERIC,
+    daily_rate NUMERIC,
+    standard_work_days NUMERIC,
+    standard_work_hours NUMERIC,
+    standard_monthly_hours NUMERIC,
+    overtime_hourly_rate NUMERIC,
+    late_night_hourly_rate NUMERIC,
+    holiday_hourly_rate NUMERIC,
+    fixed_allowance NUMERIC,
+    transportation_allowance NUMERIC,
+    housing_allowance NUMERIC,
+    dependent_allowance NUMERIC,
+    other_allowance NUMERIC,
+    recurring_deductions NUMERIC,
+    social_insurance_deduction NUMERIC,
+    income_tax_deduction NUMERIC,
+    residence_tax_deduction NUMERIC,
+    employment_insurance_deduction NUMERIC,
+    other_deduction NUMERIC,
+    bank_name TEXT,
+    bank_branch_name TEXT,
+    bank_swift_code TEXT,
+    bank_account_type TEXT,
+    bank_account_name TEXT,
+    bank_account_number TEXT,
+    payroll_currency TEXT DEFAULT 'JPY',
+    health_insurance_enrolled BOOLEAN DEFAULT true,
+    pension_enrolled BOOLEAN DEFAULT true,
+    employment_insurance_enrolled BOOLEAN DEFAULT true,
+    residence_tax_exists BOOLEAN DEFAULT false,
+    residence_tax_amount NUMERIC,
+    active BOOLEAN DEFAULT true,
+    notes TEXT,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now(),
+    PRIMARY KEY (employee_id)
+);
+
+CREATE TABLE IF NOT EXISTS pay_jp_payroll_batches (
+    batch_id TEXT NOT NULL,
+    country_code TEXT DEFAULT 'JP',
+    entity_id TEXT,
+    payroll_month TEXT,
+    status TEXT DEFAULT 'draft',
+    version INTEGER DEFAULT 1,
+    employee_count INTEGER,
+    gross_total NUMERIC,
+    deduction_total NUMERIC,
+    net_total NUMERIC,
+    employer_cost_total NUMERIC,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now(),
+    created_by TEXT,
+    notes TEXT,
+    PRIMARY KEY (batch_id)
+);
+
+CREATE TABLE IF NOT EXISTS pay_jp_monthly_salary_sheets (
+    sheet_id TEXT NOT NULL,
+    country_code TEXT DEFAULT 'JP',
+    entity_id TEXT,
+    payroll_month TEXT,
+    status TEXT DEFAULT 'draft',
+    version INTEGER DEFAULT 1,
+    employee_count INTEGER,
+    standard_work_days INTEGER,
+    standard_work_hours INTEGER,
+    gross_total NUMERIC,
+    deduction_total NUMERIC,
+    net_total NUMERIC,
+    employer_cost_total NUMERIC,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    created_by TEXT,
+    updated_at TIMESTAMPTZ DEFAULT now(),
+    notes TEXT,
+    PRIMARY KEY (sheet_id)
+);
+
+CREATE TABLE IF NOT EXISTS pay_jp_monthly_salary_records (
+    record_id TEXT NOT NULL,
+    sheet_id TEXT,
+    payroll_month TEXT,
+    country_code TEXT DEFAULT 'JP',
+    entity_id TEXT,
+    employee_id TEXT,
+    employee_number TEXT,
+    employee_name TEXT,
+    email TEXT,
+    department_label TEXT,
+    team_label TEXT,
+    salary_type TEXT,
+    basic_salary NUMERIC,
+    hourly_rate NUMERIC,
+    daily_rate NUMERIC,
+    standard_work_days NUMERIC,
+    standard_work_hours NUMERIC,
+    actual_work_days NUMERIC,
+    actual_work_hours NUMERIC,
+    paid_leave_days NUMERIC,
+    unpaid_leave_days NUMERIC,
+    overtime_hours NUMERIC,
+    late_night_hours NUMERIC,
+    holiday_hours NUMERIC,
+    absence_days NUMERIC,
+    fixed_allowance NUMERIC,
+    transportation_allowance NUMERIC,
+    housing_allowance NUMERIC,
+    dependent_allowance NUMERIC,
+    performance_bonus NUMERIC,
+    bonus NUMERIC,
+    other_payment NUMERIC,
+    social_insurance_employee NUMERIC,
+    social_insurance_employer NUMERIC,
+    health_insurance_employee NUMERIC,
+    pension_employee NUMERIC,
+    employment_insurance_employee NUMERIC,
+    employment_insurance_employer NUMERIC,
+    income_tax NUMERIC,
+    residence_tax NUMERIC,
+    recurring_deductions NUMERIC,
+    other_deduction NUMERIC,
+    gross_pay NUMERIC,
+    deduction_total NUMERIC,
+    net_pay NUMERIC,
+    employer_cost_total NUMERIC,
+    calculation_messages JSONB,
+    status TEXT DEFAULT 'draft',
+    version INTEGER DEFAULT 1,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now(),
+    PRIMARY KEY (record_id)
+);
+
+CREATE TABLE IF NOT EXISTS pay_jp_payslips (
+    payslip_id TEXT,
+    record_id TEXT NOT NULL,
+    batch_id TEXT,
+    employee_id TEXT,
+    employee_email TEXT,
+    file_name TEXT,
+    file_path TEXT,
+    status TEXT DEFAULT 'draft',
+    gross_pay NUMERIC,
+    net_pay NUMERIC,
+    payroll_month TEXT,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now(),
+    release_id TEXT,
+    sheet_id TEXT,
+    currency TEXT DEFAULT 'JPY',
+    PRIMARY KEY (record_id)
+);
+
+CREATE TABLE IF NOT EXISTS pay_jp_payslip_email_deliveries (
+    delivery_id TEXT,
+    payslip_id TEXT,
+    batch_id TEXT NOT NULL,
+    recipient TEXT,
+    status TEXT,
+    message TEXT,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    sent_at TIMESTAMPTZ,
+    PRIMARY KEY (batch_id)
+);
+
+CREATE TABLE IF NOT EXISTS pay_jp_payroll_release_batches (
+    release_id TEXT NOT NULL,
+    source_sheet_id TEXT,
+    country_code TEXT DEFAULT 'JP',
+    entity_id TEXT,
+    payroll_month TEXT,
+    status TEXT DEFAULT 'draft',
+    employee_count INTEGER,
+    payslip_count INTEGER,
+    email_sent_count INTEGER,
+    email_failed_count INTEGER,
+    gross_total NUMERIC,
+    deduction_total NUMERIC,
+    net_total NUMERIC,
+    employer_cost_total NUMERIC,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    created_by TEXT,
+    updated_at TIMESTAMPTZ DEFAULT now(),
+    notes TEXT,
+    PRIMARY KEY (release_id)
+);
+
+CREATE TABLE IF NOT EXISTS pay_jp_audit_logs (
+    audit_id TEXT NOT NULL,
+    module TEXT DEFAULT 'tacaipay_jp',
+    record_id TEXT,
+    action TEXT,
+    user TEXT,
+    timestamp TIMESTAMPTZ DEFAULT now(),
+    before_value JSONB,
+    after_value JSONB,
+    PRIMARY KEY (audit_id)
+);
+
+-- ============================================================
+-- 薪资CN (pay_cn*)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS pay_cn_social_insurance_rules (
+    rule_id TEXT NOT NULL,
+    city TEXT,
+    entity_id TEXT,
+    pension_employee_rate NUMERIC,
+    pension_employer_rate NUMERIC,
+    medical_employee_rate NUMERIC,
+    medical_employer_rate NUMERIC,
+    unemployment_employee_rate NUMERIC,
+    unemployment_employer_rate NUMERIC,
+    injury_employer_rate NUMERIC,
+    maternity_employer_rate NUMERIC,
+    housing_fund_employee_rate NUMERIC,
+    housing_fund_employer_rate NUMERIC,
+    social_insurance_base_min NUMERIC,
+    social_insurance_base_max NUMERIC,
+    housing_fund_base_min NUMERIC,
+    housing_fund_base_max NUMERIC,
+    effective_start DATE,
+    effective_end DATE,
+    status TEXT DEFAULT 'active',
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now(),
+    PRIMARY KEY (rule_id)
+);
+
+CREATE TABLE IF NOT EXISTS pay_cn_tax_brackets (
+    bracket_id TEXT NOT NULL,
+    country_code TEXT DEFAULT 'CN',
+    tax_type TEXT DEFAULT 'income_tax',
+    min_income NUMERIC,
+    max_income NUMERIC,
+    tax_rate NUMERIC,
+    quick_deduction NUMERIC,
+    effective_year INTEGER,
+    status TEXT DEFAULT 'active',
+    created_at TIMESTAMPTZ DEFAULT now(),
+    PRIMARY KEY (bracket_id)
+);
+
+CREATE TABLE IF NOT EXISTS pay_cn_employees (
+    employee_id TEXT NOT NULL,
+    entity_id TEXT,
+    employee_number TEXT,
+    employee_name TEXT,
+    email TEXT,
+    department_label TEXT,
+    city TEXT,
+    salary_type TEXT,
+    basic_salary NUMERIC,
+    hourly_rate NUMERIC,
+    daily_rate NUMERIC,
+    standard_work_days NUMERIC,
+    standard_work_hours NUMERIC,
+    fixed_allowance NUMERIC,
+    housing_allowance NUMERIC,
+    transportation_allowance NUMERIC,
+    meal_allowance NUMERIC,
+    other_allowance NUMERIC,
+    recurring_deductions NUMERIC,
+    social_insurance_base NUMERIC,
+    housing_fund_base NUMERIC,
+    tax_threshold_deduction NUMERIC DEFAULT 5000,
+    special_deduction JSONB,
+    bank_name TEXT,
+    bank_account_number TEXT,
+    bank_account_name TEXT,
+    payroll_currency TEXT DEFAULT 'CNY',
+    active BOOLEAN DEFAULT true,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now(),
+    PRIMARY KEY (employee_id)
+);
+
+CREATE TABLE IF NOT EXISTS pay_cn_payroll_batches (
+    batch_id TEXT NOT NULL,
+    country_code TEXT DEFAULT 'CN',
+    entity_id TEXT,
+    payroll_month TEXT,
+    status TEXT DEFAULT 'draft',
+    employee_count INTEGER,
+    gross_total NUMERIC,
+    deduction_total NUMERIC,
+    net_total NUMERIC,
+    employer_cost_total NUMERIC,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now(),
+    created_by TEXT,
+    notes TEXT,
+    PRIMARY KEY (batch_id)
+);
+
+CREATE TABLE IF NOT EXISTS pay_cn_monthly_salary_records (
+    record_id TEXT NOT NULL,
+    sheet_id TEXT,
+    batch_id TEXT,
+    payroll_month TEXT,
+    entity_id TEXT,
+    employee_id TEXT,
+    employee_number TEXT,
+    employee_name TEXT,
+    basic_salary NUMERIC,
+    hourly_rate NUMERIC,
+    daily_rate NUMERIC,
+    actual_work_days NUMERIC,
+    actual_work_hours NUMERIC,
+    overtime_hours NUMERIC,
+    overtime_pay NUMERIC,
+    fixed_allowance NUMERIC,
+    housing_allowance NUMERIC,
+    transportation_allowance NUMERIC,
+    meal_allowance NUMERIC,
+    performance_bonus NUMERIC,
+    bonus NUMERIC,
+    other_payment NUMERIC,
+    gross_pay NUMERIC,
+    pension_employee NUMERIC,
+    medical_employee NUMERIC,
+    unemployment_employee NUMERIC,
+    housing_fund_employee NUMERIC,
+    social_insurance_total NUMERIC,
+    income_tax NUMERIC,
+    other_deduction NUMERIC,
+    deduction_total NUMERIC,
+    net_pay NUMERIC,
+    pension_employer NUMERIC,
+    medical_employer NUMERIC,
+    unemployment_employer NUMERIC,
+    injury_employer NUMERIC,
+    maternity_employer NUMERIC,
+    housing_fund_employer NUMERIC,
+    employer_cost_total NUMERIC,
+    calculation_messages JSONB,
+    status TEXT DEFAULT 'draft',
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now(),
+    PRIMARY KEY (record_id)
+);
+
+CREATE TABLE IF NOT EXISTS pay_cn_payslips (
+    payslip_id TEXT,
+    record_id TEXT NOT NULL,
+    batch_id TEXT,
+    employee_id TEXT,
+    employee_email TEXT,
+    file_name TEXT,
+    file_path TEXT,
+    status TEXT DEFAULT 'draft',
+    gross_pay NUMERIC,
+    net_pay NUMERIC,
+    payroll_month TEXT,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now(),
+    release_id TEXT,
+    sheet_id TEXT,
+    currency TEXT DEFAULT 'CNY',
+    PRIMARY KEY (record_id)
+);
+
+CREATE TABLE IF NOT EXISTS pay_cn_payslip_email_deliveries (
+    delivery_id TEXT,
+    payslip_id TEXT,
+    batch_id TEXT NOT NULL,
+    recipient TEXT,
+    status TEXT,
+    message TEXT,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    sent_at TIMESTAMPTZ,
+    PRIMARY KEY (batch_id)
+);
+
+CREATE TABLE IF NOT EXISTS pay_cn_audit_logs (
+    audit_id TEXT NOT NULL,
+    module TEXT DEFAULT 'tacaipay_cn',
+    record_id TEXT,
+    action TEXT,
+    user TEXT,
+    timestamp TIMESTAMPTZ DEFAULT now(),
+    before_value JSONB,
+    after_value JSONB,
+    PRIMARY KEY (audit_id)
+);
+
+-- ============================================================
+-- 发票管理 (inv*)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS inv_customer_projects (
+    project_id TEXT NOT NULL,
+    customer_id TEXT,
+    customer_name TEXT,
+    project_code TEXT,
+    project_name TEXT,
+    entity_id TEXT,
+    main_recipient_name TEXT,
+    main_recipient_email TEXT,
+    main_recipient_title TEXT,
+    cc_recipients JSONB DEFAULT '[]',
+    billing_address TEXT,
+    billing_contact TEXT,
+    default_currency TEXT DEFAULT 'JPY',
+    default_tax_rate TEXT DEFAULT '10%',
+    payment_terms_days INTEGER DEFAULT 30,
+    invoice_prefix TEXT,
+    notes TEXT,
+    active BOOLEAN DEFAULT true,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    created_by TEXT,
+    updated_at TIMESTAMPTZ DEFAULT now(),
+    updated_by TEXT,
+    PRIMARY KEY (project_id)
+);
+
+CREATE TABLE IF NOT EXISTS inv_pending_invoices (
+    pending_id TEXT NOT NULL,
+    project_id TEXT,
+    customer_id TEXT,
+    customer_name TEXT,
+    project_code TEXT,
+    project_name TEXT,
+    period_start DATE,
+    period_end DATE,
+    estimated_amount NUMERIC,
+    currency TEXT DEFAULT 'JPY',
+    employee_count INTEGER,
+    status TEXT DEFAULT 'pending',
+    reminder_sent_at TIMESTAMPTZ,
+    reminder_sent_by TEXT,
+    converted_to_invoice_id TEXT,
+    notes TEXT,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now(),
+    PRIMARY KEY (pending_id)
+);
+
+CREATE TABLE IF NOT EXISTS inv_invoices (
+    invoice_id TEXT NOT NULL,
+    invoice_number TEXT,
+    project_id TEXT,
+    customer_id TEXT,
+    customer_name TEXT,
+    entity_id TEXT,
+    invoice_date DATE,
+    due_date DATE,
+    period_start DATE,
+    period_end DATE,
+    currency TEXT DEFAULT 'JPY',
+    subtotal NUMERIC,
+    tax_rate TEXT DEFAULT '10%',
+    tax_amount NUMERIC,
+    total_amount NUMERIC,
+    status TEXT DEFAULT 'draft',
+    main_recipient_name TEXT,
+    main_recipient_email TEXT,
+    cc_recipients JSONB DEFAULT '[]',
+    notes TEXT,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    created_by TEXT,
+    updated_at TIMESTAMPTZ DEFAULT now(),
+    updated_by TEXT,
+    PRIMARY KEY (invoice_id)
+);
+
+CREATE TABLE IF NOT EXISTS inv_invoice_items (
+    item_id TEXT NOT NULL,
+    invoice_id TEXT,
+    description TEXT,
+    employee_id TEXT,
+    employee_name TEXT,
+    quantity NUMERIC,
+    unit_price NUMERIC,
+    amount NUMERIC,
+    tax_rate TEXT,
+    sort_order INTEGER DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    PRIMARY KEY (item_id)
+);
+
+CREATE TABLE IF NOT EXISTS inv_approval_records (
+    approval_id TEXT NOT NULL,
+    invoice_id TEXT,
+    approver_user_id TEXT,
+    approver_name TEXT,
+    action TEXT,
+    comment TEXT,
+    acted_at TIMESTAMPTZ DEFAULT now(),
+    created_at TIMESTAMPTZ DEFAULT now(),
+    PRIMARY KEY (approval_id)
+);
+
+CREATE TABLE IF NOT EXISTS inv_email_logs (
+    log_id TEXT NOT NULL,
+    invoice_id TEXT,
+    recipient TEXT,
+    cc_recipients JSONB DEFAULT '[]',
+    email_type TEXT DEFAULT 'invoice',
+    status TEXT,
+    sent_at TIMESTAMPTZ,
+    opened_at TIMESTAMPTZ,
+    error_message TEXT,
+    attachment_file TEXT,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    PRIMARY KEY (log_id)
+);
+
+CREATE TABLE IF NOT EXISTS inv_payments (
+    payment_id TEXT NOT NULL,
+    invoice_id TEXT,
+    payment_date DATE,
+    amount NUMERIC,
+    currency TEXT DEFAULT 'JPY',
+    payment_method TEXT,
+    reference_number TEXT,
+    bank_name TEXT,
+    notes TEXT,
+    status TEXT DEFAULT 'confirmed',
+    created_at TIMESTAMPTZ DEFAULT now(),
+    created_by TEXT,
+    updated_at TIMESTAMPTZ DEFAULT now(),
+    PRIMARY KEY (payment_id)
+);
+
+CREATE TABLE IF NOT EXISTS inv_reconciliation (
+    reconciliation_id TEXT NOT NULL,
+    invoice_id TEXT,
+    invoice_total NUMERIC,
+    total_paid NUMERIC,
+    balance NUMERIC,
+    status TEXT,
+    last_payment_date DATE,
+    overdue_days INTEGER,
+    reconciled_at TIMESTAMPTZ,
+    reconciled_by TEXT,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    PRIMARY KEY (reconciliation_id)
+);
+
+CREATE TABLE IF NOT EXISTS inv_audit_logs (
+    audit_id TEXT NOT NULL,
+    module TEXT DEFAULT 'invoice',
+    record_id TEXT,
+    record_type TEXT,
+    action TEXT,
+    user TEXT,
+    timestamp TIMESTAMPTZ DEFAULT now(),
+    before_value JSONB,
+    after_value JSONB,
+    notes TEXT,
+    PRIMARY KEY (audit_id)
+);
+
+-- ============================================================
 -- 员工自助 (ss*)
 -- ============================================================

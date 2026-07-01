@@ -46,7 +46,7 @@ except Exception:
 # ---------------------------------------------------------------------------
 # Paths & constants
 # ---------------------------------------------------------------------------
-ROOT_DIR = Path(__file__).resolve().parents[1]
+ROOT_DIR = Path(__file__).resolve().parents[0]
 DATABASE_DIR = ROOT_DIR / "database"
 FRONTEND_DIR = ROOT_DIR / "frontend"
 MESSAGES_PATH = DATABASE_DIR / "messages.json"
@@ -58,12 +58,11 @@ DELEGATIONS_PATH = DATABASE_DIR / "delegations.json"
 NOTIFICATION_TEMPLATES_PATH = DATABASE_DIR / "notification_templates.json"
 AUDIT_LOGS_PATH = DATABASE_DIR / "audit_logs.json"
 
-# Cross-module read-only paths (never written by tacaimsg)
-PROJECT_ROOT = ROOT_DIR.parents[1]
-USER_ADMIN_USERS_PATH = ROOT_DIR.parent / "User_admin" / "database" / "users.json"
-MASTERDATA_ENTITIES_PATH = ROOT_DIR.parent / "masterdata" / "database" / "entities.json"
-MASTERDATA_DEPARTMENTS_PATH = ROOT_DIR.parent / "masterdata" / "database" / "departments.json"
-EMPLOYEEADMIN_EMPLOYEES_PATH = PROJECT_ROOT / "TAC-employeeadmin" / "database" / "employees.json"
+# ── PostgreSQL table prefixes ──
+MODULE_PREFIX = "msg"
+UA_PREFIX = "ua"
+MD_PREFIX = "md"
+EMP_PREFIX = "emp"
 
 MODULE_NAME = "tacaimsg"
 DEFAULT_PORT = 8012
@@ -511,7 +510,7 @@ def pagination_html(current_page: int, total_pages: int, base_url: str) -> str:
 def load_json_array(path: Path) -> list:
     if _PG_AVAILABLE:
         try:
-            result = _db.load_table(_db.path_to_table(path))
+            result = _db.load_table(f"{MODULE_PREFIX}_{path.stem}")
             if result is not None:
                 return result
         except Exception:
@@ -726,15 +725,15 @@ def validate_user_admin_session(session_id: str) -> dict[str, Any] | None:
 # Cross-module read-only data access
 # ---------------------------------------------------------------------------
 def read_users() -> list[dict[str, Any]]:
-    return load_json_array(USER_ADMIN_USERS_PATH)
+    return _db.load_table(f"{UA_PREFIX}_users")
 
 
 def read_entities() -> list[dict[str, Any]]:
-    return load_json_array(MASTERDATA_ENTITIES_PATH)
+    return _db.load_table(f"{MD_PREFIX}_entities")
 
 
 def read_departments() -> list[dict[str, Any]]:
-    return load_json_array(MASTERDATA_DEPARTMENTS_PATH)
+    return _db.load_table(f"{MD_PREFIX}_departments")
 
 
 def resolve_user_name(user_id: str) -> str:
@@ -763,7 +762,7 @@ def find_users_by_role(role_key: str, entity_id: str = "") -> list[dict[str, Any
 
 def find_supervisor(user_id: str) -> dict[str, Any] | None:
     """Find supervisor from employee master data."""
-    employees = load_json_array(EMPLOYEEADMIN_EMPLOYEES_PATH) if EMPLOYEEADMIN_EMPLOYEES_PATH.exists() else []
+    employees = _db.load_table(f"{EMP_PREFIX}_employees")
     for emp in employees:
         linked = str(emp.get("linked_user_id") or emp.get("user_id") or "")
         if linked == user_id:

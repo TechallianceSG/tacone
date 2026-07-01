@@ -1,21 +1,23 @@
 """
 TACAI Shared Configuration Module
 ==================================
-Single source of truth for port assignments, service URLs, and allowed hosts/ports.
+Single source of truth for port assignments, service URLs, gateway routes,
+and allowed hosts/ports.
 
 All TACAI backend modules should import from here instead of hardcoding port
 constants.  The start script (start_tacai_lan.sh) and .env.{dev,stg,prd} files
 control the runtime values; this module reads those and provides defaults.
 
 Architecture:
-  - Portal + User_admin: per-environment (DEV/STG/PRD each get their own instance)
+  - Portal (:3000): unified API Gateway — single entry point for the SPA frontend
+  - User_admin: per-environment (DEV/STG/PRD each get their own instance)
   - Business modules: shared (single instance, fixed ports across all envs)
-  - Gateway: single entry point for remote access (port 8010)
+  - GATEWAY_ROUTES: path-prefix → internal-port mapping for Portal forwarding
   - Vite dev server: 5173 (frontend hot-reload)
 
 Usage:
     from config import (
-        ALLOWED_PORTS, ALLOWED_HOSTS,
+        ALLOWED_PORTS, ALLOWED_HOSTS, GATEWAY_ROUTES,
         get_portal_port, get_auth_port,
         get_service_url, SHARED_SERVICES,
     )
@@ -54,8 +56,11 @@ SHARED_PORT = {
     "employee_admin": 8004,
     "masterdata": 8007,
     "tacaimsg": 8012,
+    "tacaipay_jp": 8013,
+    "tacaipay_cn": 8014,
     "tacaipay_sg": 8016,
     "selfservice": 8018,
+    "tacaiinvoice": 8019,
 }
 
 # Legacy / reserved ports
@@ -70,17 +75,47 @@ RESERVED_PORTS = {
     8017,   # Reserved
 }
 
+# ── API Gateway route table ──────────────────────────────────────────
+# Maps API path prefix → internal backend port.
+# Portal (:3000) is the single entry point; it forwards requests to
+# internal services based on this table.  /api/portal/* is handled
+# natively by Portal itself and is NOT listed here.
+GATEWAY_ROUTES: Dict[str, int] = {
+    # ── User_admin (AUTH_PORT) ──
+    '/api/auth/':           AUTH_PORT,
+    '/api/public/':         AUTH_PORT,
+    '/api/users/':          AUTH_PORT,
+    '/api/roles/':          AUTH_PORT,
+    '/api/permissions/':    AUTH_PORT,
+    '/api/audit-logs/':     AUTH_PORT,
+    '/api/login-sessions/': AUTH_PORT,
+    '/api/dashboard/':      AUTH_PORT,
+    # ── Business services (shared ports) ──
+    '/api/employees/':      SHARED_PORT['employee_admin'],
+    '/api/masterdata/':     SHARED_PORT['masterdata'],
+    '/api/master-data/':    SHARED_PORT['masterdata'],
+    '/api/messages/':       SHARED_PORT['tacaimsg'],
+    # ── Payroll (country-specific routes BEFORE generic /api/payroll/) ──
+    '/api/payroll/sg/':     SHARED_PORT['tacaipay_sg'],
+    '/api/payroll/jp/':     SHARED_PORT['tacaipay_jp'],
+    '/api/payroll/cn/':     SHARED_PORT['tacaipay_cn'],
+    '/api/payroll/':        SHARED_PORT['tacaipay_sg'],
+    '/api/salary/':         SHARED_PORT['tacaipay_sg'],
+    # ── Invoice ──
+    '/api/invoice/':        SHARED_PORT['tacaiinvoice'],
+    '/api/timesheet/':      SHARED_PORT['timesheet'],
+    '/api/expense/':        SHARED_PORT['expense'],
+    '/api/selfservice/':    SHARED_PORT['selfservice'],
+}
+
 # ── All valid local ports ──────────────────────────────────────────────
+# With the API Gateway pattern, only Portal ports need external access.
+# Internal service ports are only accessed by Portal via localhost.
 ALLOWED_PORTS: Set[int] = {
-    # Per-environment Portal + Auth
-    3000, 3001,   # DEV
-    4000, 4001,   # STG
-    5000, 5001,   # Reserved (future QA env)
-    6000, 6001,   # PRD
-    # Shared business services
-    *SHARED_PORT.values(),
-    # Reserved / planned ports
-    *RESERVED_PORTS,
+    # Per-environment Portal
+    3000, 4000, 5000, 6000,
+    # Auth (needed for direct session validation in dev)
+    3001, 4001, 5001, 6001,
     # Frontend dev server
     5173,  # Vite
     4173,  # Vite preview
@@ -124,6 +159,9 @@ SHARED_SERVICES: Dict[str, ServiceInfo] = {
     "masterdata": ServiceInfo("masterdata", 8007, "backend/services/masterdata", "python3 app.py --host 0.0.0.0 --port 8007"),
     "tacaimsg": ServiceInfo("tacaimsg", 8012, "backend/services/messaging", "python3 app.py --host 0.0.0.0 --port 8012"),
     "tacaipay_sg": ServiceInfo("tacaipay_sg", 8016, "backend/services/payroll/sg", "python3 app.py --host 0.0.0.0 --port 8016"),
+    "tacaipay_jp": ServiceInfo("tacaipay_jp", 8013, "backend/services/payroll/jp", "python3 app.py --host 0.0.0.0 --port 8013"),
+    "tacaipay_cn": ServiceInfo("tacaipay_cn", 8014, "backend/services/payroll/cn", "python3 app.py --host 0.0.0.0 --port 8014"),
+    "tacaiinvoice": ServiceInfo("tacaiinvoice", 8019, "backend/services/invoice", "python3 app.py --host 0.0.0.0 --port 8019"),
     "selfservice": ServiceInfo("selfservice", 8018, "backend/services/self_service", "python3 app.py --host 0.0.0.0 --port 8018"),
 }
 
