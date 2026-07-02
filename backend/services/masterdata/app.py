@@ -2462,6 +2462,30 @@ class MasterDataHandler(BaseHTTPRequestHandler):
                 return
             self.handle_api_update_entity(lang, messages, user, parts[3])
             return
+        elif path == "/api/masterdata/departments":
+            # POST /api/masterdata/departments — create department
+            if not self.require_permission(user, "masterdata.maintain", lang, messages):
+                return
+            self.handle_api_create_department_json(lang, messages, user)
+            return
+        elif len(parts) >= 4 and parts[0] == "api" and parts[1] == "masterdata" and parts[2] == "departments" and len(parts) == 4:
+            # POST /api/masterdata/departments/{id} — update department
+            if not self.require_permission(user, "masterdata.maintain", lang, messages):
+                return
+            self.handle_api_update_department_json(lang, messages, user, parts[3])
+            return
+        elif path == "/api/masterdata/teams":
+            # POST /api/masterdata/teams — create team
+            if not self.require_permission(user, "masterdata.maintain", lang, messages):
+                return
+            self.handle_api_create_team_json(lang, messages, user)
+            return
+        elif len(parts) >= 4 and parts[0] == "api" and parts[1] == "masterdata" and parts[2] == "teams" and len(parts) == 4:
+            # POST /api/masterdata/teams/{id} — update team
+            if not self.require_permission(user, "masterdata.maintain", lang, messages):
+                return
+            self.handle_api_update_team_json(lang, messages, user, parts[3])
+            return
 
         if path == "/entities/new":
             if not self.require_permission(user, "masterdata.admin", lang, messages):
@@ -3193,6 +3217,241 @@ class MasterDataHandler(BaseHTTPRequestHandler):
         append_audit("entity", entity_id, "update", user, before_value, updated, change_reason, changed, str(version.get("version_id", "")))
         self.send_json(200, {"success": True, "entity": updated})
 
+    def handle_api_create_department_json(self, lang: str, messages: dict[str, str], user: dict[str, Any]) -> None:
+        """POST /api/masterdata/departments — create department (JSON)."""
+        body = self.parse_json_body()
+        departments = load_departments()
+        form = {key: str(value) if not isinstance(value, (list, dict)) else "" for key, value in body.items()}
+        if not can_admin_masterdata(user):
+            form["entity_id"] = current_entity_id(user)
+        values, errors = validate_department_input(form, departments, messages)
+        if not can_admin_masterdata(user) and values.get("entity_id") != current_entity_id(user):
+            errors["entity_id"] = t(messages, "api.forbidden")
+        if errors:
+            self.send_json(400, {"error": "Validation failed", "errors": list(errors.values()) if isinstance(errors, dict) else errors})
+            return
+        timestamp = now_iso()
+        department = {
+            "department_id": next_id(departments, "department_id", "DEP-", 4),
+            **values,
+            "created_at": timestamp,
+            "updated_at": timestamp,
+        }
+        departments.append(department)
+        save_departments(departments)
+        change_reason = str(body.get("change_reason", "JSON API creation."))
+        version = append_masterdata_version("department", str(department["department_id"]), "create", user, department, change_reason, masterdata_record_fields("department"))
+        append_audit("department", str(department["department_id"]), "create", user, None, department, change_reason, masterdata_record_fields("department"), str(version.get("version_id", "")))
+        self.send_json(201, {"success": True, "department": department, "department_id": department["department_id"]})
+
+    def handle_api_update_department_json(self, lang: str, messages: dict[str, str], user: dict[str, Any], department_id: str) -> None:
+        """POST /api/masterdata/departments/{id} — update department (JSON)."""
+        body = self.parse_json_body()
+        departments = load_departments()
+        index = next((i for i, d in enumerate(departments) if str(d.get("department_id", "")) == department_id and d.get("status") != "deleted"), None)
+        if index is None:
+            self.send_json(404, {"error": "Department not found"})
+            return
+        if not department_accessible_to_user(departments[index], user):
+            self.send_json(404, {"error": "Department not found"})
+            return
+        form = {key: str(value) if not isinstance(value, (list, dict)) else "" for key, value in body.items()}
+        if not can_admin_masterdata(user):
+            form["entity_id"] = str(departments[index].get("entity_id", current_entity_id(user)))
+        values, errors = validate_department_input(form, departments, messages, department_id)
+        if not can_admin_masterdata(user) and values.get("entity_id") != current_entity_id(user):
+            errors["entity_id"] = t(messages, "api.forbidden")
+        if errors:
+            self.send_json(400, {"error": "Validation failed", "errors": list(errors.values()) if isinstance(errors, dict) else errors})
+            return
+        before_value = dict(departments[index])
+        updated = {
+            **departments[index],
+            **values,
+            "department_id": departments[index].get("department_id"),
+            "created_at": departments[index].get("created_at", now_iso()),
+            "updated_at": now_iso(),
+        }
+        changed = masterdata_changed_fields("department", before_value, updated)
+        if not changed:
+            self.send_json(200, {"success": True, "message": "No changes", "department": updated})
+            return
+        change_reason = str(body.get("change_reason", "JSON API update."))
+        ensure_masterdata_version_baseline("department", department_id, user, before_value)
+        departments[index] = updated
+        save_departments(departments)
+        version = append_masterdata_version("department", department_id, "update", user, updated, change_reason, changed)
+        append_audit("department", department_id, "update", user, before_value, updated, change_reason, changed, str(version.get("version_id", "")))
+        self.send_json(200, {"success": True, "department": updated})
+
+    def handle_api_delete_department_json(self, lang: str, messages: dict[str, str], user: dict[str, Any], department_id: str) -> None:
+        """DELETE /api/masterdata/departments/{id} — deactivate department (JSON)."""
+        departments = load_departments()
+        index = next((i for i, d in enumerate(departments) if str(d.get("department_id", "")) == department_id and d.get("status") != "deleted"), None)
+        if index is None:
+            self.send_json(404, {"error": "Department not found"})
+            return
+        if not department_accessible_to_user(departments[index], user):
+            self.send_json(404, {"error": "Department not found"})
+            return
+        body = self.parse_json_body()
+        before_value = dict(departments[index])
+        updated = {**departments[index], "status": "inactive", "updated_at": now_iso()}
+        changed = masterdata_changed_fields("department", before_value, updated)
+        change_reason = str(body.get("change_reason", "JSON API deactivate."))
+        ensure_masterdata_version_baseline("department", department_id, user, before_value)
+        departments[index] = updated
+        save_departments(departments)
+        version = append_masterdata_version("department", department_id, "deactivate", user, updated, change_reason, changed)
+        append_audit("department", department_id, "deactivate", user, before_value, updated, change_reason, changed, str(version.get("version_id", "")))
+        self.send_json(200, {"success": True, "department": updated, "message": "Department deactivated"})
+
+    def handle_api_create_team_json(self, lang: str, messages: dict[str, str], user: dict[str, Any]) -> None:
+        """POST /api/masterdata/teams — create team (JSON)."""
+        body = self.parse_json_body()
+        teams = load_teams()
+        form = {key: str(value) if not isinstance(value, (list, dict)) else "" for key, value in body.items()}
+        if not can_admin_masterdata(user):
+            form["entity_id"] = current_entity_id(user)
+        values, errors = validate_team_input(form, teams, messages)
+        if errors:
+            self.send_json(400, {"error": "Validation failed", "errors": list(errors.values()) if isinstance(errors, dict) else errors})
+            return
+        persisted_values = team_persisted_values(values)
+        timestamp = now_iso()
+        team = {
+            "team_id": next_id(teams, "team_id", "TEAM-", 4),
+            **persisted_values,
+            "created_at": timestamp,
+            "updated_at": timestamp,
+        }
+        teams.append(team)
+        save_teams(teams)
+        change_reason = str(body.get("change_reason", "JSON API creation."))
+        version = append_masterdata_version("team", str(team["team_id"]), "create", user, team, change_reason, masterdata_record_fields("team"))
+        append_audit("team", str(team["team_id"]), "create", user, None, team, change_reason, masterdata_record_fields("team"), str(version.get("version_id", "")))
+        self.send_json(201, {"success": True, "team": team, "team_id": team["team_id"]})
+
+    def handle_api_update_team_json(self, lang: str, messages: dict[str, str], user: dict[str, Any], team_id: str) -> None:
+        """POST /api/masterdata/teams/{id} — update team (JSON)."""
+        body = self.parse_json_body()
+        teams = load_teams()
+        index = next((i for i, t in enumerate(teams) if str(t.get("team_id", "")) == team_id and t.get("status") != "deleted"), None)
+        if index is None:
+            self.send_json(404, {"error": "Team not found"})
+            return
+        if not team_accessible_to_user(teams[index], user):
+            self.send_json(404, {"error": "Team not found"})
+            return
+        form = {key: str(value) if not isinstance(value, (list, dict)) else "" for key, value in body.items()}
+        if not can_admin_masterdata(user):
+            form["entity_id"] = current_entity_id(user)
+        values, errors = validate_team_input(form, teams, messages, team_id)
+        if errors:
+            self.send_json(400, {"error": "Validation failed", "errors": list(errors.values()) if isinstance(errors, dict) else errors})
+            return
+        persisted_values = team_persisted_values(values)
+        before_value = dict(teams[index])
+        updated = {
+            **teams[index],
+            **persisted_values,
+            "team_id": teams[index].get("team_id"),
+            "created_at": teams[index].get("created_at", now_iso()),
+            "updated_at": now_iso(),
+        }
+        changed = masterdata_changed_fields("team", before_value, updated)
+        if not changed:
+            self.send_json(200, {"success": True, "message": "No changes", "team": updated})
+            return
+        change_reason = str(body.get("change_reason", "JSON API update."))
+        ensure_masterdata_version_baseline("team", team_id, user, before_value)
+        teams[index] = updated
+        save_teams(teams)
+        version = append_masterdata_version("team", team_id, "update", user, updated, change_reason, changed)
+        append_audit("team", team_id, "update", user, before_value, updated, change_reason, changed, str(version.get("version_id", "")))
+        self.send_json(200, {"success": True, "team": updated})
+
+    def handle_api_delete_team_json(self, lang: str, messages: dict[str, str], user: dict[str, Any], team_id: str) -> None:
+        """DELETE /api/masterdata/teams/{id} — deactivate team (JSON)."""
+        teams = load_teams()
+        index = next((i for i, t in enumerate(teams) if str(t.get("team_id", "")) == team_id and t.get("status") != "deleted"), None)
+        if index is None:
+            self.send_json(404, {"error": "Team not found"})
+            return
+        if not team_accessible_to_user(teams[index], user):
+            self.send_json(404, {"error": "Team not found"})
+            return
+        body = self.parse_json_body()
+        before_value = dict(teams[index])
+        updated = {**teams[index], "status": "inactive", "updated_at": now_iso()}
+        changed = masterdata_changed_fields("team", before_value, updated)
+        change_reason = str(body.get("change_reason", "JSON API deactivate."))
+        ensure_masterdata_version_baseline("team", team_id, user, before_value)
+        teams[index] = updated
+        save_teams(teams)
+        version = append_masterdata_version("team", team_id, "deactivate", user, updated, change_reason, changed)
+        append_audit("team", team_id, "deactivate", user, before_value, updated, change_reason, changed, str(version.get("version_id", "")))
+        self.send_json(200, {"success": True, "team": updated, "message": "Team deactivated"})
+
+    def handle_api_delete_entity_json(self, lang: str, messages: dict[str, str], user: dict[str, Any], entity_id: str) -> None:
+        """DELETE /api/masterdata/entities/{id} — deactivate entity (JSON)."""
+        entities = load_entities()
+        index = next((i for i, e in enumerate(entities) if str(e.get("entity_id", "")) == entity_id and e.get("status") != "deleted"), None)
+        if index is None:
+            self.send_json(404, {"error": "Entity not found"})
+            return
+        if not entity_accessible_to_user(entities[index], user):
+            self.send_json(404, {"error": "Entity not found"})
+            return
+        body = self.parse_json_body()
+        before_value = dict(entities[index])
+        updated = {**entities[index], "status": "inactive", "updated_at": now_iso()}
+        changed = masterdata_changed_fields("entity", before_value, updated)
+        change_reason = str(body.get("change_reason", "JSON API deactivate."))
+        ensure_masterdata_version_baseline("entity", entity_id, user, before_value)
+        entities[index] = updated
+        save_entities(entities)
+        version = append_masterdata_version("entity", entity_id, "deactivate", user, updated, change_reason, changed)
+        append_audit("entity", entity_id, "deactivate", user, before_value, updated, change_reason, changed, str(version.get("version_id", "")))
+        self.send_json(200, {"success": True, "entity": updated, "message": "Entity deactivated"})
+
+    def do_DELETE(self) -> None:
+        """HTTP DELETE — soft-delete (deactivate) master data records via JSON API."""
+        parsed = urlparse(self.path)
+        query = parse_qs(parsed.query)
+        lang = get_lang(query)
+        messages = load_i18n(lang)
+        path = parsed.path
+        parts = [part for part in path.split("/") if part]
+
+        if not self.csrf_origin_allowed():
+            self.send_json(403, {"error": t(messages, "validation.csrf")})
+            return
+
+        user = self.require_user(lang, messages)
+        if not user:
+            return
+
+        # DELETE /api/masterdata/entities/{id}
+        if len(parts) >= 4 and parts[0] == "api" and parts[1] == "masterdata" and parts[2] == "entities" and len(parts) == 4:
+            if not self.require_permission(user, "masterdata.admin", lang, messages):
+                return
+            self.handle_api_delete_entity_json(lang, messages, user, parts[3])
+            return
+        # DELETE /api/masterdata/departments/{id}
+        elif len(parts) >= 4 and parts[0] == "api" and parts[1] == "masterdata" and parts[2] == "departments" and len(parts) == 4:
+            if not self.require_permission(user, "masterdata.maintain", lang, messages):
+                return
+            self.handle_api_delete_department_json(lang, messages, user, parts[3])
+            return
+        # DELETE /api/masterdata/teams/{id}
+        elif len(parts) >= 4 and parts[0] == "api" and parts[1] == "masterdata" and parts[2] == "teams" and len(parts) == 4:
+            if not self.require_permission(user, "masterdata.maintain", lang, messages):
+                return
+            self.handle_api_delete_team_json(lang, messages, user, parts[3])
+            return
+        else:
+            self.send_json(404, {"error": "Not found"})
 
     def send_departments_list(self, lang: str, messages: dict[str, str], user: dict[str, Any], query: dict[str, list[str]]) -> None:
         entities_by_id = {str(entity.get("entity_id", "")): entity for entity in load_entities()}

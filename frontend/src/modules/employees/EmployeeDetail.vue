@@ -112,14 +112,31 @@ function unflattenObject(flat: Record<string, any>): Record<string, any> {
 
 function initFlatForm(emp: Employee) {
   const flat: Record<string, any> = {}
+
+  // First: initialize ALL schema fields with empty defaults
+  for (const section of tabs.map(t => t.key)) {
+    const schema = FIELD_SCHEMA[section]
+    if (schema) {
+      for (const fieldKey of schema) {
+        flat[`${section}.${fieldKey}`] = ''
+      }
+    }
+  }
+  if (emp.employee_number) flat['employee_number'] = emp.employee_number
+
+  // Then: overlay actual employee data (preserves non-empty values)
   for (const section of tabs.map(t => t.key)) {
     const sectionData = (emp as any)[section]
     if (sectionData && typeof sectionData === 'object' && !Array.isArray(sectionData)) {
-      Object.assign(flat, flattenObject(sectionData, section))
+      const existing = flattenObject(sectionData, section)
+      for (const [key, val] of Object.entries(existing)) {
+        if (val !== null && val !== undefined && val !== '') {
+          flat[key] = val
+        }
+      }
     }
   }
-  // Also include top-level flat fields
-  if (emp.employee_number) flat['employee_number'] = emp.employee_number
+
   flatForm.value = flat
 }
 
@@ -133,23 +150,87 @@ function formatValue(value: any): string {
   return String(value)
 }
 
+function formatDateTime(isoStr: string | undefined): string {
+  if (!isoStr) return '-'
+  try {
+    const d = new Date(isoStr)
+    if (isNaN(d.getTime())) return isoStr.substring(0, 16)
+    const pad = (n: number) => String(n).padStart(2, '0')
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+  } catch { return isoStr.substring(0, 16) }
+}
+
 interface FieldEntry { key: string; value: any }
+
+// ── Complete field schema — ensures ALL employees show the same fields ──
+// Flat key paths relative to the section, e.g. "name.display_name" for profile.name.display_name
+const FIELD_SCHEMA: Record<string, string[]> = {
+  profile: [
+    'name.display_name', 'name.given_name', 'name.family_name', 'name.romaji_name',
+    'name.given_name_kana', 'name.family_name_kana',
+    'email', 'email_p', 'phone', 'gender', 'date_of_birth', 'nationality', 'photo_path',
+    'address.building', 'address.street', 'address.city', 'address.prefecture',
+    'address.postal_code', 'address.country',
+    'emergency_contact.name', 'emergency_contact.phone', 'emergency_contact.email', 'emergency_contact.relationship',
+  ],
+  employment: [
+    'entity_id', 'department_id', 'team_id', 'position', 'employment_type', 'status',
+    'join_date', 'probation_end_date', 'country_code', 'work_country', 'business_line',
+    'assignment', 'manager_employee_id', 'office_location', 'legal_entity',
+    'contract.start_date', 'contract.end_date',
+    'resignation.resignation_date', 'resignation.last_working_date', 'resignation.reason',
+  ],
+  payroll: [
+    'salary_type', 'monthly_base_salary', 'hourly_wage', 'daily_wage',
+    'salary_amount_yen', 'transportation_allowance_yen', 'payroll_currency',
+    'bank.bank_name', 'bank.branch_name', 'bank.account_type',
+    'bank.account_number', 'bank.account_holder', 'bank.swift_code',
+    'social_insurance_enrolled', 'employment_insurance_enrolled', 'pension_enrolled',
+    'bonus_eligible', 'notes',
+  ],
+  visa: [
+    'visa_type', 'residence_status', 'residence_card_number',
+    'passport_number', 'passport_expiry_date', 'expiry_date',
+    'renewal_reminder_enabled', 'renewal_reminder_date', 'notes',
+  ],
+  dispatch_compliance: [
+    'client_name', 'contract_type', 'dispatch_start_date', 'dispatch_end_date',
+    'assignment_location', 'work_description',
+    'supervisor.name', 'supervisor.title', 'supervisor.email', 'supervisor.phone',
+    'notes',
+  ],
+  language_profile: [
+    'japanese_level', 'english_level', 'native_languages', 'additional_languages', 'notes',
+  ],
+  skills_profile: [
+    'primary_skill', 'secondary_skill', 'years_of_experience',
+    'it_skills', 'engineering_skills', 'certifications', 'industry_experience', 'notes',
+  ],
+}
+
+// Resolve a flat dotted path like "name.display_name" from a nested object
+function getNestedValue(obj: Record<string, any>, path: string): any {
+  const parts = path.split('.')
+  let cur: any = obj
+  for (const p of parts) {
+    if (cur === null || cur === undefined || typeof cur !== 'object') return undefined
+    cur = cur[p]
+  }
+  return cur
+}
 
 function tabFields(tabKey: string): FieldEntry[] {
   if (!employee.value) return []
   const section = (employee.value as any)[tabKey]
-  if (!section || typeof section !== 'object' || Array.isArray(section)) return []
-  const entries: FieldEntry[] = []
-  for (const [key, value] of Object.entries(section as Record<string, any>)) {
-    if (value !== null && value !== undefined && typeof value === 'object' && !Array.isArray(value)) {
-      for (const [nestedKey, nestedValue] of Object.entries(value)) {
-        entries.push({ key: `${key}.${nestedKey}`, value: nestedValue })
-      }
-    } else {
-      entries.push({ key, value })
-    }
-  }
-  return entries
+  const schema = FIELD_SCHEMA[tabKey]
+  if (!schema) return []
+  const sectionData = (section && typeof section === 'object' && !Array.isArray(section))
+    ? section as Record<string, any>
+    : {}
+  return schema.map(key => ({
+    key,
+    value: getNestedValue(sectionData, key),
+  }))
 }
 
 // ── Edit-mode field helpers ──
@@ -432,17 +513,17 @@ const employeeName = () => {
       </el-tabs>
 
       <!-- Record info -->
-      <el-card shadow="never" style="margin-top: 16px" v-if="activeTab === 'profile'">
+      <el-card shadow="never" style="margin-top: 16px">
         <template #header>{{ t('employee.record_info') }}</template>
         <el-descriptions :column="2" border>
           <el-descriptions-item :label="t('field.employee_id')">
             <code>{{ employee.employee_id }}</code>
           </el-descriptions-item>
           <el-descriptions-item :label="t('common.created_at')">
-            {{ employee.created_at || '-' }}
+            {{ formatDateTime(employee.metadata?.created_at) }}
           </el-descriptions-item>
           <el-descriptions-item :label="t('common.updated_at')">
-            {{ employee.updated_at || '-' }}
+            {{ formatDateTime(employee.metadata?.updated_at) }}
           </el-descriptions-item>
           <el-descriptions-item v-if="employee.metadata?.deleted" :label="t('common.deleted')">
             <el-tag type="danger" size="small">Yes</el-tag>
@@ -475,5 +556,14 @@ const employeeName = () => {
 .detail-content :deep(.el-descriptions) {
   table-layout: fixed;
   width: 100%;
+}
+/* column="2" → 4 cells per row → each 25% */
+.detail-content :deep(.el-descriptions__cell) {
+  width: 25% !important;
+}
+.detail-content :deep(.el-descriptions__label) {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 </style>

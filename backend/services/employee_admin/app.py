@@ -49,6 +49,36 @@ def _resolve_entity_labels(employees: list) -> list:
     return employees
 
 
+def _resolve_org_labels(employees: list) -> list:
+    """Enrich employee records with department & team labels from masterdata."""
+    try:
+        departments = _db.load_table("md_departments")
+        teams = _db.load_table("md_teams")
+    except Exception:
+        return employees
+    dept_map = {}
+    for d in departments:
+        dept_map[d.get("department_id", "")] = d
+    team_map = {}
+    for t in teams:
+        team_map[t.get("team_id", "")] = t
+    for emp in employees:
+        emp_data = emp.get("employment") or {}
+        # Resolve department
+        did = emp_data.get("department_id", "")
+        dept = dept_map.get(did, {})
+        if dept:
+            emp_data["department_code"] = dept.get("department_code", "")
+            emp_data["department_name"] = dept.get("department_name_en", "") or dept.get("department_name_zh", "") or dept.get("department_name_ja", "")
+        # Resolve team
+        tid = emp_data.get("team_id", "")
+        team = team_map.get(tid, {})
+        if team:
+            emp_data["team_code"] = team.get("team_code", "")
+            emp_data["team_name"] = team.get("team_name_en", "") or team.get("team_name_zh", "") or team.get("team_name_ja", "")
+    return employees
+
+
 class EmployeeAdminHandler(BaseHTTPRequestHandler):
     server_version = "TACAIEmployeeAdmin/0.1"
 
@@ -300,8 +330,9 @@ class EmployeeAdminHandler(BaseHTTPRequestHandler):
         start = (page - 1) * page_size
         paged = filtered_rows[start:start + page_size]
 
-        # Enrich with entity labels
+        # Enrich with entity, department, and team labels
         paged = _resolve_entity_labels(paged)
+        paged = _resolve_org_labels(paged)
 
         self.send_json({
             "employees": paged,
@@ -322,6 +353,7 @@ class EmployeeAdminHandler(BaseHTTPRequestHandler):
         for emp in all_rows:
             if emp.get("employee_id") == employee_id:
                 enriched = _resolve_entity_labels([emp])
+                enriched = _resolve_org_labels(enriched)
                 self.send_json({"employee": enriched[0]})
                 return
 
@@ -373,7 +405,7 @@ class EmployeeAdminHandler(BaseHTTPRequestHandler):
 
         new_emp = {
             "employee_id": new_id,
-            "employee_number": body.get("employee_number", ""),
+            "employee_number": body.get("employee_number") or new_id,
             "profile": body.get("profile", {}),
             "employment": body.get("employment", {}),
             "payroll": body.get("payroll", {}),
@@ -395,6 +427,7 @@ class EmployeeAdminHandler(BaseHTTPRequestHandler):
 
         _db.insert_record("emp_employees", new_emp)
         enriched = _resolve_entity_labels([new_emp])
+        enriched = _resolve_org_labels(enriched)
         self.send_json({"employee": enriched[0]}, 201)
 
     def _handle_update(self, employee_id: str, body: dict) -> None:
@@ -445,6 +478,7 @@ class EmployeeAdminHandler(BaseHTTPRequestHandler):
             return
 
         enriched = _resolve_entity_labels([target])
+        enriched = _resolve_org_labels(enriched)
         self.send_json({"employee": enriched[0]})
 
     def _handle_delete(self, employee_id: str) -> None:

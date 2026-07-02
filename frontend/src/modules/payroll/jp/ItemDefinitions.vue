@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { payrollJpApi } from '@/api/client'
 import { ElMessage } from 'element-plus'
@@ -7,6 +7,8 @@ import { ElMessage } from 'element-plus'
 const { t } = useI18n()
 const loading = ref(false)
 const items = ref<any[]>([])
+const page = ref(1)
+const pageSize = ref(20)
 const dialogVisible = ref(false)
 const form = ref<Record<string, any>>({})
 const saving = ref(false)
@@ -16,6 +18,13 @@ const subCategoryLabels: Record<string, string> = { base: '基本', overtime: '�
 const categories = ['earning', 'deduction', 'employer_cost']
 
 function getLabel(row: any, lang: string): string { try { const labels = typeof row.labels === 'string' ? JSON.parse(row.labels) : row.labels; return labels?.[lang] || labels?.ja || row.code || '-' } catch { return row.code || '-' } }
+
+const paged = computed(() => {
+  const start = (page.value - 1) * pageSize.value
+  return items.value.slice(start, start + pageSize.value)
+})
+function handlePageChange(p: number) { page.value = p }
+function handleSizeChange(s: number) { pageSize.value = s; page.value = 1 }
 
 async function load() { loading.value = true; try { const res = await payrollJpApi.itemDefinitions(); items.value = res.data.data?.items || res.data.data || [] } catch (e: any) { ElMessage.error(e.message) } finally { loading.value = false } }
 function openEdit(row: any) { form.value = { ...row }; dialogVisible.value = true }
@@ -28,16 +37,15 @@ onMounted(load)
     <div class="fiori-toolbar">
       <div class="toolbar-left">
         <h2>{{ t('payroll.jp.item_definitions') }}</h2>
-        <span class="count-chip">{{ items.length }} {{ t('action.records_total') }}</span>
       </div>
       <el-tooltip content="工资项目暂由系统预定义，后续版本开放" placement="left">
         <el-button type="primary" disabled>{{ t('action.create') }}</el-button>
       </el-tooltip>
     </div>
     <div class="fiori-card">
-      <el-table :data="items" v-loading="loading" border stripe size="small">
-        <el-table-column prop="display_order" label="#" width="45" align="center" />
-        <el-table-column prop="code" :label="t('field.code')" width="130" />
+      <el-table :data="paged" v-loading="loading" border stripe size="small" style="width:100%">
+        <el-table-column prop="display_order" label="#" min-width="45" align="center" />
+        <el-table-column prop="code" :label="t('field.code')" min-width="130" />
         <el-table-column label="日本語" min-width="160" show-overflow-tooltip>
           <template #default="{row}">{{ getLabel(row, 'ja') }}</template>
         </el-table-column>
@@ -47,30 +55,45 @@ onMounted(load)
         <el-table-column label="中文" min-width="140" show-overflow-tooltip>
           <template #default="{row}">{{ getLabel(row, 'zh') }}</template>
         </el-table-column>
-        <el-table-column :label="t('field.category')" width="150">
+        <el-table-column :label="t('field.category')" min-width="150">
           <template #default="{row}">
             <el-tag size="small" :type="row.category==='earning'?'success':row.category==='deduction'?'danger':'warning'">{{ categoryLabels[row.category] || row.category }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column :label="t('field.sub_category')" width="110">
+        <el-table-column :label="t('field.sub_category')" min-width="110">
           <template #default="{row}"><span class="muted-text">{{ subCategoryLabels[row.sub_category] || row.sub_category }}</span></template>
         </el-table-column>
-        <el-table-column :label="t('field.taxable')" width="70" align="center">
+        <el-table-column :label="t('field.taxable')" min-width="70" align="center">
           <template #default="{row}"><el-tag :type="row.taxable?'warning':'info'" size="small">{{ row.taxable?t('field.yes'):t('field.no') }}</el-tag></template>
         </el-table-column>
-        <el-table-column label="SI" width="55" align="center">
+        <el-table-column label="SI" min-width="55" align="center">
           <template #default="{row}"><span class="dot" :class="row.social_insurance_base?'dot-on':'dot-off'" /></template>
         </el-table-column>
-        <el-table-column label="EI" width="55" align="center">
+        <el-table-column label="EI" min-width="55" align="center">
           <template #default="{row}"><span class="dot" :class="row.employment_insurance_base?'dot-on':'dot-off'" /></template>
         </el-table-column>
-        <el-table-column :label="t('field.payslip_visible')" width="70" align="center">
+        <el-table-column :label="t('field.payslip_visible')" min-width="70" align="center">
           <template #default="{row}"><el-tag :type="row.payslip_visible?'success':'info'" size="small">{{ row.payslip_visible?t('field.yes'):t('field.no') }}</el-tag></template>
         </el-table-column>
-        <el-table-column :label="t('field.actions')" width="70" fixed="right">
+        <el-table-column :label="t('field.actions')" min-width="70" fixed="right">
           <template #default="{row}"><el-button size="small" text type="primary" @click="openEdit(row)">{{ t('action.edit') }}</el-button></template>
         </el-table-column>
       </el-table>
+
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px;padding:0 4px">
+        <span class="helper-text">{{ items.length }} {{ t('action.records_total') }}</span>
+        <el-pagination
+          v-model:current-page="page"
+          v-model:page-size="pageSize"
+          :page-sizes="[10, 20, 50, 100]"
+          :total="items.length"
+          layout="total, sizes, prev, pager, next, jumper"
+          background
+          small
+          @current-change="handlePageChange"
+          @size-change="handleSizeChange"
+        />
+      </div>
     </div>
 
     <el-dialog v-model="dialogVisible" :title="t('action.edit')" width="560px">
@@ -99,6 +122,8 @@ onMounted(load)
 .toolbar-left h2 { margin:0; font-size:1.3rem; font-weight:700; color:#1d2a3a; }
 .count-chip { background:#e8f0fe; color:#1B6CB2; padding:2px 12px; border-radius:12px; font-size:.82rem; font-weight:600; }
 .fiori-card { background:#fff; border:1px solid #e5e7eb; border-radius:10px; overflow:hidden; }
+.fiori-card :deep(.el-table) { width: 100% !important; }
+.fiori-card :deep(.el-table__body-wrapper) { overflow-x: auto !important; }
 .dot { display:inline-block; width:9px; height:9px; border-radius:50%; }
 .dot-on { background:#10b981; }
 .dot-off { background:#d1d5db; }

@@ -275,38 +275,25 @@ onMounted(() => { loadEntities(); loadRecords() })
 
     <!-- ═══════ Report Table ═══════ -->
     <div class="table-card">
-      <!-- Toolbar -->
-      <div class="table-toolbar">
-        <div class="row-count">{{ t('action.showing_records', { shown: records.length, total: total }) }}</div>
-        <div class="page-size">
-          <label>{{ t('employee.list.per_page') }}</label>
-          <el-select v-model="pageSize" style="width:80px" @change="onPerPageChange">
-            <el-option :value="10" label="10" />
-            <el-option :value="20" label="20" />
-            <el-option :value="50" label="50" />
-            <el-option :value="100" label="100" />
-          </el-select>
-        </div>
-      </div>
 
-      <el-table :data="records" v-loading="loading" border stripe size="small">
+      <el-table :data="records" v-loading="loading" border stripe size="small" style="width:100%">
         <el-table-column :label="t('field.sheet_id')" min-width="220" show-overflow-tooltip>
           <template #default="{row}">{{ row.sheet_id || row.batch_id || '—' }}</template>
         </el-table-column>
-        <el-table-column :label="t('field.payroll_month')" width="110" prop="payroll_month" />
-        <el-table-column :label="t('field.entity_id')" width="250" show-overflow-tooltip>
+        <el-table-column :label="t('field.payroll_month')" min-width="110" prop="payroll_month" />
+        <el-table-column :label="t('field.entity_id')" min-width="250" show-overflow-tooltip>
           <template #default="{row}">{{ entityLabel(row.entity_id) }}</template>
         </el-table-column>
-        <el-table-column :label="t('field.employee_count')" width="80" align="center">
+        <el-table-column :label="t('field.employee_count')" min-width="80" align="center">
           <template #default="{row}">{{ row.employee_count ?? '—' }}</template>
         </el-table-column>
-        <el-table-column :label="t('field.gross_total')" width="130" align="right" sortable="custom">
+        <el-table-column :label="t('field.gross_total')" min-width="130" align="right" sortable="custom">
           <template #default="{row}">{{ row.gross_total ? '¥' + Number(row.gross_total).toLocaleString() : '—' }}</template>
         </el-table-column>
-        <el-table-column :label="t('field.net_total')" width="130" align="right" sortable="custom">
+        <el-table-column :label="t('field.net_total')" min-width="130" align="right" sortable="custom">
           <template #default="{row}">{{ row.net_total ? '¥' + Number(row.net_total).toLocaleString() : '—' }}</template>
         </el-table-column>
-        <el-table-column :label="t('field.status')" width="110">
+        <el-table-column :label="t('field.status')" min-width="110">
           <template #default="{row}">
             <el-tag :type="(statusBadgeTypes[row.status] || '') as any" size="small">
               {{ t(statusLabels[row.status] || row.status) }}
@@ -315,15 +302,18 @@ onMounted(() => { loadEntities(); loadRecords() })
         </el-table-column>
       </el-table>
 
-      <!-- Pagination -->
-      <div v-if="total > pageSize" class="pagination-bar">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px;padding:0 4px">
+        <span class="helper-text">{{ total }} {{ t('action.records_total') }}</span>
         <el-pagination
           v-model:current-page="page"
-          :page-size="pageSize"
+          v-model:page-size="pageSize"
+          :page-sizes="[10, 20, 50, 100]"
           :total="total"
-          layout="prev, pager, next"
+          layout="total, sizes, prev, pager, next, jumper"
+          background
           small
           @current-change="loadRecords"
+          @size-change="onPerPageChange"
         />
       </div>
     </div>
@@ -353,10 +343,12 @@ onMounted(() => { loadEntities(); loadRecords() })
 .form-field.actions { flex-direction: row; gap: 6px; }
 
 .table-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; }
+.table-card :deep(.el-table) { width: 100% !important; }
+.table-card :deep(.el-table__body-wrapper) { overflow-x: auto !important; }
 .table-toolbar { display: flex; align-items: center; justify-content: space-between; padding: 12px 20px; border-bottom: 1px solid #e5e7eb; background: #f9fafb; }
 .row-count { font-size: .85rem; font-weight: 700; color: #1d2a3a; }
 .page-size { display: flex; align-items: center; gap: 8px; font-size: .85rem; color: #6b7280; }
-.pagination-bar { display: flex; justify-content: center; padding: 12px; border-top: 1px solid #e5e7eb; }
+.helper-text { color:#6b7280; font-size:.85rem; }
 
 @media (max-width: 760px) { .calc-form { flex-direction: column; align-items: stretch; } .form-grid { grid-template-columns: 1fr; } }
 </style>

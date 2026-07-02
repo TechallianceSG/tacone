@@ -95,11 +95,32 @@ export const portalApi = {
   health: () => client.get('/api/portal/health'),
 }
 
-// ── Master Data API (for dropdowns) ──
+// ── Master Data API (for dropdowns + CRUD) ──
 export const masterdataApi = {
+  // Entities
   entities: () => client.get('/api/masterdata/entities'),
+  entity: (id: string) => client.get(`/api/masterdata/entities/${id}`),
+  createEntity: (data: Record<string, unknown>) => client.post('/api/masterdata/entities', data),
+  updateEntity: (id: string, data: Record<string, unknown>) => client.post(`/api/masterdata/entities/${id}`, data),
+  deleteEntity: (id: string, data?: Record<string, unknown>) => client.delete(`/api/masterdata/entities/${id}`, { data }),
+  // Departments
   departments: () => client.get('/api/masterdata/departments'),
+  department: (id: string) => client.get(`/api/masterdata/departments/${id}`),
+  createDepartment: (data: Record<string, unknown>) => client.post('/api/masterdata/departments', data),
+  updateDepartment: (id: string, data: Record<string, unknown>) => client.post(`/api/masterdata/departments/${id}`, data),
+  deleteDepartment: (id: string, data?: Record<string, unknown>) => client.delete(`/api/masterdata/departments/${id}`, { data }),
+  // Teams
   teams: () => client.get('/api/masterdata/teams'),
+  team: (id: string) => client.get(`/api/masterdata/teams/${id}`),
+  createTeam: (data: Record<string, unknown>) => client.post('/api/masterdata/teams', data),
+  updateTeam: (id: string, data: Record<string, unknown>) => client.post(`/api/masterdata/teams/${id}`, data),
+  deleteTeam: (id: string, data?: Record<string, unknown>) => client.delete(`/api/masterdata/teams/${id}`, { data }),
+}
+
+// ── Dashboard Statistics API ──
+export const dashboardApi = {
+  stats: () => client.get('/api/dashboard'),
+  sessions: () => client.get('/api/login-sessions'),
 }
 
 // ── Payroll JP API ──
@@ -110,11 +131,18 @@ export const payrollJpApi = {
   // Parameters
   parameters: (params?: Record<string, any>) => client.get('/api/payroll/jp/parameters', { params }),
   saveParameter: (data: Record<string, any>) => client.post('/api/payroll/jp/parameters', data),
+  // Rate Type Labels (data dictionary)
+  rateTypeLabels: (params?: Record<string, any>) => client.get('/api/payroll/jp/rate-type-labels', { params }),
+  // Master Data (from PostgreSQL md_* tables, replaces JSON file storage)
+  entities: () => client.get('/api/payroll/jp/entities'),
+  departments: () => client.get('/api/payroll/jp/departments'),
+  teams: () => client.get('/api/payroll/jp/teams'),
   // Employees (Salary Master)
   employees: (params?: Record<string, any>) => client.get('/api/payroll/jp/employees', { params }),
   saveEmployee: (data: Record<string, any>) => client.post('/api/payroll/jp/employees', data),
   getEmployee: (id: string) => client.get(`/api/payroll/jp/employees/${id}`),
   deactivateEmployee: (id: string, data: Record<string, any>) => client.post(`/api/payroll/jp/employees/${id}/deactivate`, data),
+  activateEmployee: (id: string) => client.post(`/api/payroll/jp/employees/${id}/activate`),
   calcPreview: (id: string, params?: Record<string, any>) => client.get(`/api/payroll/jp/employees/${id}/calc-preview`, { params }),
   importableEmployees: (params?: Record<string, any>) => client.get('/api/payroll/jp/employees/importable', { params }),
   importEmployees: (data: { employee_ids: string[] }) => client.post('/api/payroll/jp/employees/import', data),
@@ -126,19 +154,22 @@ export const payrollJpApi = {
   // Sheet operations
   sheets: (params?: Record<string, any>) => client.get('/api/payroll/jp/sheets', { params }),
   getSheet: (sheetId: string) => client.get(`/api/payroll/jp/sheets/${sheetId}`),
-  confirmSheet: (sheetId: string) => client.post(`/api/payroll/jp/sheets/${sheetId}/confirm`, {}),
-  voidSheet: (sheetId: string, data: { reason: string }) => client.post(`/api/payroll/jp/sheets/${sheetId}/void`, data),
-  deleteSheet: (sheetId: string) => client.delete(`/api/payroll/jp/sheets/${sheetId}`),
+  confirmSheet: (batchId: string) => client.post(`/api/payroll/jp/batches/${batchId}/confirm`, {}),
+  voidSheet: (batchId: string, data: { reason: string }) => client.post(`/api/payroll/jp/batches/${batchId}/void`, data),
+  deleteSheet: (batchId: string) => client.delete(`/api/payroll/jp/batches/${batchId}`),
   importEmployeesToSheet: (sheetId: string, data: { employee_ids: string[] }) => client.post(`/api/payroll/jp/sheets/${sheetId}/import-employees`, data),
   saveSheetRecords: (sheetId: string, data: { records: any[] }) => client.post(`/api/payroll/jp/sheets/${sheetId}/records/bulk-save`, data),
-  // Release & Payslips
-  releasePage: (sheetId: string) => client.get(`/api/payroll/jp/sheets/${sheetId}/release`),
+  // Payslips
   payslips: (params?: Record<string, any>) => client.get('/api/payroll/jp/payslips', { params }),
   viewPayslipHtml: (recordId: string) => client.get(`/api/payroll/jp/payslips/${recordId}/html`),
-  downloadPayslipPdf: (recordId: string) => client.get(`/api/payroll/jp/payslips/${recordId}/pdf`, { responseType: 'blob' }),
-  sendPayslipEmail: (recordId: string) => client.post(`/api/payroll/jp/payslips/${recordId}/email`, {}),
-  sendAllPayslipEmails: (sheetId: string) => client.post(`/api/payroll/jp/sheets/${sheetId}/send-all-emails`, {}),
-  exportCsv: (sheetId: string) => client.get(`/api/payroll/jp/sheets/${sheetId}/csv-export`, { responseType: 'blob' }),
+  sendSinglePayslip: (recordId: string) => client.post(`/api/payroll/jp/payslips/${recordId}/send`, {}),
+  // ── Workflow: Recalculate / Edit / Rollback / Audit ──
+  recalculateSingleRecord: (batchId: string, recordId: string) => client.post(`/api/payroll/jp/batches/${batchId}/records/${recordId}/recalculate`, {}),
+  editRecord: (batchId: string, recordId: string, data: Record<string, any>) => client.put(`/api/payroll/jp/batches/${batchId}/records/${recordId}`, data),
+  rollbackBatch: (batchId: string, data: { reason: string }) => client.post(`/api/payroll/jp/batches/${batchId}/rollback`, data),
+  getBatchAuditLogs: (batchId: string) => client.get(`/api/payroll/jp/batches/${batchId}/audit-logs`),
+  auditLogs: (params?: Record<string, any>) => client.get('/api/payroll/jp/audit-logs', { params }),
+  getSmtpStatus: () => client.get('/api/payroll/jp/smtp-status'),
 }
 
 // ── Invoice API ──

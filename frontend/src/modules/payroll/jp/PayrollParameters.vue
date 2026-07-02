@@ -254,37 +254,39 @@ onMounted(load)
       <!-- Tab 1: Social Insurance -->
       <el-tab-pane :label="t('payroll.jp.social_insurance')" name="social-insurance">
         <div class="tab-header">
-          <span class="helper-text">{{ socialInsuranceData.length }} {{ t('action.records_total') }}</span>
           <el-button type="primary" size="small" @click="openSiCreate">{{ t('action.create') }}</el-button>
         </div>
-        <el-table :data="siPaged" v-loading="loading" border stripe size="small">
-          <el-table-column :label="t('field.rate_type')" width="180">
+        <el-table :data="siPaged" v-loading="loading" border stripe size="small" style="width:100%">
+          <el-table-column :label="t('field.rate_type')" min-width="180">
             <template #default="{row}">{{ rateTypeLabels[row.rate_type] || row.rate_type }}</template>
           </el-table-column>
-          <el-table-column prop="prefecture" :label="t('field.prefecture')" width="100">
+          <el-table-column prop="prefecture" :label="t('field.prefecture')" min-width="100">
             <template #default="{row}">{{ row.prefecture || '-' }}</template>
           </el-table-column>
-          <el-table-column :label="t('field.employee_rate')" width="130" align="right">
+          <el-table-column :label="t('field.employee_rate')" min-width="130" align="right">
             <template #default="{row}">{{ fmtPct(row.employee_rate) }}</template>
           </el-table-column>
-          <el-table-column :label="t('field.employer_rate')" width="130" align="right">
+          <el-table-column :label="t('field.employer_rate')" min-width="130" align="right">
             <template #default="{row}">{{ fmtPct(row.employer_rate) }}</template>
           </el-table-column>
-          <el-table-column prop="applicable_from" :label="t('field.applicable_from')" width="120" />
-          <el-table-column :label="t('field.is_current')" width="80" align="center">
+          <el-table-column prop="applicable_from" :label="t('field.applicable_from')" min-width="120" />
+          <el-table-column :label="t('field.is_current')" min-width="80" align="center">
             <template #default="{row}">
               <el-tag :type="row.is_current ? 'success' : 'info'" size="small">
                 {{ row.is_current ? t('field.yes') : t('field.no') }}
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column :label="t('field.actions')" width="80" fixed="right">
+          <el-table-column :label="t('field.actions')" min-width="80" fixed="right">
             <template #default="{row}">
               <el-button size="small" text @click="openSiEdit(row)">{{ t('action.edit') }}</el-button>
             </template>
           </el-table-column>
         </el-table>
-        <el-pagination v-if="socialInsuranceData.length > siPageSize" v-model:current-page="siPage" :page-size="siPageSize" :total="socialInsuranceData.length" layout="prev, pager, next" small style="margin-top:10px" />
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px;padding:0 4px">
+          <span class="helper-text">{{ socialInsuranceData.length }} {{ t('action.records_total') }}</span>
+          <el-pagination v-if="socialInsuranceData.length > siPageSize" v-model:current-page="siPage" v-model:page-size="siPageSize" :page-sizes="[10, 20, 50, 100]" :total="socialInsuranceData.length" layout="total, sizes, prev, pager, next, jumper" background small @size-change="(s:number)=>{siPage=1;siPageSize=s}" />
+        </div>
 
         <el-dialog v-model="siDialog" :title="t('payroll.jp.social_insurance')" width="520px">
           <el-form :model="siForm" label-width="160px">
@@ -321,48 +323,50 @@ onMounted(load)
       <!-- Tab 2: Tax Brackets -->
       <el-tab-pane :label="t('payroll.jp.tax_brackets')" name="tax-brackets">
         <div class="tab-header">
-          <span class="helper-text">{{ taxBracketData.length }} {{ t('action.records_total') }}</span>
           <el-button type="primary" size="small" @click="openTbCreate">{{ t('action.create') }}</el-button>
         </div>
-        <el-table :data="tbPaged" v-loading="loading" border stripe size="small">
-          <el-table-column prop="table_type" :label="t('field.table_type')" width="100" />
-          <el-table-column :label="t('field.min_salary')" width="110" align="right">
+        <el-table :data="tbPaged" v-loading="loading" border stripe size="small" style="width:100%">
+          <el-table-column prop="table_type" :label="t('field.table_type')" min-width="100" />
+          <el-table-column :label="t('field.min_salary')" min-width="110" align="right">
             <template #default="{row}">{{ row.min_salary ? '¥' + Number(row.min_salary).toLocaleString() : '-' }}</template>
           </el-table-column>
-          <el-table-column :label="t('field.max_salary')" width="110" align="right">
+          <el-table-column :label="t('field.max_salary')" min-width="110" align="right">
             <template #default="{row}">{{ row.max_salary ? '¥' + Number(row.max_salary).toLocaleString() : '-' }}</template>
           </el-table-column>
-          <el-table-column prop="tax_dep_0" :label="t('field.tax_dep_0')" width="90" align="right">
+          <el-table-column prop="tax_dep_0" :label="t('field.tax_dep_0')" min-width="90" align="right">
             <template #default="{row}">{{ row.tax_dep_0 != null ? '¥' + Number(row.tax_dep_0).toLocaleString() : '-' }}</template>
           </el-table-column>
-          <el-table-column prop="tax_dep_1" :label="t('field.tax_dep_1')" width="90" align="right">
+          <el-table-column prop="tax_dep_1" :label="t('field.tax_dep_1')" min-width="90" align="right">
             <template #default="{row}">{{ row.tax_dep_1 != null ? '¥' + Number(row.tax_dep_1).toLocaleString() : '-' }}</template>
           </el-table-column>
-          <el-table-column prop="tax_dep_2" :label="t('field.tax_dep_2')" width="90" align="right">
+          <el-table-column prop="tax_dep_2" :label="t('field.tax_dep_2')" min-width="90" align="right">
             <template #default="{row}">{{ row.tax_dep_2 != null ? '¥' + Number(row.tax_dep_2).toLocaleString() : '-' }}</template>
           </el-table-column>
-          <el-table-column prop="tax_dep_3" :label="t('field.tax_dep_3')" width="90" align="right">
+          <el-table-column prop="tax_dep_3" :label="t('field.tax_dep_3')" min-width="90" align="right">
             <template #default="{row}">{{ row.tax_dep_3 != null ? '¥' + Number(row.tax_dep_3).toLocaleString() : '-' }}</template>
           </el-table-column>
-          <el-table-column prop="tax_dep_4" :label="t('field.tax_dep_4')" width="90" align="right">
+          <el-table-column prop="tax_dep_4" :label="t('field.tax_dep_4')" min-width="90" align="right">
             <template #default="{row}">{{ row.tax_dep_4 != null ? '¥' + Number(row.tax_dep_4).toLocaleString() : '-' }}</template>
           </el-table-column>
-          <el-table-column prop="tax_dep_5" :label="t('field.tax_dep_5')" width="90" align="right">
+          <el-table-column prop="tax_dep_5" :label="t('field.tax_dep_5')" min-width="90" align="right">
             <template #default="{row}">{{ row.tax_dep_5 != null ? '¥' + Number(row.tax_dep_5).toLocaleString() : '-' }}</template>
           </el-table-column>
-          <el-table-column prop="tax_dep_6" :label="t('field.tax_dep_6')" width="90" align="right">
+          <el-table-column prop="tax_dep_6" :label="t('field.tax_dep_6')" min-width="90" align="right">
             <template #default="{row}">{{ row.tax_dep_6 != null ? '¥' + Number(row.tax_dep_6).toLocaleString() : '-' }}</template>
           </el-table-column>
-          <el-table-column prop="tax_dep_7" :label="t('field.tax_dep_7')" width="90" align="right">
+          <el-table-column prop="tax_dep_7" :label="t('field.tax_dep_7')" min-width="90" align="right">
             <template #default="{row}">{{ row.tax_dep_7 != null ? '¥' + Number(row.tax_dep_7).toLocaleString() : '-' }}</template>
           </el-table-column>
-          <el-table-column :label="t('field.actions')" width="80" fixed="right">
+          <el-table-column :label="t('field.actions')" min-width="80" fixed="right">
             <template #default="{row}">
               <el-button size="small" text @click="openTbEdit(row)">{{ t('action.edit') }}</el-button>
             </template>
           </el-table-column>
         </el-table>
-        <el-pagination v-if="taxBracketData.length > tbPageSize" v-model:current-page="tbPage" :page-size="tbPageSize" :total="taxBracketData.length" layout="prev, pager, next" small style="margin-top:10px" />
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px;padding:0 4px">
+          <span class="helper-text">{{ taxBracketData.length }} {{ t('action.records_total') }}</span>
+          <el-pagination v-if="taxBracketData.length > tbPageSize" v-model:current-page="tbPage" v-model:page-size="tbPageSize" :page-sizes="[10, 20, 50, 100]" :total="taxBracketData.length" layout="total, sizes, prev, pager, next, jumper" background small @size-change="(s:number)=>{tbPage=1;tbPageSize=s}" />
+        </div>
 
         <el-dialog v-model="tbDialog" :title="t('payroll.jp.tax_brackets')" width="680px">
           <el-form :model="tbForm" label-width="160px">
@@ -389,7 +393,7 @@ onMounted(load)
             </el-row>
             <el-divider>{{ t('payroll.jp.tax_amount_by_dependents') }}</el-divider>
             <el-row :gutter="16">
-              <el-col :span="6" v-for="n in 8" :key="n">
+              <el-col :span="12" v-for="n in 8" :key="n">
                 <el-form-item :label="t('field.tax_dep_' + (n - 1))">
                   <el-input-number v-model="tbForm['tax_dep_' + (n - 1)]" :min="0" :precision="0" style="width:100%" />
                 </el-form-item>
@@ -409,32 +413,34 @@ onMounted(load)
       <!-- Tab 3: Remuneration Grades -->
       <el-tab-pane :label="t('payroll.jp.remuneration_grades')" name="remuneration-grades">
         <div class="tab-header">
-          <span class="helper-text">{{ remunerationGradeData.length }} {{ t('action.records_total') }}</span>
           <el-button type="primary" size="small" @click="openRgCreate">{{ t('action.create') }}</el-button>
         </div>
-        <el-table :data="rgPaged" v-loading="loading" border stripe size="small">
-          <el-table-column prop="grade_type" :label="t('field.grade_type')" width="180">
+        <el-table :data="rgPaged" v-loading="loading" border stripe size="small" style="width:100%">
+          <el-table-column prop="grade_type" :label="t('field.grade_type')" min-width="180">
             <template #default="{row}">{{ row.grade_type === 'health_insurance' ? '健康保険 (Health)' : row.grade_type === 'pension_insurance' ? '厚生年金 (Pension)' : row.grade_type }}</template>
           </el-table-column>
-          <el-table-column prop="grade_number" :label="t('field.grade_number')" width="80" align="center" />
-          <el-table-column :label="t('field.min_monthly_amount')" width="150" align="right">
+          <el-table-column prop="grade_number" :label="t('field.grade_number')" min-width="80" align="center" />
+          <el-table-column :label="t('field.min_monthly_amount')" min-width="150" align="right">
             <template #default="{row}">{{ row.min_monthly_amount ? '¥' + Number(row.min_monthly_amount).toLocaleString() : '-' }}</template>
           </el-table-column>
-          <el-table-column :label="t('field.max_monthly_amount')" width="150" align="right">
+          <el-table-column :label="t('field.max_monthly_amount')" min-width="150" align="right">
             <template #default="{row}">{{ row.max_monthly_amount ? '¥' + Number(row.max_monthly_amount).toLocaleString() : '-' }}</template>
           </el-table-column>
-          <el-table-column :label="t('field.standard_monthly_amount')" width="170" align="right">
+          <el-table-column :label="t('field.standard_monthly_amount')" min-width="170" align="right">
             <template #default="{row}">
               <strong>{{ row.standard_monthly_amount ? '¥' + Number(row.standard_monthly_amount).toLocaleString() : '-' }}</strong>
             </template>
           </el-table-column>
-          <el-table-column :label="t('field.actions')" width="80" fixed="right">
+          <el-table-column :label="t('field.actions')" min-width="80" fixed="right">
             <template #default="{row}">
               <el-button size="small" text @click="openRgEdit(row)">{{ t('action.edit') }}</el-button>
             </template>
           </el-table-column>
         </el-table>
-        <el-pagination v-if="remunerationGradeData.length > rgPageSize" v-model:current-page="rgPage" :page-size="rgPageSize" :total="remunerationGradeData.length" layout="prev, pager, next" small style="margin-top:10px" />
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px;padding:0 4px">
+          <span class="helper-text">{{ remunerationGradeData.length }} {{ t('action.records_total') }}</span>
+          <el-pagination v-if="remunerationGradeData.length > rgPageSize" v-model:current-page="rgPage" v-model:page-size="rgPageSize" :page-sizes="[10, 20, 50, 100]" :total="remunerationGradeData.length" layout="total, sizes, prev, pager, next, jumper" background small @size-change="(s:number)=>{rgPage=1;rgPageSize=s}" />
+        </div>
 
         <el-dialog v-model="rgDialog" :title="t('payroll.jp.remuneration_grades')" width="550px">
           <el-form :model="rgForm" label-width="200px">
@@ -467,30 +473,32 @@ onMounted(load)
       <!-- Tab 4: Accident Insurance -->
       <el-tab-pane :label="t('payroll.jp.accident_insurance')" name="accident-insurance">
         <div class="tab-header">
-          <span class="helper-text">{{ accidentInsuranceData.length }} {{ t('action.records_total') }}</span>
           <el-button type="primary" size="small" @click="openAiCreate">{{ t('action.create') }}</el-button>
         </div>
-        <el-table :data="aiPaged" v-loading="loading" border stripe size="small">
-          <el-table-column prop="industry_code" :label="t('field.industry_code')" width="120" />
+        <el-table :data="aiPaged" v-loading="loading" border stripe size="small" style="width:100%">
+          <el-table-column prop="industry_code" :label="t('field.industry_code')" />
           <el-table-column prop="industry_name_ja" :label="t('payroll.jp.accident_insurance') + ' (JA)'" min-width="200" show-overflow-tooltip />
           <el-table-column prop="industry_name_en" :label="t('field.industry_name_en')" min-width="200" show-overflow-tooltip />
-          <el-table-column :label="t('field.rate')" width="120" align="right">
+          <el-table-column :label="t('field.rate')"  align="right">
             <template #default="{row}">{{ fmtPermille(row.rate) }}</template>
           </el-table-column>
-          <el-table-column :label="t('field.is_current')" width="80" align="center">
+          <el-table-column :label="t('field.is_current')"  align="center">
             <template #default="{row}">
               <el-tag :type="row.is_current ? 'success' : 'info'" size="small">
                 {{ row.is_current ? t('field.yes') : t('field.no') }}
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column :label="t('field.actions')" width="80" fixed="right">
+          <el-table-column :label="t('field.actions')"  fixed="right">
             <template #default="{row}">
               <el-button size="small" text @click="openAiEdit(row)">{{ t('action.edit') }}</el-button>
             </template>
           </el-table-column>
         </el-table>
-        <el-pagination v-if="accidentInsuranceData.length > aiPageSize" v-model:current-page="aiPage" :page-size="aiPageSize" :total="accidentInsuranceData.length" layout="prev, pager, next" small style="margin-top:10px" />
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px;padding:0 4px">
+          <span class="helper-text">{{ accidentInsuranceData.length }} {{ t('action.records_total') }}</span>
+          <el-pagination v-if="accidentInsuranceData.length > aiPageSize" v-model:current-page="aiPage" v-model:page-size="aiPageSize" :page-sizes="[10, 20, 50, 100]" :total="accidentInsuranceData.length" layout="total, sizes, prev, pager, next, jumper" background small @size-change="(s:number)=>{aiPage=1;aiPageSize=s}" />
+        </div>
 
         <el-dialog v-model="aiDialog" :title="t('payroll.jp.accident_insurance')" width="550px">
           <el-form :model="aiForm" label-width="180px">

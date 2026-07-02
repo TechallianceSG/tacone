@@ -27,6 +27,16 @@ except ImportError as e:
 AF = date(2026, 4, 1)  # Applicable From: April 2026
 
 # ═══════════════════════════════════════════════════════════════
+# 0. Rate Type Labels (料率タイプデータ辞書)
+# ═══════════════════════════════════════════════════════════════
+RATE_TYPE_LABELS = [
+    ("nursing_care",     '{"ja": "介護保険", "en": "Nursing Care Insurance", "zh": "护理保险"}', 1),
+    ("employment",       '{"ja": "雇用保険", "en": "Employment Insurance", "zh": "雇佣保险"}', 2),
+    ("pension",          '{"ja": "厚生年金保険", "en": "Pension Insurance", "zh": "厚生年金保险"}', 3),
+    ("child_allowance",  '{"ja": "児童手当拠出金", "en": "Child Allowance Contribution", "zh": "儿童津贴缴纳金"}', 4),
+]
+
+# ═══════════════════════════════════════════════════════════════
 # 1. Social Insurance Rates (社会保険料率)
 # ═══════════════════════════════════════════════════════════════
 SOCIAL_INSURANCE = [
@@ -206,6 +216,18 @@ def seed():
     print("TACAI Pay JP — FY2026 (令和8年度) Seed Data")
     print("=" * 60)
 
+    # ── 0. Rate Type Labels ──
+    print("\n[0/5] Rate Type Labels...")
+    execute("DELETE FROM pay_jp_rate_type_labels")
+    rtl_sql = (
+        "INSERT INTO pay_jp_rate_type_labels (rate_type, labels, display_order) "
+        "VALUES(%s, %s, %s) "
+        "ON CONFLICT (rate_type) DO UPDATE SET labels = EXCLUDED.labels, display_order = EXCLUDED.display_order"
+    )
+    n = execute_many(rtl_sql, RATE_TYPE_LABELS)
+    print(f"  → {n} rows inserted")
+    verify("pay_jp_rate_type_labels")
+
     # ── 1. Social Insurance ──
     print("\n[1/4] Social Insurance Rates...")
     execute("DELETE FROM pay_jp_social_insurance_rates")
@@ -262,48 +284,48 @@ def seed():
     execute("DELETE FROM pay_jp_payroll_item_definitions")
     ITEMS_SQL = (
         "INSERT INTO pay_jp_payroll_item_definitions"
-        "(item_id, code, category, sub_category, labels, taxable, social_insurance_base, employment_insurance_base, payslip_visible, requires_reason, display_order, status) "
-        "VALUES(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+        "(item_id, code, category, sub_category, labels, taxable, social_insurance_base, employment_insurance_base, payslip_visible, requires_reason, display_order, status, editable_in_master) "
+        "VALUES(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
     )
     ITEMS = [
         ("item-base_pay", "base_pay", "earning", "base",
-         '{"en":"Basic salary","ja":"基本給","zh":"基本工资"}', True, True, True, True, False, 10, "active"),
+         '{"en":"Basic salary","ja":"基本給","zh":"基本工资"}', True, True, True, True, False, 10, "active", True),
         ("item-hourly_pay", "hourly_pay", "earning", "base",
-         '{"en":"Hourly pay","ja":"時給","zh":"时薪"}', True, True, True, True, False, 11, "active"),
+         '{"en":"Hourly pay","ja":"時給","zh":"时薪"}', True, True, True, True, False, 11, "active", True),
         ("item-daily_pay", "daily_pay", "earning", "base",
-         '{"en":"Daily pay","ja":"日給","zh":"日薪"}', True, True, True, True, False, 12, "active"),
+         '{"en":"Daily pay","ja":"日給","zh":"日薪"}', True, True, True, True, False, 12, "active", True),
         ("item-transportation", "transportation", "earning", "allowance",
-         '{"en":"Transportation allowance","ja":"通勤手当","zh":"交通补贴"}', False, False, True, True, False, 13, "active"),
+         '{"en":"Transportation allowance","ja":"通勤手当","zh":"交通补贴"}', False, False, True, True, False, 13, "active", True),
         ("item-site_allowance", "site_allowance", "earning", "allowance",
-         '{"en":"Dispatch site allowance","ja":"派遣先手当","zh":"派遣现场津贴"}', True, True, True, True, False, 14, "active"),
+         '{"en":"Dispatch site allowance","ja":"派遣先手当","zh":"派遣现场津贴"}', True, True, True, True, False, 14, "active", True),
         ("item-overtime", "overtime", "earning", "overtime",
-         '{"en":"Overtime pay","ja":"時間外手当","zh":"加班费"}', True, True, True, True, False, 15, "active"),
+         '{"en":"Overtime pay","ja":"時間外手当","zh":"加班费"}', True, True, True, True, False, 15, "active", True),
         ("item-late_night", "late_night", "earning", "overtime",
-         '{"en":"Late-night premium","ja":"深夜手当","zh":"深夜津贴"}', True, True, True, True, False, 16, "active"),
+         '{"en":"Late-night premium","ja":"深夜手当","zh":"深夜津贴"}', True, True, True, True, False, 16, "active", True),
         ("item-holiday", "holiday", "earning", "overtime",
-         '{"en":"Holiday work pay","ja":"休日手当","zh":"休日出勤费"}', True, True, True, True, False, 17, "active"),
+         '{"en":"Holiday work pay","ja":"休日手当","zh":"休日出勤费"}', True, True, True, True, False, 17, "active", True),
         ("item-bonus", "bonus", "earning", "manual",
-         '{"en":"Bonus/commission","ja":"賞与・歩合","zh":"奖金/佣金"}', True, True, True, True, True, 18, "active"),
+         '{"en":"Bonus/commission","ja":"賞与・歩合","zh":"奖金/佣金"}', True, True, True, True, True, 18, "active", True),
         ("item-absence", "absence", "deduction", "attendance",
-         '{"en":"Absence deduction","ja":"欠勤控除","zh":"缺勤扣款"}', False, False, False, True, False, 19, "active"),
+         '{"en":"Absence deduction","ja":"欠勤控除","zh":"缺勤扣款"}', False, False, False, True, False, 19, "active", True),
         ("item-advance", "advance", "deduction", "manual",
-         '{"en":"Advance repayment","ja":"前払控除","zh":"预支扣款"}', False, False, False, True, True, 20, "active"),
+         '{"en":"Advance repayment","ja":"前払控除","zh":"预支扣款"}', False, False, False, True, True, 20, "active", True),
         ("item-health_insurance", "health_insurance", "deduction", "statutory",
-         '{"en":"Health insurance","ja":"健康保険","zh":"健康保险"}', False, False, False, True, False, 21, "active"),
+         '{"en":"Health insurance","ja":"健康保険","zh":"健康保险"}', False, False, False, True, False, 21, "active", False),
         ("item-pension", "pension", "deduction", "statutory",
-         '{"en":"Welfare pension","ja":"厚生年金","zh":"厚生年金"}', False, False, False, True, False, 22, "active"),
+         '{"en":"Welfare pension","ja":"厚生年金","zh":"厚生年金"}', False, False, False, True, False, 22, "active", False),
         ("item-employment_insurance", "employment_insurance", "deduction", "statutory",
-         '{"en":"Employment insurance","ja":"雇用保険","zh":"雇用保险"}', False, False, False, True, False, 23, "active"),
+         '{"en":"Employment insurance","ja":"雇用保険","zh":"雇用保险"}', False, False, False, True, False, 23, "active", False),
         ("item-income_tax", "income_tax", "deduction", "statutory",
-         '{"en":"Income tax","ja":"所得税","zh":"所得税"}', False, False, False, True, False, 24, "active"),
+         '{"en":"Income tax","ja":"所得税","zh":"所得税"}', False, False, False, True, False, 24, "active", False),
         ("item-resident_tax", "resident_tax", "deduction", "statutory",
-         '{"en":"Resident tax","ja":"住民税","zh":"住民税"}', False, False, False, True, False, 25, "active"),
+         '{"en":"Resident tax","ja":"住民税","zh":"住民税"}', False, False, False, True, False, 25, "active", False),
         ("item-employer_health_insurance", "employer_health_insurance", "employer_cost", "statutory",
-         '{"en":"Employer health insurance","ja":"会社負担健康保険","zh":"公司负担健康保险"}', False, False, False, True, False, 26, "active"),
+         '{"en":"Employer health insurance","ja":"会社負担健康保険","zh":"公司负担健康保险"}', False, False, False, True, False, 26, "active", False),
         ("item-employer_pension", "employer_pension", "employer_cost", "statutory",
-         '{"en":"Employer pension","ja":"会社負担厚生年金","zh":"公司负担厚生年金"}', False, False, False, True, False, 27, "active"),
+         '{"en":"Employer pension","ja":"会社負担厚生年金","zh":"公司负担厚生年金"}', False, False, False, True, False, 27, "active", False),
         ("item-employer_employment_insurance", "employer_employment_insurance", "employer_cost", "statutory",
-         '{"en":"Employer employment insurance","ja":"会社負担雇用保険","zh":"公司负担雇用保险"}', False, False, False, True, False, 28, "active"),
+         '{"en":"Employer employment insurance","ja":"会社負担雇用保険","zh":"公司负担雇用保险"}', False, False, False, True, False, 28, "active", False),
     ]
     n = execute_many(ITEMS_SQL, ITEMS)
     print(f"  → {n} rows inserted")

@@ -5,7 +5,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useI18nStore } from '@/stores/i18n'
 import { useI18n } from 'vue-i18n'
 import type { SupportedLang } from '@/types'
-import { ArrowLeft, Avatar } from '@element-plus/icons-vue'
+import { Avatar } from '@element-plus/icons-vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -19,11 +19,49 @@ const languages: { code: SupportedLang; label: string }[] = [
   { code: 'en', label: 'English' },
 ]
 
-const pageTitle = computed(() => {
-  const meta = route.meta as { titleKey?: string; title?: string }
-  if (meta.titleKey) return t(meta.titleKey)
-  if (meta.title) return meta.title
-  return String(route.name || '')
+interface BreadcrumbItem {
+  label: string
+  path: string
+}
+
+const breadcrumbs = computed<BreadcrumbItem[]>(() => {
+  const items: BreadcrumbItem[] = []
+
+  // Always start with Dashboard
+  items.push({ label: t('nav.dashboard'), path: '/dashboard' })
+
+  // Walk up from current route via meta.parent to build ancestor chain
+  const chain: Array<{ name: string | symbol | undefined; meta: any; params: any }> = []
+  let current: any = route
+
+  while (current) {
+    chain.unshift({ name: current.name, meta: current.meta, params: current.params })
+    const parentName = (current.meta as any)?.parent as string | undefined
+    if (parentName) {
+      try {
+        current = router.resolve({ name: parentName })
+      } catch {
+        break
+      }
+    } else {
+      break
+    }
+  }
+
+  // Add all chain items (last one = current page, rendered as non-clickable)
+  for (const r of chain) {
+    const meta = r.meta as any
+    const label = meta.titleKey ? t(meta.titleKey) : (meta.title || String(r.name || ''))
+    let path = '#'
+    try {
+      path = router.resolve({ name: r.name as string, params: r.params }).path
+    } catch {
+      path = '/dashboard'
+    }
+    items.push({ label, path })
+  }
+
+  return items
 })
 
 async function handleLogout() {
@@ -37,12 +75,19 @@ async function handleLogout() {
     <!-- ═══════ Unified Top Navigation Bar ═══════ -->
     <header class="unified-topbar">
       <div class="unified-topbar-left">
-        <el-button text @click="router.push('/dashboard')">
-          <el-icon><ArrowLeft /></el-icon>
-          {{ t('back_dashboard') }}
-        </el-button>
-        <el-divider direction="vertical" />
-        <span class="page-title">{{ pageTitle }}</span>
+        <nav class="breadcrumb" aria-label="Breadcrumb">
+          <template v-for="(item, index) in breadcrumbs" :key="index">
+            <span v-if="index > 0" class="breadcrumb-sep">›</span>
+            <router-link
+              v-if="index < breadcrumbs.length - 1"
+              :to="item.path"
+              class="breadcrumb-link"
+            >
+              {{ item.label }}
+            </router-link>
+            <span v-else class="breadcrumb-current">{{ item.label }}</span>
+          </template>
+        </nav>
       </div>
 
       <div class="unified-topbar-right">
@@ -111,9 +156,35 @@ async function handleLogout() {
   gap: 8px;
 }
 
-.page-title {
-  font-size: 1.1rem;
-  font-weight: 600;
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.92rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.breadcrumb-sep {
+  color: #9ca3af;
+  font-size: 1rem;
+  user-select: none;
+}
+
+.breadcrumb-link {
+  color: #1B6CB2;
+  text-decoration: none;
+  font-weight: 500;
+  transition: color 0.15s;
+}
+.breadcrumb-link:hover {
+  color: #0f5090;
+  text-decoration: underline;
+}
+
+.breadcrumb-current {
+  font-weight: 700;
   color: var(--el-text-color-primary);
 }
 

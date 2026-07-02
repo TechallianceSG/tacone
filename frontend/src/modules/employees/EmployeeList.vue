@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useI18nStore } from '@/stores/i18n'
 import { employeeApi, masterdataApi } from '@/api/client'
-import { Plus, Upload, Search, RefreshLeft, Delete, Edit } from '@element-plus/icons-vue'
+import { Plus, Upload, Search, RefreshLeft, Delete, Edit, View } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 
@@ -88,9 +88,19 @@ async function handleCreate() {
   try { await formRef.value.validate() } catch { return }
   submitting.value = true; formErrors.value = []
   try {
-    // Send flat dot-notation keys directly — backend handles unflatten
+    // Build payload with explicit property access (avoid Object.entries on reactive proxy)
     const payload: Record<string, any> = {}
-    for (const [key, val] of Object.entries(createForm)) { if (val) payload[key] = val }
+    const fields = [
+      'profile.name.display_name', 'profile.email', 'profile.phone',
+      'employment.entity_id', 'employment.department_id', 'employment.position',
+      'employment.employment_type', 'employment.status', 'employment.join_date',
+      'employment.country_code', 'employment.work_country', 'employment.business_line',
+    ]
+    for (const key of fields) {
+      const val = (createForm as any)[key]
+      if (val !== undefined && val !== null && val !== '') payload[key] = val
+    }
+    console.log('[handleCreate] payload:', JSON.stringify(payload))
     const { data } = await (employeeApi as any).create(payload)
     if (data?.success || data?.employee) { dialogVisible.value = false; loadEmployees() }
     else { formErrors.value = data?.errors || ['Failed'] }
@@ -130,10 +140,19 @@ function handleSizeChange(s: number) { pageSize.value = s; page.value = 1; loadE
 function applyFilter() { page.value = 1; loadEmployees() }
 function clearFilter() { Object.assign(filters, { q: '', entity_id: '', country_code: '', department_id: '', team_id: '', status: '', show_resigned: false, employment_type: '', japanese_level: '', english_level: '', skill: '' }); page.value = 1; loadEmployees() }
 function viewEmployee(id: string) { router.push(`/employees/${id}`) }
+function formatDateTime(isoStr: string | undefined): string {
+  if (!isoStr) return '-'
+  try {
+    const d = new Date(isoStr)
+    if (isNaN(d.getTime())) return isoStr.substring(0, 16)
+    const pad = (n: number) => String(n).padStart(2, '0')
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+  } catch { return isoStr.substring(0, 16) }
+}
 async function deleteEmployee(emp: Employee) {
   try {
     await ElMessageBox.confirm(
-      t('employee.delete_confirm', { name: getName(emp), number: emp.employee_number }),
+      t('employee.delete_confirm', { name: getName(emp), number: emp.employee_number || emp.employee_id }),
       t('employee.delete_title'),
       { confirmButtonText: t('action.delete'), cancelButtonText: t('action.cancel'), type: 'warning' }
     )
@@ -162,7 +181,6 @@ onMounted(() => { loadFilterOptions(); loadEmployees() })
   <div class="page">
     <div class="topbar">
       <div>
-        <p class="eyebrow">{{ t('employee.module_title') }}</p>
         <h1>{{ t('employee.list_title') }}</h1>
       </div>
       <div class="topbar-actions">
@@ -235,7 +253,7 @@ onMounted(() => { loadFilterOptions(); loadEmployees() })
       <el-table :data="employees" v-loading="loading" stripe border style="width:100%">
         <el-table-column :label="t('field.employee_number')" width="140" sortable="custom">
           <template #default="{ row }">
-            <span class="emp-number-link" @click="viewEmployee(row.employee_id)">{{ row.employee_number }}</span>
+            <span class="emp-number-link" @click="viewEmployee(row.employee_id)">{{ row.employee_number || row.employee_id }}</span>
           </template>
         </el-table-column>
         <el-table-column :label="t('field.employee_name')" width="160" show-overflow-tooltip>
@@ -269,9 +287,14 @@ onMounted(() => { loadFilterOptions(); loadEmployees() })
           <template #default="{ row }">{{ Lbl('english_level', row.language_profile?.english_level) }}</template>
         </el-table-column>
         <el-table-column :label="t('field.skill')" prop="skills_profile.primary_skill" width="140" show-overflow-tooltip />
-        <el-table-column :label="t('field.actions')" width="180" fixed="right">
+        <el-table-column :label="t('common.created_at')" width="150">
           <template #default="{ row }">
-            <el-button type="primary" link size="small" @click="viewEmployee(row.employee_id)">{{ t('action.view') }}</el-button>
+            <span class="muted">{{ formatDateTime(row.metadata?.created_at) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column :label="t('field.actions')" width="200" fixed="right">
+          <template #default="{ row }">
+            <el-button type="primary" link size="small" @click="viewEmployee(row.employee_id)"><el-icon><View /></el-icon>{{ t('action.view') }}</el-button>
             <el-button type="primary" link size="small" @click="router.push(`/employees/${row.employee_id}/edit`)"><el-icon><Edit /></el-icon>{{ t('action.edit') }}</el-button>
             <el-button type="danger" link size="small" @click="deleteEmployee(row)"><el-icon><Delete /></el-icon>{{ t('action.delete') }}</el-button>
           </template>

@@ -81,11 +81,14 @@ onMounted(async () => {
 
 function flatten(obj: Record<string, any>, prefix = ''): Record<string, any> {
   const result: Record<string, any> = {}
-  for (const [key, val] of Object.entries(obj)) {
+  // Use explicit iteration to avoid potential issues with Vue reactive proxies
+  const keys = Object.keys(obj)
+  for (const key of keys) {
+    const val = obj[key]
     const fullKey = prefix ? `${prefix}.${key}` : key
     if (val && typeof val === 'object' && !Array.isArray(val)) {
       Object.assign(result, flatten(val, fullKey))
-    } else if (val) {
+    } else if (val !== undefined && val !== null && val !== '') {
       result[fullKey] = val
     }
   }

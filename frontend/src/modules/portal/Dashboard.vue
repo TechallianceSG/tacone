@@ -19,6 +19,7 @@ import {
   ChatDotRound,
 } from '@element-plus/icons-vue'
 import ModuleCard from '@/components/ModuleCard.vue'
+import StatisticsPanel from '@/modules/portal/StatisticsPanel.vue'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -32,6 +33,8 @@ const languages: { code: SupportedLang; label: string }[] = [
 ]
 
 const currentEntityLabel = computed(() => auth.currentEntityLabel)
+const loginTime = computed(() => auth.session?.login_time_jst || auth.session?.login_time || '—')
+const currentRoles = computed(() => (auth.user?.roles || []).join(', ') || '—')
 
 async function handleLogout() {
   await auth.logout()
@@ -89,9 +92,10 @@ const allModules: DashboardModule[] = [
     icon: Collection,
     titleKey: 'module.masterdata',
     descKey: 'dashboard.organization_desc',
-    route: '/employees',
+    route: '/masterdata',
     color: 'masterdata',
     status: 'active',
+    permission: 'masterdata.access',
     actionKey: 'action.open_master',
   },
   {
@@ -192,6 +196,15 @@ const visibleModules = computed<DashboardModule[]>(() => {
               <el-dropdown-item disabled>
                 <small>{{ auth.user.email }}</small>
               </el-dropdown-item>
+              <el-dropdown-item disabled>
+                <small>{{ t('dashboard.stats_login_time') }}: {{ loginTime }}</small>
+              </el-dropdown-item>
+              <el-dropdown-item disabled>
+                <small>{{ t('dashboard.stats_roles') }}: {{ currentRoles }}</small>
+              </el-dropdown-item>
+              <el-dropdown-item v-if="currentEntityLabel" disabled>
+                <small>{{ t('dashboard.stats_entity') }}: {{ currentEntityLabel }}</small>
+              </el-dropdown-item>
               <el-dropdown-item divided @click="handleLogout">
                 {{ t('nav.logout') }}
               </el-dropdown-item>
@@ -207,6 +220,9 @@ const visibleModules = computed<DashboardModule[]>(() => {
         <h2>{{ t('dashboard.welcome') }}</h2>
         <p>{{ t('dashboard.description') }}</p>
       </div>
+
+      <!-- Statistics Panel -->
+      <StatisticsPanel />
 
       <!-- Empty state -->
       <div v-if="visibleModules.length === 0" class="empty-state">
