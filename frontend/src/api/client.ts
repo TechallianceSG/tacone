@@ -172,6 +172,24 @@ export const payrollJpApi = {
   getSmtpStatus: () => client.get('/api/payroll/jp/smtp-status'),
 }
 
+// ── Data Dictionary API (2-level: categories + entries) ──
+export const datadictApi = {
+  categories: {
+    list: (params?: Record<string, any>) => client.get('/api/data-dictionary/categories', { params }),
+    get: (id: number) => client.get(`/api/data-dictionary/categories/${id}`),
+    create: (data: Record<string, unknown>) => client.post('/api/data-dictionary/categories', data),
+    update: (id: number, data: Record<string, unknown>) => client.post(`/api/data-dictionary/categories/${id}`, data),
+    delete: (id: number) => client.delete(`/api/data-dictionary/categories/${id}`),
+  },
+  entries: {
+    list: (params?: Record<string, any>) => client.get('/api/data-dictionary/entries', { params }),
+    get: (id: number) => client.get(`/api/data-dictionary/entries/${id}`),
+    create: (data: Record<string, unknown>) => client.post('/api/data-dictionary/entries', data),
+    update: (id: number, data: Record<string, unknown>) => client.post(`/api/data-dictionary/entries/${id}`, data),
+    delete: (id: number) => client.delete(`/api/data-dictionary/entries/${id}`),
+  },
+}
+
 // ── Invoice API ──
 export const invoiceApi = {
   // Flow 1: Customer Projects
