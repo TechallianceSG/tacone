@@ -84,6 +84,13 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/modules/masterdata/MasterDataLayout.vue'),
         meta: { requiresAuth: true, permission: 'masterdata.access', titleKey: 'nav.masterdata' },
       },
+      // ── Data Dictionary ──
+      {
+        path: 'datadict',
+        name: 'DataDictionary',
+        component: () => import('@/modules/datadict/DataDictionaryList.vue'),
+        meta: { requiresAuth: true, permission: 'datadict.access', titleKey: 'nav.datadict' },
+      },
       // ── Payroll ──
       {
         path: 'payroll',

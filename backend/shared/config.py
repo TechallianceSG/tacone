@@ -49,29 +49,16 @@ AUTH_PORT = _read_env_port("AUTH_PORT", 3001)
 
 # ── Shared service ports (fixed across all environments) ───────────────
 SHARED_PORT = {
-    "interview_ready": 8000,
-    "payroll_legacy": 8001,
-    "timesheet": 8002,
-    "expense": 8003,
     "employee_admin": 8004,
+    "datadict": 8005,
     "masterdata": 8007,
     "tacaimsg": 8012,
     "tacaipay_jp": 8013,
-    "selfservice": 8018,
     "tacaiinvoice": 8019,
 }
 
-# Legacy / reserved ports
-RESERVED_PORTS = {
-    8005,   # Portal legacy default
-    8006,   # User_admin legacy default
-    8008,   # VendorPayables (planned)
-    8009,   # Billing/CustomerBilling (planned)
-    8010,   # Gateway
-    8011,   # FileAdmin (planned)
-    8015,   # TAC Payroll legacy
-    8017,   # Reserved
-}
+# Currently all internal services use fixed ports; no reserved ports needed.
+RESERVED_PORTS: set[int] = set()
 
 # ── API Gateway route table ──────────────────────────────────────────
 # Maps API path prefix → internal backend port.
@@ -89,18 +76,16 @@ GATEWAY_ROUTES: Dict[str, int] = {
     '/api/login-sessions/': AUTH_PORT,
     '/api/dashboard/':      AUTH_PORT,
     # ── Business services (shared ports) ──
-    '/api/employees/':      SHARED_PORT['employee_admin'],
-    '/api/masterdata/':     SHARED_PORT['masterdata'],
-    '/api/master-data/':    SHARED_PORT['masterdata'],
-    '/api/messages/':       SHARED_PORT['tacaimsg'],
+    '/api/employees/':       SHARED_PORT['employee_admin'],
+    '/api/data-dictionary/': SHARED_PORT['datadict'],
+    '/api/masterdata/':      SHARED_PORT['masterdata'],
+    '/api/master-data/':     SHARED_PORT['masterdata'],
+    '/api/messages/':        SHARED_PORT['tacaimsg'],
     # ── Payroll ──
     '/api/payroll/jp/':     SHARED_PORT['tacaipay_jp'],
     '/api/payroll/':        SHARED_PORT['tacaipay_jp'],
     # ── Invoice ──
     '/api/invoice/':        SHARED_PORT['tacaiinvoice'],
-    '/api/timesheet/':      SHARED_PORT['timesheet'],
-    '/api/expense/':        SHARED_PORT['expense'],
-    '/api/selfservice/':    SHARED_PORT['selfservice'],
 }
 
 # ── All valid local ports ──────────────────────────────────────────────
@@ -114,6 +99,10 @@ ALLOWED_PORTS: Set[int] = {
     # Frontend dev server
     5173,  # Vite
     4173,  # Vite preview
+    # Gateway (cloudflared tunnel)
+    8010,  # TACAI_GATEWAY_PORT
+    # Internal shared services (accessed via localhost)
+    8004, 8005, 8007, 8012, 8013, 8019,
 }
 
 # ── Allowed hosts for local development ────────────────────────────────
@@ -146,16 +135,12 @@ class ServiceInfo(NamedTuple):
 
 # Shared services definition (used by start_tacai_lan.sh as well)
 SHARED_SERVICES: Dict[str, ServiceInfo] = {
-    "interview_ready": ServiceInfo("interview_ready", 8000, "InterviewReady", "python3 -m app.cli web --host 0.0.0.0 --port 8000"),
-    "payroll_legacy": ServiceInfo("payroll_legacy", 8001, "backup/TACAI-PRJ", "python3 backend/app.py --host 0.0.0.0 --port 8001"),
-    "timesheet": ServiceInfo("timesheet", 8002, "backend/services/timesheet", "python3 app.py --host 0.0.0.0 --port 8002"),
-    "expense": ServiceInfo("expense", 8003, "backend/services/reimbursement", "python3 app.py --host 0.0.0.0 --port 8003"),
     "employee_admin": ServiceInfo("employee_admin", 8004, "backend/services/employee_admin", "python3 app.py --host 0.0.0.0 --port 8004"),
+    "datadict": ServiceInfo("datadict", 8005, "backend/services/datadict", "python3 app.py --host 0.0.0.0 --port 8005"),
     "masterdata": ServiceInfo("masterdata", 8007, "backend/services/masterdata", "python3 app.py --host 0.0.0.0 --port 8007"),
     "tacaimsg": ServiceInfo("tacaimsg", 8012, "backend/services/messaging", "python3 app.py --host 0.0.0.0 --port 8012"),
     "tacaipay_jp": ServiceInfo("tacaipay_jp", 8013, "backend/services/payroll/jp", "python3 app.py --host 0.0.0.0 --port 8013"),
     "tacaiinvoice": ServiceInfo("tacaiinvoice", 8019, "backend/services/invoice", "python3 app.py --host 0.0.0.0 --port 8019"),
-    "selfservice": ServiceInfo("selfservice", 8018, "backend/services/self_service", "python3 app.py --host 0.0.0.0 --port 8018"),
 }
 
 

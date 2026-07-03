@@ -809,6 +809,7 @@
   "field.prefecture_code": "都道府県",
   "field.profile__address__building": "楼名/房间",
   "field.profile__address__city": "市区町村",
+  "field.profile__address__country": "国家",
   "field.profile__address__postal_code": "邮编",
   "field.profile__address__prefecture": "都道府县",
   "field.profile__address__street": "街道地址",

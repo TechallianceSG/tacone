@@ -8,8 +8,8 @@ run locally without installing dependencies.
 from __future__ import annotations
 
 import argparse
-import cgi
 import copy
+import io
 import json
 import mimetypes
 import os
@@ -1258,30 +1258,86 @@ def safe_filename(filename: str) -> str:
     return base[:120] or "vendor-ocr-upload"
 
 
-def parse_multipart_form(handler: Any) -> tuple[dict[str, str], dict[str, cgi.FieldStorage]]:
+class UploadedFile:
+    """Python 3.13-compatible replacement for cgi.FieldStorage file items."""
+    __slots__ = ('filename', 'file', 'type')
+
+    def __init__(self, filename: str, file: io.BytesIO, content_type: str = "application/octet-stream"):
+        self.filename = filename
+        self.file = file
+        self.type = content_type
+
+
+def parse_multipart_form(handler: Any) -> tuple[dict[str, str], dict[str, UploadedFile]]:
+    """Python 3.13-compatible multipart/form-data parser (replaces cgi.FieldStorage)."""
     content_type = handler.headers.get("Content-Type", "")
     if not content_type.startswith("multipart/form-data"):
         return handler.parse_form_body(), {}
-    form = cgi.FieldStorage(
-        fp=handler.rfile,
-        headers=handler.headers,
-        environ={"REQUEST_METHOD": "POST", "CONTENT_TYPE": content_type, "CONTENT_LENGTH": handler.headers.get("Content-Length", "0")},
-    )
+
+    # Extract boundary
+    boundary_match = re.search(r'boundary=([^;]+)', content_type)
+    if not boundary_match:
+        return {}, {}
+    boundary = boundary_match.group(1).strip()
+    if boundary.startswith('"') and boundary.endswith('"'):
+        boundary = boundary[1:-1]
+
+    # Read full body
+    content_length = int(handler.headers.get("Content-Length", "0"))
+    body = handler.rfile.read(content_length)
+
+    # Split by boundary
+    boundary_bytes = boundary.encode('utf-8')
+    parts = body.split(b'--' + boundary_bytes)
+
     fields: dict[str, str] = {}
-    files: dict[str, cgi.FieldStorage] = {}
-    for key in form.keys():
-        item = form[key]
-        if isinstance(item, list):
-            item = item[0]
-        if getattr(item, "filename", None):
-            files[key] = item
+    files: dict[str, UploadedFile] = {}
+
+    for part in parts:
+        # Skip empty parts and final boundary marker
+        stripped = part.strip(b'\r\n')
+        if not stripped or stripped == b'--':
+            continue
+
+        # Split headers from body
+        sep = b'\r\n\r\n'
+        if sep not in part:
+            sep = b'\n\n'
+        if sep not in part:
+            continue
+        header_section, content = part.split(sep, 1)
+
+        # Remove trailing \r\n from content
+        if content.endswith(b'\r\n'):
+            content = content[:-2]
+        elif content.endswith(b'\n'):
+            content = content[:-1]
+
+        # Parse Content-Disposition header
+        headers_str = header_section.decode('utf-8', errors='replace')
+        disp_match = re.search(
+            r'Content-Disposition:\s*form-data;\s*name="([^"]+)"(?:\s*;\s*filename="([^"]*)")?',
+            headers_str, re.IGNORECASE
+        )
+        if not disp_match:
+            continue
+
+        field_name = disp_match.group(1)
+        filename = disp_match.group(2)
+
+        if filename:
+            # File upload
+            ct_match = re.search(r'Content-Type:\s*(.+)', headers_str, re.IGNORECASE)
+            ct = ct_match.group(1).strip() if ct_match else "application/octet-stream"
+            files[field_name] = UploadedFile(filename=filename, file=io.BytesIO(content), content_type=ct)
         else:
-            raw_value = item.value
-            fields[key] = raw_value if isinstance(raw_value, str) else raw_value.decode("utf-8", errors="replace")
+            # Regular form field
+            fields[field_name] = content.decode('utf-8', errors='replace')
+
     return fields, files
 
 
-def save_vendor_ocr_upload(item: cgi.FieldStorage) -> dict[str, Any]:
+def save_vendor_ocr_upload(item: UploadedFile) -> dict[str, Any]:
     original = getattr(item, "filename", "") or ""
     if not original:
         raise ValueError("Please choose a supplier invoice/request file before OCR extraction.")
@@ -1411,7 +1467,7 @@ def parse_vendor_master_ocr_text(text: str, notes: list[str]) -> dict[str, Any]:
     return draft
 
 
-def save_customer_ocr_upload(item: cgi.FieldStorage) -> dict[str, Any]:
+def save_customer_ocr_upload(item: UploadedFile) -> dict[str, Any]:
     original = getattr(item, "filename", "") or ""
     if not original:
         raise ValueError("Please choose an issued invoice file before OCR extraction.")
@@ -2018,9 +2074,30 @@ class MasterDataHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(payload)
 
+    _CORS_ORIGINS = {
+        "http://localhost:5173", "http://127.0.0.1:5173",
+        "http://localhost:4173", "http://127.0.0.1:4173",
+        "http://localhost:3000", "http://127.0.0.1:3000",
+    }
+
+    def _add_cors(self) -> None:
+        origin = self.headers.get("Origin", "")
+        allowed = origin if origin in self._CORS_ORIGINS else "http://localhost:5173"
+        self.send_header("Access-Control-Allow-Origin", allowed)
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
+        self.send_header("Access-Control-Allow-Credentials", "true")
+        self.send_header("Access-Control-Max-Age", "86400")
+
+    def do_OPTIONS(self) -> None:
+        self.send_response(204)
+        self._add_cors()
+        self.end_headers()
+
     def send_json(self, status: int, data: Any) -> None:
         payload = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
         self.send_response(status)
+        self._add_cors()
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(payload)))
         self.end_headers()
@@ -4687,10 +4764,6 @@ class MasterDataHandler(BaseHTTPRequestHandler):
         version = append_masterdata_version(record_type, record_id, "restore", user, restored, change_reason, changed, version_id)
         append_audit(record_type, record_id, "restore", user, before_value, restored, change_reason, changed, str(version.get("version_id", "")))
         self.redirect(url_with_lang(f"/{plural_path_for_record_type(record_type)}/{quote(record_id)}", lang, {"message": "version.restored", "record": record_id, "time": now_iso()}))
-
-
-
-
 def migrate_legacy_customerbilling_customers() -> None:
     legacy_path = ROOT_DIR.parents[1] / "customerbilling" / "database" / "customers.json"
     if not legacy_path.exists():

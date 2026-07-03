@@ -37,9 +37,25 @@ except Exception:
     _PG_AVAILABLE = False
 
 
+_CORS_ORIGINS = {
+    "http://localhost:5173", "http://127.0.0.1:5173",
+    "http://localhost:4173", "http://127.0.0.1:4173",
+    "http://localhost:3000", "http://127.0.0.1:3000",
+}
+
+def _add_cors_headers(handler):
+    origin = handler.headers.get("Origin", "")
+    allowed = origin if origin in _CORS_ORIGINS else "http://localhost:5173"
+    handler.send_header("Access-Control-Allow-Origin", allowed)
+    handler.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+    handler.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
+    handler.send_header("Access-Control-Allow-Credentials", "true")
+    handler.send_header("Access-Control-Max-Age", "86400")
+
 def send_json(handler, data, status=200):
     body = json.dumps(data, ensure_ascii=False, default=str).encode('utf-8')
     handler.send_response(status)
+    _add_cors_headers(handler)
     handler.send_header('Content-Type', 'application/json; charset=utf-8')
     handler.send_header('Content-Length', str(len(body)))
     handler.end_headers()
@@ -76,8 +92,6 @@ def get_query_param(handler, key, default=None):
 
 
 # ── Constants ──
-ROOT_DIR = Path(__file__).resolve().parents[0]
-DATABASE_DIR = ROOT_DIR / "database"
 MODULE_PREFIX = "inv"
 MODULE_NAME = "tacaiinvoice"
 DEFAULT_PORT = 8019
@@ -154,11 +168,7 @@ class InvoiceHandler(BaseHTTPRequestHandler):
 
     def do_OPTIONS(self) -> None:
         self.send_response(204)
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
-        self.send_header("Access-Control-Allow-Credentials", "true")
-        self.send_header("Access-Control-Max-Age", "86400")
+        _add_cors_headers(self)
         self.end_headers()
 
     # ── Routing ──

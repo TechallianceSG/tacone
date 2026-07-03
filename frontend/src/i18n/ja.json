@@ -809,6 +809,7 @@
   "field.prefecture_code": "都道府県",
   "field.profile__address__building": "建物名",
   "field.profile__address__city": "市区町村",
+  "field.profile__address__country": "国",
   "field.profile__address__postal_code": "郵便番号",
   "field.profile__address__prefecture": "都道府県",
   "field.profile__address__street": "番地",

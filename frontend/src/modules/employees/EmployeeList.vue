@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useI18nStore } from '@/stores/i18n'
 import { employeeApi, masterdataApi } from '@/api/client'
+import { useDictOptions } from '@/composables/useDictOptions'
 import { Plus, Upload, Search, RefreshLeft, Delete, Edit, View } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
@@ -12,12 +13,23 @@ import type { FormInstance, FormRules } from 'element-plus'
 const { t, locale } = useI18n()
 const i18nStore = useI18nStore()
 
+// ── Data Dictionary category codes ──
+const CAT = {
+  STATUS: 'employee_status',
+  EMPLOYMENT_TYPE: 'employment_type',
+  BUSINESS_LINE: 'business_line',
+  LANGUAGE_LEVEL: 'language_level',
+  COUNTRY_CODE: 'country_code',
+}
+
 // ── Lang-aware labels ──
 const L = {
   japanese_level: { native: () => t('enum.japanese.native'), business: () => t('enum.japanese.business'), daily_conversation: () => t('enum.japanese.daily'), beginner: () => t('enum.japanese.beginner'), none: () => t('enum.japanese.none') },
   english_level: { native: () => t('enum.english.native'), business: () => t('enum.english.business'), daily_conversation: () => t('enum.english.daily'), beginner: () => t('enum.english.beginner'), none: () => t('enum.english.none') },
   status: { active: () => t('enum.status.active'), probation: () => t('enum.status.probation'), resigned: () => t('enum.status.resigned'), suspended: () => t('enum.status.suspended'), inactive: () => t('enum.status.inactive') },
   employment_type: { employee: () => t('enum.employment_type.seishain'), contractor: () => t('enum.employment_type.keiyaku'), dispatch: () => t('enum.employment_type.haken'), part_time: () => t('enum.employment_type.part_time'), intern: () => t('enum.employment_type.intern') },
+  country_code: { JP: () => t('country.jp'), CN: () => t('country.cn'), SG: () => t('country.sg') },
+  business_line: { recruitment: () => t('business_line.recruitment'), rpo: () => t('business_line.rpo'), haken: () => t('business_line.haken'), payroll: () => t('business_line.payroll'), internal: () => t('business_line.internal'), ai_platform: () => t('business_line.ai_platform') },
 }
 function Lbl(cat: string, val: string): string {
   const m = (L as any)[cat]
@@ -25,6 +37,24 @@ function Lbl(cat: string, val: string): string {
   return val || '-'
 }
 
+// ── Data Dictionary options ──
+const { loadOptions, getValues, loading: ddLoading } = useDictOptions()
+
+// Hardcoded fallback values (used before DD loads, matches DD seed data)
+const FALLBACK = {
+  [CAT.STATUS]: ['active', 'probation', 'resigned', 'suspended', 'inactive'],
+  [CAT.EMPLOYMENT_TYPE]: ['employee', 'contractor', 'dispatch', 'part_time', 'intern'],
+  [CAT.BUSINESS_LINE]: ['recruitment', 'rpo', 'haken', 'payroll', 'internal', 'ai_platform'],
+  [CAT.LANGUAGE_LEVEL]: ['native', 'business', 'daily_conversation', 'beginner', 'none'],
+  [CAT.COUNTRY_CODE]: ['JP', 'CN', 'SG'],
+}
+
+function ddValues(catCode: string): string[] {
+  const dd = getValues(catCode).value
+  return dd.length > 0 ? dd : (FALLBACK as any)[catCode] || []
+}
+
+// ── Types ──
 interface Employee {
   employee_id: string; employee_number: string
   profile: { name: { display_name: string }; email: string }
@@ -50,24 +80,20 @@ const filtersVisible = ref(false)
 const entityOptions = ref<{ entity_id: string; entity_code: string; entity_name_en: string }[]>([])
 const deptOptions = ref<{ department_id: string; department_code: string; department_name_en: string }[]>([])
 const teamOptions = ref<{ team_id: string; team_code: string; team_name_en: string }[]>([])
-const STATUS_OPTS = ['active', 'probation', 'resigned', 'suspended', 'inactive']
-const TYPE_OPTS = ['employee', 'contractor', 'dispatch', 'part_time', 'intern']
-const TYPE_OPTS_CREATE = ['employee', 'contractor', 'dispatch', 'part_time', 'intern']
-const BIZ_LINES = ['recruitment', 'rpo', 'haken', 'payroll', 'internal', 'ai_platform']
-const JP_OPTS = ['native', 'business', 'daily_conversation', 'beginner', 'none']
-const EN_OPTS = ['native', 'business', 'daily_conversation', 'beginner', 'none']
 
 // ── Create Employee Dialog ──
 const dialogVisible = ref(false)
 const formRef = ref<FormInstance>()
 const submitting = ref(false)
 const formErrors = ref<string[]>([])
-const createForm = reactive({
+const DEFAULT_CREATE_FORM = {
   'profile.name.display_name': '', 'profile.email': '', 'profile.phone': '',
   'employment.entity_id': '', 'employment.department_id': '', 'employment.position': '',
   'employment.employment_type': 'employee', 'employment.status': 'active', 'employment.join_date': '',
   'employment.country_code': 'JP', 'employment.work_country': 'JP', 'employment.business_line': 'rpo',
-})
+}
+const createForm = reactive({ ...DEFAULT_CREATE_FORM })
+
 const dialogRules: FormRules = {
   'profile.name.display_name': [{ required: true, message: 'Name required', trigger: 'blur' }],
   'profile.email': [{ required: true, message: 'Email required', trigger: 'blur' }, { type: 'email', message: 'Invalid email', trigger: 'blur' }],
@@ -76,27 +102,30 @@ const dialogRules: FormRules = {
   'employment.country_code': [{ required: true, message: 'Country required', trigger: 'change' }],
   'employment.join_date': [{ required: true, message: 'Join date required', trigger: 'change' }],
 }
-function openCreateDialog() {
-  createForm['profile.name.display_name'] = ''; createForm['profile.email'] = ''; createForm['profile.phone'] = ''
-  createForm['employment.entity_id'] = ''; createForm['employment.department_id'] = ''; createForm['employment.position'] = ''
-  createForm['employment.employment_type'] = 'employee'; createForm['employment.status'] = 'active'; createForm['employment.join_date'] = ''
-  createForm['employment.country_code'] = 'JP'; createForm['employment.work_country'] = 'JP'; createForm['employment.business_line'] = 'rpo'
-  formErrors.value = []; dialogVisible.value = true
+
+function resetCreateForm() {
+  Object.assign(createForm, DEFAULT_CREATE_FORM)
+  formErrors.value = []
 }
+
+function openCreateDialog() {
+  resetCreateForm()
+  dialogVisible.value = true
+}
+
 async function handleCreate() {
   if (!formRef.value) return
   try { await formRef.value.validate() } catch { return }
   submitting.value = true; formErrors.value = []
   try {
-    // Build payload with explicit property access (avoid Object.entries on reactive proxy)
-    const payload: Record<string, any> = {}
-    const fields = [
+    const FIELDS = [
       'profile.name.display_name', 'profile.email', 'profile.phone',
       'employment.entity_id', 'employment.department_id', 'employment.position',
       'employment.employment_type', 'employment.status', 'employment.join_date',
       'employment.country_code', 'employment.work_country', 'employment.business_line',
     ]
-    for (const key of fields) {
+    const payload: Record<string, any> = {}
+    for (const key of FIELDS) {
       const val = (createForm as any)[key]
       if (val !== undefined && val !== null && val !== '') payload[key] = val
     }
@@ -115,6 +144,7 @@ async function loadFilterOptions() {
     entityOptions.value = er.data?.entities || []; deptOptions.value = dr.data?.departments || []; teamOptions.value = tr.data?.teams || []
   } catch { /* ignore */ }
 }
+
 async function loadEmployees() {
   loading.value = true; error.value = ''
   try {
@@ -135,6 +165,7 @@ async function loadEmployees() {
   } catch (e: any) { error.value = e?.response?.data?.error || e?.message || 'Failed' }
   finally { loading.value = false }
 }
+
 function handlePageChange(p: number) { page.value = p; loadEmployees() }
 function handleSizeChange(s: number) { pageSize.value = s; page.value = 1; loadEmployees() }
 function applyFilter() { page.value = 1; loadEmployees() }
@@ -174,7 +205,14 @@ function teamDisp(e: Employee) { return e.employment?.team_name || e.employment?
 
 const countLabel = computed(() => filtered.value ? t('employee.showing_filtered', { shown: total.value, total: totalAll.value }) : t('employee.total_count', { count: total.value }))
 
-onMounted(() => { loadFilterOptions(); loadEmployees() })
+onMounted(async () => {
+  // Load data dictionary options (enum values) + masterdata (entities, depts, teams) in parallel
+  await Promise.all([
+    loadOptions([CAT.STATUS, CAT.EMPLOYMENT_TYPE, CAT.BUSINESS_LINE, CAT.LANGUAGE_LEVEL, CAT.COUNTRY_CODE]),
+    loadFilterOptions(),
+  ])
+  loadEmployees()
+})
 </script>
 
 <template>
@@ -204,7 +242,7 @@ onMounted(() => { loadFilterOptions(); loadEmployees() })
         </el-form-item>
         <el-form-item :label="t('field.country')">
           <el-select v-model="filters.country_code" clearable :placeholder="t('filter.all')" style="width:180px">
-            <el-option :label="t('country.jp')" value="JP" /><el-option :label="t('country.cn')" value="CN" /><el-option :label="t('country.sg')" value="SG" />
+            <el-option v-for="c in ddValues(CAT.COUNTRY_CODE)" :key="c" :label="Lbl('country_code', c)" :value="c" />
           </el-select>
         </el-form-item>
         <el-form-item :label="t('field.department')">
@@ -219,23 +257,23 @@ onMounted(() => { loadFilterOptions(); loadEmployees() })
         </el-form-item>
         <el-form-item :label="t('field.status')">
           <el-select v-model="filters.status" clearable :placeholder="t('filter.all')" style="width:180px">
-            <el-option v-for="s in STATUS_OPTS" :key="s" :label="Lbl('status', s)" :value="s" />
+            <el-option v-for="s in ddValues(CAT.STATUS)" :key="s" :label="Lbl('status', s)" :value="s" />
           </el-select>
         </el-form-item>
         <el-form-item :label="t('employee.show_resigned')"><el-switch v-model="filters.show_resigned" /></el-form-item>
         <el-form-item :label="t('field.employment_type')">
           <el-select v-model="filters.employment_type" clearable :placeholder="t('filter.all')" style="width:180px">
-            <el-option v-for="tp in TYPE_OPTS" :key="tp" :label="Lbl('employment_type', tp)" :value="tp" />
+            <el-option v-for="tp in ddValues(CAT.EMPLOYMENT_TYPE)" :key="tp" :label="Lbl('employment_type', tp)" :value="tp" />
           </el-select>
         </el-form-item>
         <el-form-item :label="t('field.japanese_level')">
           <el-select v-model="filters.japanese_level" clearable :placeholder="t('filter.all')" style="width:180px">
-            <el-option v-for="l in JP_OPTS" :key="l" :label="Lbl('japanese_level', l)" :value="l" />
+            <el-option v-for="l in ddValues(CAT.LANGUAGE_LEVEL)" :key="l" :label="Lbl('japanese_level', l)" :value="l" />
           </el-select>
         </el-form-item>
         <el-form-item :label="t('field.english_level')">
           <el-select v-model="filters.english_level" clearable :placeholder="t('filter.all')" style="width:180px">
-            <el-option v-for="l in EN_OPTS" :key="l" :label="Lbl('english_level', l)" :value="l" />
+            <el-option v-for="l in ddValues(CAT.LANGUAGE_LEVEL)" :key="l" :label="Lbl('english_level', l)" :value="l" />
           </el-select>
         </el-form-item>
         <el-form-item :label="t('field.skill')"><el-input v-model="filters.skill" :placeholder="t('employee.skill_placeholder')" clearable style="width:180px" @keyup.enter="applyFilter" /></el-form-item>
@@ -360,21 +398,21 @@ onMounted(() => { loadFilterOptions(); loadEmployees() })
           <el-col :span="8">
             <el-form-item :label="t('field.country')" prop="employment.country_code">
               <el-select v-model="createForm['employment.country_code']" style="width:100%">
-                <el-option :label="t('country.jp')" value="JP" /><el-option :label="t('country.cn')" value="CN" /><el-option :label="t('country.sg')" value="SG" />
+                <el-option v-for="c in ddValues(CAT.COUNTRY_CODE)" :key="c" :label="Lbl('country_code', c)" :value="c" />
               </el-select>
             </el-form-item>
           </el-col>
           <el-col :span="8">
             <el-form-item :label="t('field.work_country')" prop="employment.work_country">
               <el-select v-model="createForm['employment.work_country']" style="width:100%">
-                <el-option :label="t('country.jp')" value="JP" /><el-option :label="t('country.cn')" value="CN" /><el-option :label="t('country.sg')" value="SG" />
+                <el-option v-for="c in ddValues(CAT.COUNTRY_CODE)" :key="c" :label="Lbl('country_code', c)" :value="c" />
               </el-select>
             </el-form-item>
           </el-col>
           <el-col :span="8">
             <el-form-item :label="t('field.business_line')" prop="employment.business_line">
               <el-select v-model="createForm['employment.business_line']" style="width:100%">
-                <el-option label="RPO" value="rpo" /><el-option label="Haken" value="haken" /><el-option label="Recruitment" value="recruitment" /><el-option label="Payroll" value="payroll" /><el-option label="Internal" value="internal" /><el-option label="AI Platform" value="ai_platform" />
+                <el-option v-for="bl in ddValues(CAT.BUSINESS_LINE)" :key="bl" :label="Lbl('business_line', bl)" :value="bl" />
               </el-select>
             </el-form-item>
           </el-col>
@@ -388,14 +426,14 @@ onMounted(() => { loadFilterOptions(); loadEmployees() })
           <el-col :span="8">
             <el-form-item :label="t('field.employment_type')">
               <el-select v-model="createForm['employment.employment_type']" style="width:100%">
-                <el-option v-for="tp in TYPE_OPTS" :key="tp" :label="Lbl('employment_type', tp)" :value="tp" />
+                <el-option v-for="tp in ddValues(CAT.EMPLOYMENT_TYPE)" :key="tp" :label="Lbl('employment_type', tp)" :value="tp" />
               </el-select>
             </el-form-item>
           </el-col>
           <el-col :span="8">
             <el-form-item :label="t('field.status')">
               <el-select v-model="createForm['employment.status']" style="width:100%">
-                <el-option label="Active" value="active" /><el-option label="Probation" value="probation" />
+                <el-option v-for="s in ddValues(CAT.STATUS)" :key="s" :label="Lbl('status', s)" :value="s" />
               </el-select>
             </el-form-item>
           </el-col>

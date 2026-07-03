@@ -1,8 +1,11 @@
 # TACAI Project — Architecture & Module Reference
 
-> Updated: 2026-06-30
+> Updated: 2026-07-03
 >
-> **Shared Config:** [TACAI-Core/tacai_config.py](TACAI-Core/tacai_config.py) — single source of truth for all port definitions.
+> **注意**: 本文档部分内容引用旧项目结构（TACAI-Core），待全面重写。
+> 当前端口、服务、路径以 [CLAUDE.md](../CLAUDE.md) 和 [DEVELOPMENT_STANDARDS.md](DEVELOPMENT_STANDARDS.md) 为准。
+>
+> **Shared Config:** [backend/shared/config.py](../backend/shared/config.py) — single source of truth for all port definitions.
 
 ---
 

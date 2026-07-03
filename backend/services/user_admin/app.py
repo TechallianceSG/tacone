@@ -3199,8 +3199,16 @@ try:
     from cors_middleware import add_cors_headers, handle_preflight
 except ImportError:
     # Fallback definitions if cors_middleware.py is not found
+    _FALLBACK_ORIGINS = {
+        "http://localhost:5173", "http://127.0.0.1:5173",
+        "http://localhost:4173", "http://127.0.0.1:4173",
+        "http://localhost:3000", "http://127.0.0.1:3000",
+    }
+
     def add_cors_headers(handler) -> None:
-        handler.send_header("Access-Control-Allow-Origin", "*")
+        origin = handler.headers.get("Origin", "")
+        allowed = origin if origin in _FALLBACK_ORIGINS else "http://localhost:5173"
+        handler.send_header("Access-Control-Allow-Origin", allowed)
         handler.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS")
         handler.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
         handler.send_header("Access-Control-Allow-Credentials", "true")

@@ -809,6 +809,7 @@
   "field.prefecture_code": "Prefecture",
   "field.profile__address__building": "Building",
   "field.profile__address__city": "City",
+  "field.profile__address__country": "Country",
   "field.profile__address__postal_code": "Postal Code",
   "field.profile__address__prefecture": "Prefecture",
   "field.profile__address__street": "Street",

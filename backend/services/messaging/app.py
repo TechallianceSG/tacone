@@ -1712,9 +1712,30 @@ class TacaiMsgHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(payload)
 
+    _CORS_ORIGINS = {
+        "http://localhost:5173", "http://127.0.0.1:5173",
+        "http://localhost:4173", "http://127.0.0.1:4173",
+        "http://localhost:3000", "http://127.0.0.1:3000",
+    }
+
+    def _add_cors(self) -> None:
+        origin = self.headers.get("Origin", "")
+        allowed = origin if origin in self._CORS_ORIGINS else "http://localhost:5173"
+        self.send_header("Access-Control-Allow-Origin", allowed)
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
+        self.send_header("Access-Control-Allow-Credentials", "true")
+        self.send_header("Access-Control-Max-Age", "86400")
+
+    def do_OPTIONS(self) -> None:
+        self.send_response(204)
+        self._add_cors()
+        self.end_headers()
+
     def _send_json(self, data: Any, status: int = 200) -> None:
         payload = json.dumps(data, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
+        self._add_cors()
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(len(payload)))

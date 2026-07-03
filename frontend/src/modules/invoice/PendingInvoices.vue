@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { invoiceApi } from '@/api/client'
 import { ElMessage } from 'element-plus'
+import { INVOICE_PENDING_STATUS_CONFIG } from '@/constants/invoice'
 
 const { t } = useI18n()
 const loading = ref(false)
@@ -42,7 +43,7 @@ onMounted(load)
       <el-table-column prop="period_end" :label="t('field.period_end')" />
       <el-table-column prop="estimated_amount" :label="t('field.estimated_amount')" />
       <el-table-column prop="status" :label="t('field.status')">
-        <template #default="{ row }"><el-tag size="small" :type="row.status === 'converted' ? 'success' : row.status === 'reminded' ? 'warning' : 'info'">{{ row.status }}</el-tag></template>
+        <template #default="{ row }"><el-tag size="small" :type="(INVOICE_PENDING_STATUS_CONFIG[row.status]?.type || 'info') as any">{{ row.status }}</el-tag></template>
       </el-table-column>
       <el-table-column :label="t('action.actions')" width="200">
         <template #default="{ row }">

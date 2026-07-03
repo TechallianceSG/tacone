@@ -20,7 +20,7 @@ from __future__ import annotations
 import json
 import os
 import sys
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
 import psycopg2
 import psycopg2.extras
@@ -99,20 +99,48 @@ def _ensure_pg():
 
 # ── Core CRUD Operations ────────────────────────────────────
 
-def load_table(table_name: str, where: Optional[str] = None,
-               order_by: Optional[str] = None) -> list[dict[str, Any]]:
-    """Load all rows from a PostgreSQL table. Returns list of dicts."""
+def load_table(table_name: str, where = None,
+               order_by: Optional[str] = None,
+               params: Optional[tuple] = None) -> list[dict[str, Any]]:
+    """Load all rows from a PostgreSQL table. Returns list of dicts.
+
+    Args:
+        table_name: PostgreSQL table name.
+        where: WHERE clause as either:
+            - str: raw SQL condition (legacy; use only for trusted inputs)
+            - dict: {column: value} → parameterized "col" = %s AND ...
+        order_by: ORDER BY clause (column name or raw SQL).
+        params: tuple of values for %s placeholders when `where` is a str.
+    """
     _ensure_pg()
 
     conn = _get_conn()
     cur = conn.cursor()
     try:
         sql = f'SELECT * FROM "{table_name}"'
-        if where:
-            sql += f" WHERE {where}"
+        query_params: tuple = ()
+
+        if where is not None:
+            if isinstance(where, dict):
+                # Parameterized dict → "col1" = %s AND "col2" = %s
+                clauses = [f'"{k}" = %s' for k in where.keys()]
+                sql += " WHERE " + " AND ".join(clauses)
+                query_params = tuple(where.values())
+            elif isinstance(where, str) and where.strip():
+                # String WHERE clause (legacy / trusted input)
+                sql += f" WHERE {where}"
+                if params:
+                    query_params = params
+            elif isinstance(where, str):
+                pass  # empty string → no WHERE
+
         if order_by:
             sql += f" ORDER BY {order_by}"
-        cur.execute(sql)
+
+        if query_params:
+            cur.execute(sql, query_params)
+        else:
+            cur.execute(sql)
         columns = [desc[0] for desc in cur.description]
         rows = []
         for row in cur.fetchall():
@@ -318,6 +346,60 @@ def _serialize_for_db(val: Any) -> Any:
     if isinstance(val, (dict, list)):
         return json.dumps(val, ensure_ascii=False, default=str)
     return str(val)
+
+
+# ── Raw SQL helpers (for seed data / migrations) ────────────
+
+def execute(sql: str, params=None):
+    """Execute a raw SQL statement (INSERT/UPDATE/DELETE). Returns rowcount."""
+    _ensure_pg()
+    conn = _get_conn()
+    cur = conn.cursor()
+    try:
+        if params:
+            cur.execute(sql, params)
+        else:
+            cur.execute(sql)
+        conn.commit()
+        return cur.rowcount
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+
+
+def execute_many(sql: str, params_list: list):
+    """Execute a raw SQL statement with many parameter sets. Returns rowcount."""
+    _ensure_pg()
+    conn = _get_conn()
+    cur = conn.cursor()
+    try:
+        cur.executemany(sql, params_list)
+        conn.commit()
+        return cur.rowcount
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+
+
+def fetch_all(sql: str, params=None):
+    """Execute a raw SELECT and return all rows as list of dicts."""
+    _ensure_pg()
+    conn = _get_conn()
+    cur = conn.cursor()
+    try:
+        if params:
+            cur.execute(sql, params)
+        else:
+            cur.execute(sql)
+        rows = cur.fetchall()
+        cols = [d[0] for d in cur.description] if cur.description else []
+        return [dict(zip(cols, row)) for row in rows]
+    finally:
+        cur.close()
 
 
 # ── Startup status ──────────────────────────────────────────

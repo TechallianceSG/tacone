@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { payrollJpApi } from '@/api/client'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { JP_STATUS_CONFIG, JP_STATUS_WORKFLOW, jpStatusIndex, JP_ACTION_LABELS, jpActionLabel, parseJpAuditValue } from '@/constants/payrollJp'
 
 const route = useRoute()
 const { t } = useI18n()
@@ -50,16 +51,6 @@ const pagedRecords = computed(() => {
 // Entities for labels
 const entities = ref<any[]>([])
 
-// ── Status config ──
-const statusConfig: Record<string, { type: string; label: string }> = {
-  draft: { type: '', label: 'payroll.jp.status_draft' },
-  calculated: { type: 'warning', label: 'payroll.jp.status_calculated' },
-  confirmed: { type: 'success', label: 'payroll.jp.status_confirmed' },
-  voided: { type: 'danger', label: 'payroll.jp.status_voided' },
-}
-const statusWorkflow = ['draft', 'calculated', 'confirmed']
-function statusIndex(s: string) { return statusWorkflow.indexOf(s) }
-
 // ── Permission helpers ──
 function canCalculate() { return batch.value.status === 'draft' || batch.value.status === 'calculated' }
 function canConfirm() { return batch.value.status === 'calculated' }
@@ -67,43 +58,6 @@ function canEditRecords() { return batch.value.status === 'draft' || batch.value
 function canRecalculateSingle() { return batch.value.status === 'calculated' }
 function canRollback() { return batch.value.status === 'confirmed' }
 function isManuallyEdited(r: any) { return r.manually_edited === true || r.manually_edited === 'true' || r.manually_edited === 1 }
-
-// ── Audit action labels ──
-const actionLabels: Record<string, { icon: string; label: string; color: string }> = {
-  CALCULATE:           { icon: '🧮', label: '批量计算', color: '#409EFF' },
-  RECALCULATE:         { icon: '🔄', label: '重新计算', color: '#409EFF' },
-  RECALCULATE_SINGLE:  { icon: '🔁', label: '逐条重算', color: '#409EFF' },
-  CONFIRM:             { icon: '✅', label: '定稿', color: '#67C23A' },
-  ROLLBACK:            { icon: '↩️', label: '回退', color: '#E6A23C' },
-  EDIT_RECORD:         { icon: '✏️', label: '编辑记录', color: '#909399' },
-  EMAIL_SENT:          { icon: '📧', label: '发送邮件', color: '#409EFF' },
-  EMAIL_BATCH_SENT:    { icon: '📧', label: '批量发送', color: '#409EFF' },
-  EMAIL_SELECTED_SENT: { icon: '📧', label: '选中发送', color: '#409EFF' },
-  VOID:                { icon: '🚫', label: '作废', color: '#F56C6C' },
-  DELETE:              { icon: '🗑️', label: '删除', color: '#F56C6C' },
-}
-
-function actionLabel(action: string) {
-  return actionLabels[action] || { icon: '📋', label: action, color: '#909399' }
-}
-
-function parseAuditValue(v: any): string {
-  if (!v) return ''
-  try {
-    const obj = typeof v === 'string' ? JSON.parse(v) : v
-    // Extract key fields for summary
-    const parts: string[] = []
-    if (obj.status) parts.push(`状态→${obj.status}`)
-    if (obj.employee_count !== undefined) parts.push(`${obj.employee_count}人`)
-    if (obj.gross_total !== undefined) parts.push(`应发¥${Number(obj.gross_total).toLocaleString()}`)
-    if (obj.net_total !== undefined) parts.push(`实发¥${Number(obj.net_total).toLocaleString()}`)
-    if (obj.reason) parts.push(`原因: ${obj.reason}`)
-    if (obj.email_status) parts.push(`邮件: ${obj.email_status}`)
-    if (obj.sent !== undefined) parts.push(`成功${obj.sent}封${obj.failed ? ` 失败${obj.failed}封` : ''}`)
-    if (parts.length) return parts.join(' | ')
-    return JSON.stringify(obj).substring(0, 150)
-  } catch { return String(v).substring(0, 150) }
-}
 
 // ── Data loading ──
 async function load() {
@@ -236,21 +190,88 @@ const summaryCards = computed(() => {
   ]
 })
 
-// ── Editable fields for dialog ──
-const editFields = [
-  { key: 'absence_days', label: 'field.absence_days', min: 0, max: 31, precision: 1 },
-  { key: 'actual_work_days', label: 'field.actual_work_days', min: 0, max: 31, precision: 1 },
-  { key: 'actual_work_hours', label: 'field.actual_work_hours', min: 0, precision: 1 },
-  { key: 'overtime_hours', label: 'field.overtime_hours', min: 0, precision: 1 },
-  { key: 'commute_allowance', label: 'field.commute_allowance', min: 0, precision: 0 },
-  { key: 'housing_allowance', label: 'field.housing_allowance', min: 0, precision: 0 },
-  { key: 'transport_allowance', label: 'field.transport_allowance', min: 0, precision: 0 },
-  { key: 'phone_allowance', label: 'field.phone_allowance', min: 0, precision: 0 },
-  { key: 'performance_bonus', label: 'field.performance_bonus', min: 0, precision: 0 },
-  { key: 'project_bonus', label: 'field.project_bonus', min: 0, precision: 0 },
-  { key: 'other_allowance', label: 'field.other_allowance', min: 0, precision: 0 },
-  { key: 'other_deduction', label: 'field.other_deduction', min: 0, precision: 0 },
+// ── Editable fields for dialog (grouped by section) ──
+const editFieldGroups = [
+  {
+    title: 'payroll.jp.section_attendance',
+    fields: [
+      { key: 'absence_days', label: 'field.absence_days', min: 0, precision: 1 },
+      { key: 'actual_work_days', label: 'field.actual_work_days', min: 0, precision: 1 },
+      { key: 'actual_work_hours', label: 'field.actual_work_hours', min: 0, precision: 1 },
+      { key: 'overtime_hours', label: 'field.overtime_hours', min: 0, precision: 1 },
+    ]
+  },
+  {
+    title: 'payroll.jp.section_earnings',
+    fields: [
+      { key: 'base_pay_calculated', label: 'field.base_pay', min: 0, precision: 0 },
+      { key: 'commute_allowance', label: 'field.commute_allowance', min: 0, precision: 0 },
+      { key: 'housing_allowance', label: 'field.housing_allowance', min: 0, precision: 0 },
+      { key: 'family_allowance', label: 'field.family_allowance', min: 0, precision: 0 },
+      { key: 'position_allowance', label: 'field.position_allowance', min: 0, precision: 0 },
+      { key: 'fixed_allowance', label: 'field.fixed_allowance', min: 0, precision: 0 },
+      { key: 'transport_allowance', label: 'field.transport_allowance', min: 0, precision: 0 },
+      { key: 'phone_allowance', label: 'field.phone_allowance', min: 0, precision: 0 },
+      { key: 'performance_bonus', label: 'field.performance_bonus', min: 0, precision: 0 },
+      { key: 'project_bonus', label: 'field.project_bonus', min: 0, precision: 0 },
+      { key: 'other_allowance', label: 'field.other_allowance', min: 0, precision: 0 },
+    ]
+  },
+  {
+    title: 'payroll.jp.section_deductions',
+    fields: [
+      { key: 'health_insurance_employee', label: 'field.health_insurance', min: 0, precision: 0 },
+      { key: 'pension_employee', label: 'field.pension', min: 0, precision: 0 },
+      { key: 'care_insurance_employee', label: 'field.care_insurance', min: 0, precision: 0 },
+      { key: 'employment_insurance_employee', label: 'field.employment_insurance', min: 0, precision: 0 },
+      { key: 'income_tax', label: 'field.income_tax', min: 0, precision: 0 },
+      { key: 'residence_tax', label: 'field.residence_tax', min: 0, precision: 0 },
+      { key: 'other_deduction', label: 'field.other_deduction', min: 0, precision: 0 },
+      { key: 'recurring_deductions', label: 'field.recurring_deductions', min: 0, precision: 0 },
+    ]
+  },
+  {
+    title: 'payroll.jp.section_totals',
+    fields: [
+      { key: 'gross_pay', label: 'field.gross_pay', min: 0, precision: 0 },
+      { key: 'deduction_total', label: 'field.deduction_total', min: 0, precision: 0 },
+      { key: 'net_pay', label: 'field.net_pay', min: 0, precision: 0 },
+      { key: 'employer_cost_total', label: 'field.employer_cost_total', min: 0, precision: 0 },
+    ]
+  },
+  {
+    title: 'payroll.jp.section_employer_cost',
+    fields: [
+      { key: 'employer_health', label: 'field.employer_health', min: 0, precision: 0 },
+      { key: 'employer_pension', label: 'field.employer_pension', min: 0, precision: 0 },
+      { key: 'employer_care', label: 'field.employer_care', min: 0, precision: 0 },
+      { key: 'employer_employ', label: 'field.employer_employ', min: 0, precision: 0 },
+      { key: 'employer_child_allowance', label: 'field.employer_child_allowance', min: 0, precision: 0 },
+      { key: 'employer_accident_insurance', label: 'field.employer_accident_insurance', min: 0, precision: 0 },
+    ]
+  },
 ]
+
+// ── Auto-compute totals from line items during manual edit ──
+const earningKeys = [
+  'base_pay_calculated', 'commute_allowance', 'housing_allowance',
+  'family_allowance', 'position_allowance', 'fixed_allowance',
+  'transport_allowance', 'phone_allowance', 'performance_bonus',
+  'project_bonus', 'other_allowance',
+]
+const deductionKeys = [
+  'health_insurance_employee', 'pension_employee', 'care_insurance_employee',
+  'employment_insurance_employee', 'income_tax', 'residence_tax',
+  'other_deduction', 'recurring_deductions',
+]
+watch(() => editForm.value, () => {
+  if (!editDialog.value) return
+  const gross = earningKeys.reduce((s: number, k: string) => s + (Number(editForm.value[k]) || 0), 0)
+  const ded = deductionKeys.reduce((s: number, k: string) => s + (Number(editForm.value[k]) || 0), 0)
+  editForm.value.gross_pay = gross
+  editForm.value.deduction_total = ded
+  editForm.value.net_pay = gross - ded
+}, { deep: true })
 
 function fmt(v: any) { return v != null ? Number(v).toLocaleString() : '-' }
 
@@ -263,8 +284,8 @@ onMounted(load)
     <div class="page-header">
       <div class="header-left">
         <h3>{{ t('payroll.jp.batch_detail') }}</h3>
-        <el-tag v-if="batch.status" :type="(statusConfig[batch.status]?.type || '') as any" size="default">
-          {{ t(statusConfig[batch.status]?.label || batch.status) }}
+        <el-tag v-if="batch.status" :type="(JP_STATUS_CONFIG[batch.status]?.type || '') as any" size="default">
+          {{ t(JP_STATUS_CONFIG[batch.status]?.label || batch.status) }}
         </el-tag>
         <span class="helper-text">{{ batch.batch_id || batch.sheet_id || '-' }}</span>
         <span v-if="batch.recalculate_count > 0" class="recalc-chip">🔄 {{ t('payroll.jp.recalculate_count') }}: {{ batch.recalculate_count }}</span>
@@ -286,11 +307,11 @@ onMounted(load)
 
     <!-- ═══ Workflow Steps ═══ -->
     <div class="workflow-bar">
-      <div v-for="(step, idx) in statusWorkflow" :key="step" class="wf-step"
-        :class="{ 'wf-active': statusIndex(batch.status) >= idx, 'wf-current': statusIndex(batch.status) === idx }">
+      <div v-for="(step, idx) in JP_STATUS_WORKFLOW" :key="step" class="wf-step"
+        :class="{ 'wf-active': jpStatusIndex(batch.status) >= idx, 'wf-current': jpStatusIndex(batch.status) === idx }">
         <div class="wf-dot">{{ idx + 1 }}</div>
         <span class="wf-label">{{ t('payroll.jp.status_' + step) }}</span>
-        <div v-if="idx < statusWorkflow.length - 1" class="wf-line" />
+        <div v-if="idx < JP_STATUS_WORKFLOW.length - 1" class="wf-line" />
       </div>
     </div>
 
@@ -312,6 +333,9 @@ onMounted(load)
       <el-descriptions-item :label="t('field.created_by')">{{ batch.created_by || '-' }}</el-descriptions-item>
     </el-descriptions>
 
+    <!-- ═══ Recalculation Warning ═══ -->
+    <el-alert v-if="batch.status === 'calculated'" :title="t('payroll.jp.recalculate_overwrite_warning')" type="warning" :closable="false" show-icon style="margin-bottom:12px" />
+
     <!-- ═══ Records Table ═══ -->
     <div class="section-head">
       <h4>{{ t('payroll.jp.sheet_records') }}</h4>
@@ -319,30 +343,62 @@ onMounted(load)
 
     <div class="table-card" v-loading="loading">
       <el-table :data="pagedRecords" border stripe size="small" max-height="480" :empty-text="t('payroll.jp.no_records')" style="width:100%">
-        <el-table-column type="index" min-width="45" />
-        <el-table-column prop="employee_number" :label="t('field.employee_number')" min-width="110" />
-        <el-table-column min-width="140" show-overflow-tooltip>
+        <el-table-column type="index" width="40" fixed="left" />
+        <el-table-column prop="employee_number" :label="t('field.employee_number')" width="100" fixed="left" />
+        <el-table-column width="130" fixed="left" show-overflow-tooltip>
           <template #header>{{ t('field.employee_name') }}</template>
           <template #default="{row}">
             {{ row.employee_name }}
             <el-tag v-if="isManuallyEdited(row)" size="small" type="warning" effect="plain" class="ml-6">{{ t('payroll.jp.manually_edited') }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="salary_type" :label="t('field.salary_type_label')" min-width="100" align="center" />
-        <el-table-column :label="t('field.base_pay')" min-width="100" align="right">
+        <el-table-column prop="salary_type" :label="t('field.salary_type_label')" width="80" align="center" />
+        <!-- Attendance -->
+        <el-table-column :label="t('field.absence_days')" width="65" align="center">
+          <template #default="{row}">{{ row.absence_days || 0 }}</template>
+        </el-table-column>
+        <el-table-column :label="t('field.actual_work_days')" width="65" align="center">
+          <template #default="{row}">{{ row.actual_work_days || '-' }}</template>
+        </el-table-column>
+        <el-table-column :label="t('field.actual_work_hours')" width="65" align="center">
+          <template #default="{row}">{{ row.actual_work_hours || '-' }}</template>
+        </el-table-column>
+        <!-- Earnings -->
+        <el-table-column :label="t('field.base_pay')" width="90" align="right">
           <template #default="{row}">{{ fmt(row.base_pay_calculated) }}</template>
         </el-table-column>
-        <el-table-column :label="t('field.gross_pay')" min-width="110" align="right">
-          <template #default="{row}">{{ fmt(row.gross_pay) }}</template>
+        <el-table-column :label="t('field.commute_allowance')" width="90" align="right">
+          <template #default="{row}">{{ fmt(row.commute_allowance) }}</template>
         </el-table-column>
-        <el-table-column :label="t('field.deduction_total')" min-width="110" align="right">
+        <el-table-column :label="t('field.gross_pay')" width="100" align="right">
+          <template #default="{row}"><strong>{{ fmt(row.gross_pay) }}</strong></template>
+        </el-table-column>
+        <!-- Deductions -->
+        <el-table-column :label="t('field.health_insurance')" width="90" align="right">
+          <template #default="{row}">{{ fmt(row.health_insurance_employee) }}</template>
+        </el-table-column>
+        <el-table-column :label="t('field.pension')" width="90" align="right">
+          <template #default="{row}">{{ fmt(row.pension_employee) }}</template>
+        </el-table-column>
+        <el-table-column :label="t('field.income_tax')" width="80" align="right">
+          <template #default="{row}">{{ fmt(row.income_tax) }}</template>
+        </el-table-column>
+        <el-table-column :label="t('field.residence_tax')" width="80" align="right">
+          <template #default="{row}">{{ fmt(row.residence_tax) }}</template>
+        </el-table-column>
+        <el-table-column :label="t('field.deduction_total')" width="100" align="right">
           <template #default="{row}"><span style="color:var(--el-color-danger)">{{ fmt(row.deduction_total) }}</span></template>
         </el-table-column>
-        <el-table-column :label="t('field.net_pay')" min-width="110" align="right">
+        <!-- Net -->
+        <el-table-column :label="t('field.net_pay')" width="100" align="right" fixed="right">
           <template #default="{row}"><strong style="color:var(--el-color-primary)">{{ fmt(row.net_pay) }}</strong></template>
         </el-table-column>
+        <!-- Employer Cost -->
+        <el-table-column :label="t('field.employer_cost_total')" width="110" align="right" fixed="right">
+          <template #default="{row}"><span style="color:var(--el-color-warning)">{{ fmt(row.employer_cost_total) }}</span></template>
+        </el-table-column>
         <!-- Actions -->
-        <el-table-column :label="t('field.actions')" min-width="160" fixed="right" v-if="canEditRecords() || canRecalculateSingle()">
+        <el-table-column :label="t('field.actions')" width="140" fixed="right" v-if="canEditRecords() || canRecalculateSingle()">
           <template #default="{row}">
             <el-button v-if="canEditRecords()" size="small" text type="primary" @click="openEdit(row)">{{ t('action.edit') }}</el-button>
             <el-button v-if="canRecalculateSingle()" size="small" text type="warning"
@@ -363,16 +419,19 @@ onMounted(load)
       </div>
     </div>
 
-    <!-- ═══ Edit Dialog ═══ -->
-    <el-dialog v-model="editDialog" :title="t('action.edit') + ' — ' + (editRecord?.employee_name || '')" width="620px" destroy-on-close>
-      <el-alert :title="t('payroll.jp.edit_hint')" type="info" :closable="false" show-icon style="margin-bottom:16px" />
-      <el-row :gutter="12">
-        <el-col :span="8" v-for="f in editFields" :key="f.key">
-          <el-form-item :label="t(f.label)" size="small">
-            <el-input-number v-model="editForm[f.key]" :min="f.min" :precision="f.precision" style="width:100%" size="small" controls-position="right" />
-          </el-form-item>
-        </el-col>
-      </el-row>
+    <!-- ═══ Edit Dialog (Full Record Manual Correction) ═══ -->
+    <el-dialog v-model="editDialog" :title="t('action.edit') + ' — ' + (editRecord?.employee_name || '')" width="750px" destroy-on-close top="2vh">
+      <el-alert :title="t('payroll.jp.edit_manual_warning')" type="warning" :closable="false" show-icon style="margin-bottom:16px" />
+      <div v-for="group in editFieldGroups" :key="group.title" class="edit-section">
+        <div class="edit-section-title">{{ t(group.title) }}<span v-if="group.title === 'payroll.jp.section_totals'" class="auto-badge">auto</span></div>
+        <el-row :gutter="12">
+          <el-col :span="8" v-for="f in group.fields" :key="f.key">
+            <el-form-item :label="t(f.label)" size="small">
+              <el-input-number v-model="editForm[f.key]" :min="f.min" :precision="f.precision" style="width:100%" size="small" controls-position="right" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+      </div>
       <template #footer>
         <el-button @click="editDialog = false">{{ t('action.cancel') }}</el-button>
         <el-button type="primary" :loading="savingRecord" @click="saveEdit">{{ t('action.save') }}</el-button>
@@ -399,13 +458,13 @@ onMounted(load)
           <div class="audit-line">
             <div class="audit-body">
               <div class="audit-head">
-                <el-tag size="small" :color="actionLabel(log.action).color" effect="dark" style="color:#fff">
-                  {{ actionLabel(log.action).label }}
+                <el-tag size="small" :color="jpActionLabel(log.action).color" effect="dark" style="color:#fff">
+                  {{ jpActionLabel(log.action).label }}
                 </el-tag>
                 <span class="audit-user">{{ log.user_name }}</span>
                 <span class="audit-time">{{ (log.created_at || '').replace('T', ' ').substring(0, 19) }}</span>
               </div>
-              <div class="audit-summary">{{ parseAuditValue(log.after_value) || parseAuditValue(log.before_value) || '—' }}</div>
+              <div class="audit-summary">{{ parseJpAuditValue(log.after_value) || parseJpAuditValue(log.before_value) || '—' }}</div>
               <!-- Expanded detail -->
               <div v-if="expandedAudit.has(idx)" class="audit-expand">
                 <div v-if="log.before_value" class="audit-json-label">Before:</div>
@@ -475,6 +534,11 @@ onMounted(load)
 .audit-expand { margin-top:8px; padding:8px 10px; background:#f9fafb; border-radius:6px; }
 .audit-json-label { font-size:.75rem; font-weight:700; color:#6b7280; margin:4px 0 2px; }
 .audit-json { font-size:.75rem; color:#1d2a3a; white-space:pre-wrap; word-break:break-all; margin:0; }
+
+/* ── Edit Dialog Sections ── */
+.edit-section { margin-bottom:14px; }
+.edit-section-title { font-size:.85rem; font-weight:700; color:#1B6CB2; padding-bottom:6px; margin-bottom:10px; border-bottom:1px solid #e5e7eb; display:flex; align-items:center; gap:6px; }
+.auto-badge { font-size:.7rem; font-weight:500; color:#059669; background:#ecfdf5; padding:1px 8px; border-radius:10px; }
 
 /* ── Misc ── */
 .helper-text { color:#6b7280; font-size:.85rem; }

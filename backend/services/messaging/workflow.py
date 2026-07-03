@@ -12,7 +12,6 @@ import io
 import json
 import re
 from datetime import datetime, timedelta, timezone
-from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from typing import Any
 

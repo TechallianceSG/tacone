@@ -3,6 +3,7 @@ import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { payrollJpApi } from '@/api/client'
 import { ElMessage } from 'element-plus'
+import { JP_ITEM_CATEGORY_LABELS, JP_ITEM_SUBCATEGORY_LABELS, JP_ITEM_CATEGORIES } from '@/constants/payrollJp'
 
 const { t } = useI18n()
 const loading = ref(false)
@@ -12,10 +13,6 @@ const pageSize = ref(20)
 const dialogVisible = ref(false)
 const form = ref<Record<string, any>>({})
 const saving = ref(false)
-
-const categoryLabels: Record<string, string> = { earning: '支給 (Earning)', deduction: '控除 (Deduction)', employer_cost: '会社負担 (Employer Cost)' }
-const subCategoryLabels: Record<string, string> = { base: '基本', overtime: '残業', allowance: '手当', manual: '手動入力', statutory: '法定', attendance: '勤怠' }
-const categories = ['earning', 'deduction', 'employer_cost']
 
 function getLabel(row: any, lang: string): string { try { const labels = typeof row.labels === 'string' ? JSON.parse(row.labels) : row.labels; return labels?.[lang] || labels?.ja || row.code || '-' } catch { return row.code || '-' } }
 
@@ -57,11 +54,11 @@ onMounted(load)
         </el-table-column>
         <el-table-column :label="t('field.category')" min-width="150">
           <template #default="{row}">
-            <el-tag size="small" :type="row.category==='earning'?'success':row.category==='deduction'?'danger':'warning'">{{ categoryLabels[row.category] || row.category }}</el-tag>
+            <el-tag size="small" :type="row.category==='earning'?'success':row.category==='deduction'?'danger':'warning'">{{ JP_ITEM_CATEGORY_LABELS[row.category] || row.category }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column :label="t('field.sub_category')" min-width="110">
-          <template #default="{row}"><span class="muted-text">{{ subCategoryLabels[row.sub_category] || row.sub_category }}</span></template>
+          <template #default="{row}"><span class="muted-text">{{ JP_ITEM_SUBCATEGORY_LABELS[row.sub_category] || row.sub_category }}</span></template>
         </el-table-column>
         <el-table-column :label="t('field.taxable')" min-width="70" align="center">
           <template #default="{row}"><el-tag :type="row.taxable?'warning':'info'" size="small">{{ row.taxable?t('field.yes'):t('field.no') }}</el-tag></template>

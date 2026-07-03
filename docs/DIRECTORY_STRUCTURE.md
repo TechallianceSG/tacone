@@ -1,8 +1,8 @@
 # TACAI 项目目录结构说明
 
-> 版本: 2.0  
-> 更新日期: 2026-07-01  
-> 适用范围: `tacai-project` 全项目
+> 版本: 2.1  
+> 更新日期: 2026-07-03
+> 适用范围: `tacone` 全项目
 
 ---
 
@@ -56,18 +56,12 @@ from config import ALLOWED_PORTS
 |------|--------|------|-----------|------|
 | `user_admin/` | 用户管理 & 认证 | 3001 (DEV) / 4001 (STG) / 6001 (PRD) | `ua_` | ✅ |
 | `portal/` | 统一入口 Portal | 3000 (DEV) / 4000 (STG) / 6000 (PRD) | `pt_` | ✅ |
+| `employee_admin/` | 员工管理 | 8004 | `emp_` | ✅ |
+| `datadict/` | 数据字典 | 8005 | `dd_` | ✅ |
 | `masterdata/` | 主数据管理 | 8007 | `md_` | ✅ |
 | `messaging/` | 消息中心 & 审批流 | 8012 | `msg_` | ✅ |
-| `employee_admin/` | 员工管理 | 8004 | `emp_` | 🔲 待重建 |
-| `timesheet/` | 工时管理 | 8002 | `ts_` | 🔲 规划中 |
-| `reimbursement/` | 费用报销 | 8003 | `rmb_` | 🔲 规划中 |
-| `payroll/sg/` | 新加坡薪资 | 8016 | `pay_` | 🔲 规划中 |
-| `payroll/jp/` | 日本薪资 | — | `pay_` | 🔲 规划中 |
-| `payroll/cn/` | 中国薪资 | — | `pay_` | 🔲 规划中 |
-| `self_service/` | 员工自助 | 8018 | `ss_` | 🔲 规划中 |
-| `vendor_expense/` | 供应商付款 | — | `ve_` | 🔲 规划中 |
-| `client_revenue/` | 客户收入 | — | `cr_` | 🔲 规划中 |
-| `training/` | 培训管理 | — | `tr_` | 🔲 规划中 |
+| `payroll/jp/` | 日本薪资 | 8013 | `pay_jp_` | ✅ |
+| `invoice/` | 发票管理 | 8019 | `inv_` | ✅ |
 
 **服务目录标准结构：**
 ```
@@ -145,18 +139,12 @@ src/
 ## 四、`database/` — 数据库
 
 ```
-database/
-├── migrations/              # SQL 迁移脚本（按序号执行）
-│   ├── README.md            #   迁移执行说明
-│   ├── 001_user_admin_schema.sql
-│   ├── 002_masterdata_schema.sql
-│   ├── 003_employee_schema.sql
-│   └── ...
-└── seeds/                   # 初始/种子数据
-    ├── roles.sql
-    ├── permissions.sql
-    └── entities.sql
+database/migrations/           # SQL 迁移脚本（本地参考，不纳入 git 版本控制）
+├── 001_payroll_jp_schema.sql      # 日本薪资全部表
+└── 002_data_dictionary.sql        # 数据字典表 + 种子数据
 ```
+
+> 注：迁移脚本仅供新建环境参考。运行时数据源是 PostgreSQL，由各服务通过 `db_utils` 直连。
 
 ---
 
@@ -166,9 +154,9 @@ database/
 |------|------|
 | `ARCHITECTURE.md` | 系统架构说明 |
 | `DIRECTORY_STRUCTURE.md` | 本文档 |
-| `API_SPEC.md` | API 接口规范 |
-| `DATABASE.md` | 数据库设计规范 |
-| `MODULE_DEVELOPMENT.md` | 新模块开发指南 |
+| `DEVELOPMENT_STANDARDS.md` | 开发规范（含 API/DB/前端规范） |
+| `JP_PAYROLL_CALCULATION_FORMULAS.md` | 日本薪资计算公式 |
+| `migration_schema.sql` | 统一数据库 Schema 参考 |
 
 ---
 
@@ -176,13 +164,13 @@ database/
 
 | 层级 | 规范 | 示例 |
 |------|------|------|
-| 服务目录 | `snake_case` | `user_admin/`, `employee_admin/`, `vendor_expense/` |
+| 服务目录 | `snake_case` | `user_admin/`, `employee_admin/`, `datadict/` |
 | Python 文件 | `snake_case` | `db_utils.py`, `api_utils.py` |
-| Vue 组件文件 | `PascalCase` | `EmployeeList.vue`, `UserForm.vue` |
-| 前端模块目录 | `snake_case` | `employees/`, `self_service/` |
+| Vue 组件文件 | `PascalCase` | `EmployeeList.vue`, `DataDictionaryList.vue` |
+| 前端模块目录 | `kebab-case` 或 `snake_case` | `employees/`, `datadict/` |
 | TypeScript 文件 | `camelCase` | `client.ts`, `auth.ts` |
-| 数据库表 | `{prefix}_{name}` | `ua_users`, `emp_employees`, `md_entities` |
-| 迁移文件 | `{序号}_{描述}.sql` | `001_user_admin_schema.sql` |
+| 数据库表 | `{prefix}_{name}` | `ua_users`, `emp_employees`, `dd_data_dictionary` |
+| 迁移文件 | `{序号}_{描述}.sql` | `001_payroll_jp_schema.sql` |
 | 环境文件 | `.env.{env}` | `.env.dev`, `.env.stg`, `.env.prd` |
 
 ---

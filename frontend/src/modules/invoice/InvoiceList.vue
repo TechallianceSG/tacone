@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { invoiceApi } from '@/api/client'
 import { ElMessage } from 'element-plus'
+import { INVOICE_STATUS_CONFIG, INVOICE_STATUS_OPTIONS, INVOICE_DEFAULTS } from '@/constants/invoice'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -12,7 +13,7 @@ const invoices = ref<any[]>([])
 const total = ref(0)
 const statusFilter = ref('')
 const dialogVisible = ref(false)
-const form = ref<Record<string, any>>({ currency: 'JPY', tax_rate: '10%', status: 'draft' })
+const form = ref<Record<string, any>>({ currency: INVOICE_DEFAULTS.currency, tax_rate: INVOICE_DEFAULTS.tax_rate, status: INVOICE_DEFAULTS.status })
 
 async function load() {
   loading.value = true
@@ -57,8 +58,7 @@ onMounted(load)
       <h3>{{ t('invoice.list') }}</h3>
       <div class="header-actions">
         <el-select v-model="statusFilter" :placeholder="t('field.status')" clearable @change="load" style="width:140px;margin-right:12px">
-          <el-option label="Draft" value="draft" /><el-option label="Pending Approval" value="pending_approval" />
-          <el-option label="Approved" value="approved" /><el-option label="Sent" value="sent" /><el-option label="Paid" value="paid" />
+          <el-option v-for="opt in INVOICE_STATUS_OPTIONS" :key="opt.value" :label="opt.label" :value="opt.value" />
         </el-select>
         <el-button type="primary" @click="dialogVisible = true">{{ t('action.create') }}</el-button>
       </div>
@@ -70,7 +70,7 @@ onMounted(load)
       <el-table-column prop="currency" :label="t('field.currency')" width="80" />
       <el-table-column prop="status" :label="t('field.status')">
         <template #default="{ row }">
-          <el-tag size="small" :type="row.status === 'approved' ? 'success' : row.status === 'sent' ? 'primary' : row.status === 'paid' ? 'info' : row.status === 'draft' ? '' : 'warning'">{{ row.status }}</el-tag>
+          <el-tag size="small" :type="(INVOICE_STATUS_CONFIG[row.status]?.type || 'warning') as any">{{ row.status }}</el-tag>
         </template>
       </el-table-column>
       <el-table-column :label="t('action.actions')" width="260">

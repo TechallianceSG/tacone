@@ -3,6 +3,7 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { payrollJpApi } from '@/api/client'
 import { ElMessage } from 'element-plus'
+import { JP_STATUS_CONFIG } from '@/constants/payrollJp'
 
 const { t } = useI18n()
 
@@ -31,7 +32,7 @@ const filters = reactive({
 })
 
 const statusOptions = [
-  { value: 'completed', label: 'payroll.jp.status_confirmed' },
+  { value: 'confirmed', label: 'payroll.jp.status_confirmed' },
   { value: 'calculated', label: 'payroll.jp.status_calculated' },
   { value: 'draft', label: 'payroll.jp.status_draft' },
   { value: 'voided', label: 'payroll.jp.status_voided' },
@@ -55,7 +56,7 @@ const visiblePages = computed(() => {
 })
 
 const statusBadgeTypes: Record<string, string> = {
-  completed: 'success',
+  confirmed: 'success',
   calculated: 'warning',
   draft: '',
   voided: 'danger',
@@ -64,7 +65,7 @@ const statusBadgeTypes: Record<string, string> = {
 }
 
 const statusLabels: Record<string, string> = {
-  completed: 'payroll.jp.status_confirmed',
+  confirmed: 'payroll.jp.status_confirmed',
   calculated: 'payroll.jp.status_calculated',
   draft: 'payroll.jp.status_draft',
   voided: 'payroll.jp.status_voided',

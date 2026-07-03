@@ -285,7 +285,7 @@ class EmployeeAdminHandler(BaseHTTPRequestHandler):
 
             # Employment type
             if employment_type:
-                emp_type = (employment.get("contract") or {}).get("employment_type", "") or ""
+                emp_type = employment.get("employment_type", "") or (employment.get("contract") or {}).get("employment_type", "") or ""
                 if emp_type.lower() != employment_type.lower():
                     continue
 

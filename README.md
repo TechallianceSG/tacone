@@ -17,18 +17,18 @@ TACAI 是一套面向人力资源/薪资/招聘业务的企业级管理系统，
 ```
 tacai-project/
 ├── backend/                         # 后端
-│   ├── shared/                      #   共享库 (db_utils, api_utils, config, cors)
+│   ├── shared/                      #   共享库 (db_utils, api_utils, auth_utils, config, cors)
 │   └── services/                    #   业务服务
 │       ├── user_admin/              #     用户管理 & 认证 (port 3001)
 │       ├── portal/                  #     统一入口 (port 3000)
+│       ├── employee_admin/          #     员工管理 (port 8004)
+│       ├── datadict/                #     数据字典 (port 8005)
 │       ├── masterdata/              #     主数据管理 (port 8007)
-│       └── messaging/               #     消息中心 (port 8012)
+│       ├── messaging/               #     消息中心 (port 8012)
+│       ├── payroll/jp/              #     日本薪资 (port 8013)
+│       └── invoice/                 #     发票管理 (port 8019)
 ├── frontend/                        # 前端 Vue 3 SPA
-├── database/                        # 数据库迁移脚本
 ├── docs/                            # 项目文档
-│   ├── ARCHITECTURE.md              #   架构说明
-│   ├── DIRECTORY_STRUCTURE.md       #   目录结构说明
-│   └── DEVELOPMENT_STANDARDS.md     #   开发规范
 ├── deployment/                      # 部署配置
 ├── .env.dev / .env.stg / .env.prd   # 环境配置
 └── start_tacai_lan.sh               # 一键启动脚本
@@ -93,12 +93,11 @@ curl http://localhost:8007/health
 | 仪表盘 | ✅ Dashboard | ✅ portal | 3000 |
 | 员工管理 | ✅ EmployeeList/Detail/Form | ✅ employee_admin | 8004 |
 | 用户管理 | ✅ UserList/Detail/Form | ✅ user_admin | 3001 |
-| 主数据管理 | — | ✅ masterdata | 8007 |
-| 消息中心 | — | ✅ messaging | 8012 |
-| 工时管理 | 🔲 规划中 | 🔲 | 8002 |
-| 费用报销 | 🔲 规划中 | 🔲 | 8003 |
-| 薪资计算 | 🔲 规划中 | 🔲 | 8016 |
-| 员工自助 | 🔲 规划中 | 🔲 | 8018 |
+| 主数据管理 | ✅ Entity/Dept/Team | ✅ masterdata | 8007 |
+| 数据字典 | ✅ DataDictionaryList | ✅ datadict | 8005 |
+| 消息中心 | ✅ Workflow | ✅ messaging | 8012 |
+| 日本薪资 | ✅ Payroll JP | ✅ payroll/jp | 8013 |
+| 发票管理 | ✅ Invoice | ✅ invoice | 8019 |
 
 ## 开发文档
 
@@ -115,4 +114,4 @@ curl http://localhost:8007/health
 | STG | `.env.stg` | 4000 | 4001 |
 | PRD | `.env.prd` | 6000 | 6001 |
 
-共享服务（masterdata:8007、messaging:8012）所有环境端口固定。
+共享服务（8004~8019）所有环境端口固定，详见 [CLAUDE.md](CLAUDE.md)。

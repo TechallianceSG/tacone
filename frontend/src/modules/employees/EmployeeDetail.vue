@@ -3,6 +3,9 @@ import { ref, onMounted, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { employeeApi, masterdataApi } from '@/api/client'
+import { useDictOptions } from '@/composables/useDictOptions'
+import { prefectures, prefectureLabel } from '@/constants/prefectures'
+import { getCitiesByPrefecture, cityLabel } from '@/constants/cities'
 import { ElMessage } from 'element-plus'
 
 // Import locale messages directly — bypass vue-i18n dot-path resolution
@@ -42,6 +45,17 @@ const flatForm = ref<Record<string, any>>({})
 const entityOptions = ref<{ entity_id: string; entity_code: string; entity_name_en: string }[]>([])
 const deptOptions = ref<{ department_id: string; department_code: string; department_name_en: string }[]>([])
 const teamOptions = ref<{ team_id: string; team_code: string; team_name_en: string }[]>([])
+
+// ── Address: city options filtered by selected prefecture ──
+const selectedPrefecture = computed(() => flatForm.value['profile.address.prefecture'] || '')
+const cityOptions = computed(() => {
+  const code = selectedPrefecture.value
+  if (!code) return []
+  return getCitiesByPrefecture(code).map(c => ({
+    value: c.name_ja,
+    label: cityLabel(c, locale.value),
+  }))
+})
 
 const tabs = [
   { key: 'profile', label: () => t('employee.section_profile') },
@@ -148,6 +162,18 @@ function formatValue(value: any): string {
   if (Array.isArray(value)) return value.length > 0 ? value.map(v => typeof v === 'object' ? JSON.stringify(v) : String(v)).join(', ') : '-'
   if (typeof value === 'object') return JSON.stringify(value)
   return String(value)
+}
+
+// Format display value for special field types (view mode)
+function displayValue(fieldKey: string, value: any): string {
+  const str = formatValue(value)
+  if (str === '-') return str
+  const lastPart = fieldKey.split('.').pop() || ''
+  if (lastPart === 'prefecture' || lastPart === 'prefecture_code') return prefectureLabel(str)
+  if ((lastPart === 'country' || lastPart === 'country_code' || lastPart === 'work_country' || lastPart === 'nationality') && str.length <= 3) {
+    return Lbl('country_code', str.toUpperCase())
+  }
+  return str
 }
 
 function formatDateTime(isoStr: string | undefined): string {
@@ -258,19 +284,43 @@ function fieldInputType(tabKey: string, fieldKey: string, value: any): string {
   if (lastPart === 'status') return 'status_select'
   if (lastPart === 'employment_type' || lastPart === 'contract_type') return 'emp_type_select'
   if (lastPart === 'business_line') return 'biz_line_select'
-  if (lastPart === 'country_code' || lastPart === 'work_country') return 'country_select'
+  if (lastPart === 'country_code' || lastPart === 'work_country' || lastPart === 'country') return 'country_select'
+  if (lastPart === 'nationality') return 'country_select'
+  if (lastPart === 'prefecture') return 'prefecture_select'
+  if (lastPart === 'city') return 'city_select'
   if (lastPart === 'japanese_level') return 'jp_select'
   if (lastPart === 'english_level') return 'en_select'
   return 'text'
 }
 
-const GENDER_OPTS = ['male', 'female', 'other']
-const STATUS_OPTS = ['active', 'probation', 'resigned', 'suspended', 'inactive']
-const TYPE_OPTS = ['employee', 'contractor', 'dispatch', 'part_time', 'intern']
-const BIZ_LINES = ['recruitment', 'rpo', 'haken', 'payroll', 'internal', 'ai_platform']
-const JP_OPTS = ['native', 'business', 'daily_conversation', 'beginner', 'none']
-const EN_OPTS = ['native', 'business', 'daily_conversation', 'beginner', 'none']
-const COUNTRY_OPTS = ['JP', 'CN', 'SG']
+
+// ── Data Dictionary category codes ──
+const CAT = {
+  STATUS: 'employee_status',
+  EMPLOYMENT_TYPE: 'employment_type',
+  BUSINESS_LINE: 'business_line',
+  LANGUAGE_LEVEL: 'language_level',
+  COUNTRY_CODE: 'country_code',
+  GENDER: 'gender',
+}
+
+// ── Data Dictionary options loader ──
+const { loadOptions, getValues } = useDictOptions()
+
+// Hardcoded fallback values (matches DD seed data, used before DD loads)
+const FALLBACK: Record<string, string[]> = {
+  [CAT.STATUS]: ['active', 'probation', 'resigned', 'suspended', 'inactive'],
+  [CAT.EMPLOYMENT_TYPE]: ['employee', 'contractor', 'dispatch', 'part_time', 'intern'],
+  [CAT.BUSINESS_LINE]: ['recruitment', 'rpo', 'haken', 'payroll', 'internal', 'ai_platform'],
+  [CAT.LANGUAGE_LEVEL]: ['native', 'business', 'daily_conversation', 'beginner', 'none'],
+  [CAT.COUNTRY_CODE]: ['JP', 'CN', 'SG'],
+  [CAT.GENDER]: ['male', 'female', 'other'],
+}
+
+function ddValues(catCode: string): string[] {
+  const dd = getValues(catCode).value
+  return dd.length > 0 ? dd : FALLBACK[catCode] || []
+}
 
 // ── Label lookup for enum values (edit mode selects) ──
 const L = {
@@ -278,6 +328,9 @@ const L = {
   english_level: { native: () => t('enum.english.native'), business: () => t('enum.english.business'), daily_conversation: () => t('enum.english.daily'), beginner: () => t('enum.english.beginner'), none: () => t('enum.english.none') },
   status: { active: () => t('enum.status.active'), probation: () => t('enum.status.probation'), resigned: () => t('enum.status.resigned'), suspended: () => t('enum.status.suspended'), inactive: () => t('enum.status.inactive') },
   employment_type: { employee: () => t('enum.employment_type.seishain'), contractor: () => t('enum.employment_type.keiyaku'), dispatch: () => t('enum.employment_type.haken'), part_time: () => t('enum.employment_type.part_time'), intern: () => t('enum.employment_type.intern') },
+  country_code: { JP: () => t('country.jp'), CN: () => t('country.cn'), SG: () => t('country.sg') },
+  business_line: { recruitment: () => t('business_line.recruitment'), rpo: () => t('business_line.rpo'), haken: () => t('business_line.haken'), payroll: () => t('business_line.payroll'), internal: () => t('business_line.internal'), ai_platform: () => t('business_line.ai_platform') },
+  gender: { male: () => t('gender.male'), female: () => t('gender.female'), other: () => t('gender.other') },
 }
 function Lbl(cat: string, val: string): string {
   const m = (L as any)[cat]
@@ -295,6 +348,8 @@ onMounted(async () => {
       masterdataApi.departments(),
       masterdataApi.teams(),
     ])
+    // Load data dictionary options in parallel (non-blocking for the employee data)
+    loadOptions([CAT.STATUS, CAT.EMPLOYMENT_TYPE, CAT.BUSINESS_LINE, CAT.LANGUAGE_LEVEL, CAT.COUNTRY_CODE, CAT.GENDER])
     employee.value = empRes.data?.employee as Employee
     entityOptions.value = er.data?.entities || []
     deptOptions.value = dr.data?.departments || []
@@ -406,7 +461,7 @@ const employeeName = () => {
                   :key="field.key"
                   :label="fieldLabel(tab.key, field.key)"
                 >
-                  {{ formatValue(field.value) }}
+                  {{ displayValue(field.key, field.value) }}
                 </el-descriptions-item>
               </el-descriptions>
               <el-empty v-else :description="t('common.no_records')" />
@@ -469,37 +524,47 @@ const employeeName = () => {
 
                       <!-- Gender select -->
                       <el-select v-else-if="f.inputType === 'gender_select'" v-model="flatForm[f.fullKey]" clearable style="width:100%">
-                        <el-option v-for="g in GENDER_OPTS" :key="g" :label="g" :value="g" />
+                        <el-option v-for="g in ddValues(CAT.GENDER)" :key="g" :label="Lbl('gender', g)" :value="g" />
                       </el-select>
 
                       <!-- Status select -->
                       <el-select v-else-if="f.inputType === 'status_select'" v-model="flatForm[f.fullKey]" style="width:100%">
-                        <el-option v-for="s in STATUS_OPTS" :key="s" :label="Lbl('status', s)" :value="s" />
+                        <el-option v-for="s in ddValues(CAT.STATUS)" :key="s" :label="Lbl('status', s)" :value="s" />
                       </el-select>
 
                       <!-- Employment type select -->
                       <el-select v-else-if="f.inputType === 'emp_type_select'" v-model="flatForm[f.fullKey]" style="width:100%">
-                        <el-option v-for="tp in TYPE_OPTS" :key="tp" :label="Lbl('employment_type', tp)" :value="tp" />
+                        <el-option v-for="tp in ddValues(CAT.EMPLOYMENT_TYPE)" :key="tp" :label="Lbl('employment_type', tp)" :value="tp" />
                       </el-select>
 
                       <!-- Business line select -->
                       <el-select v-else-if="f.inputType === 'biz_line_select'" v-model="flatForm[f.fullKey]" clearable style="width:100%">
-                        <el-option v-for="b in BIZ_LINES" :key="b" :label="b" :value="b" />
+                        <el-option v-for="b in ddValues(CAT.BUSINESS_LINE)" :key="b" :label="Lbl('business_line', b)" :value="b" />
                       </el-select>
 
                       <!-- Country select -->
                       <el-select v-else-if="f.inputType === 'country_select'" v-model="flatForm[f.fullKey]" clearable style="width:100%">
-                        <el-option v-for="c in COUNTRY_OPTS" :key="c" :label="t('country.' + c.toLowerCase())" :value="c" />
+                        <el-option v-for="c in ddValues(CAT.COUNTRY_CODE)" :key="c" :label="Lbl('country_code', c)" :value="c" />
+                      </el-select>
+
+                      <!-- Prefecture select (都道府県) -->
+                      <el-select v-else-if="f.inputType === 'prefecture_select'" v-model="flatForm[f.fullKey]" clearable filterable style="width:100%" :placeholder="t('action.select')">
+                        <el-option v-for="p in prefectures" :key="p.code" :label="p.code + ' - ' + p.name_ja + ' (' + p.name_en + ')'" :value="p.code" />
+                      </el-select>
+
+                      <!-- City select (市区町村) — filtered by selected prefecture -->
+                      <el-select v-else-if="f.inputType === 'city_select'" v-model="flatForm[f.fullKey]" clearable filterable allow-create style="width:100%" :placeholder="t('action.select')">
+                        <el-option v-for="c in cityOptions" :key="c.value" :label="c.label" :value="c.value" />
                       </el-select>
 
                       <!-- Japanese level -->
                       <el-select v-else-if="f.inputType === 'jp_select'" v-model="flatForm[f.fullKey]" clearable style="width:100%">
-                        <el-option v-for="l in JP_OPTS" :key="l" :label="Lbl('japanese_level', l)" :value="l" />
+                        <el-option v-for="l in ddValues(CAT.LANGUAGE_LEVEL)" :key="l" :label="Lbl('japanese_level', l)" :value="l" />
                       </el-select>
 
                       <!-- English level -->
                       <el-select v-else-if="f.inputType === 'en_select'" v-model="flatForm[f.fullKey]" clearable style="width:100%">
-                        <el-option v-for="l in EN_OPTS" :key="l" :label="Lbl('english_level', l)" :value="l" />
+                        <el-option v-for="l in ddValues(CAT.LANGUAGE_LEVEL)" :key="l" :label="Lbl('english_level', l)" :value="l" />
                       </el-select>
 
                     </el-form-item>

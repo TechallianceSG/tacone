@@ -3,6 +3,7 @@ import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { employeeApi, masterdataApi } from '@/api/client'
+import { useDictOptions } from '@/composables/useDictOptions'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import type { FormInstance, FormRules } from 'element-plus'
 
@@ -20,8 +21,31 @@ const loading = ref(false)
 
 const form = ref({
   profile: { name: { display_name: '', last_name: '', first_name: '' }, email: '', phone: '' },
-  employment: { entity_id: '', department_id: '', position: '', employment_type: 'seishain', status: 'active', join_date: '' },
+  employment: { entity_id: '', department_id: '', position: '', employment_type: 'employee', status: 'active', join_date: '' },
 })
+
+// ── Data Dictionary ──
+const CAT = { STATUS: 'employee_status', EMPLOYMENT_TYPE: 'employment_type' }
+const { loadOptions, getValues } = useDictOptions()
+const FALLBACK: Record<string, string[]> = {
+  [CAT.STATUS]: ['active', 'probation', 'resigned', 'suspended', 'inactive'],
+  [CAT.EMPLOYMENT_TYPE]: ['employee', 'contractor', 'dispatch', 'part_time', 'intern'],
+}
+function ddValues(catCode: string): string[] {
+  const dd = getValues(catCode).value
+  return dd.length > 0 ? dd : FALLBACK[catCode] || []
+}
+
+// ── i18n label helpers ──
+const L = {
+  status: { active: () => t('enum.status.active'), probation: () => t('enum.status.probation'), resigned: () => t('enum.status.resigned'), suspended: () => t('enum.status.suspended'), inactive: () => t('enum.status.inactive') },
+  employment_type: { employee: () => t('enum.employment_type.seishain'), contractor: () => t('enum.employment_type.keiyaku'), dispatch: () => t('enum.employment_type.haken'), part_time: () => t('enum.employment_type.part_time'), intern: () => t('enum.employment_type.intern') },
+}
+function Lbl(cat: string, val: string): string {
+  const m = (L as any)[cat]
+  if (m && m[val] && typeof m[val] === 'function') return m[val]()
+  return val || '-'
+}
 
 const rules: FormRules = {
   'profile.name.display_name': [{ required: true, message: 'Name is required', trigger: 'blur' }],
@@ -40,6 +64,8 @@ onMounted(async () => {
     const [er, dr] = await Promise.all([masterdataApi.entities(), masterdataApi.departments()])
     entityOptions.value = er.data?.entities || []
     deptOptions.value = dr.data?.departments || []
+    // Load data dictionary options (non-blocking)
+    loadOptions([CAT.STATUS, CAT.EMPLOYMENT_TYPE])
   } catch { /* ignore */ }
 
   // Edit mode: load existing employee data
@@ -67,7 +93,7 @@ onMounted(async () => {
             entity_id: e.entity_id || '',
             department_id: e.department_id || '',
             position: e.position || '',
-            employment_type: e.employment_type || (e.contract || {}).employment_type || 'seishain',
+            employment_type: e.employment_type || (e.contract || {}).employment_type || 'employee',
             status: e.status || 'active',
             join_date: e.join_date || '',
           },
@@ -191,19 +217,14 @@ async function handleSubmit() {
           <el-col :span="6">
             <el-form-item :label="t('field.employment__employment_type')" prop="employment.employment_type">
               <el-select v-model="form.employment.employment_type" style="width:100%">
-                <el-option :label="t('enum.employment_type.seishain')" value="seishain" />
-                <el-option :label="t('enum.employment_type.keiyaku')" value="keiyaku" />
-                <el-option :label="t('enum.employment_type.haken')" value="haken" />
-                <el-option :label="t('enum.employment_type.part_time')" value="part_time" />
-                <el-option :label="t('enum.employment_type.intern')" value="intern" />
+                <el-option v-for="tp in ddValues(CAT.EMPLOYMENT_TYPE)" :key="tp" :label="Lbl('employment_type', tp)" :value="tp" />
               </el-select>
             </el-form-item>
           </el-col>
           <el-col :span="6">
             <el-form-item :label="t('field.employment__status')" prop="employment.status">
               <el-select v-model="form.employment.status" style="width:100%">
-                <el-option :label="t('enum.status.active')" value="active" />
-                <el-option :label="t('enum.status.probation')" value="probation" />
+                <el-option v-for="s in ddValues(CAT.STATUS)" :key="s" :label="Lbl('status', s)" :value="s" />
               </el-select>
             </el-form-item>
           </el-col>

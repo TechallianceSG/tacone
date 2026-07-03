@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { payrollJpApi } from '@/api/client'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { JP_STATUS_CONFIG, JP_ACTION_LABELS, jpActionLabel, parseJpAuditValue } from '@/constants/payrollJp'
 
 const router = useRouter()
 const { t } = useI18n()
@@ -33,44 +34,6 @@ const auditLogs = ref<any[]>([])
 const auditLoading = ref(false)
 const expandedAudit = ref<Set<number>>(new Set())
 
-// ── Audit action labels ──
-const actionLabels: Record<string, { icon: string; label: string; color: string }> = {
-  CALCULATE:           { icon: '🧮', label: '批量计算', color: '#409EFF' },
-  RECALCULATE:         { icon: '🔄', label: '重新计算', color: '#409EFF' },
-  RECALCULATE_SINGLE:  { icon: '🔁', label: '逐条重算', color: '#409EFF' },
-  CONFIRM:             { icon: '✅', label: '定稿', color: '#67C23A' },
-  ROLLBACK:            { icon: '↩️', label: '回退', color: '#E6A23C' },
-  EDIT_RECORD:         { icon: '✏️', label: '编辑记录', color: '#909399' },
-  EMAIL_SENT:          { icon: '📧', label: '发送邮件', color: '#409EFF' },
-  EMAIL_BATCH_SENT:    { icon: '📧', label: '批量发送', color: '#409EFF' },
-  EMAIL_SELECTED_SENT: { icon: '📧', label: '选中发送', color: '#409EFF' },
-  VOID:                { icon: '🚫', label: '作废', color: '#F56C6C' },
-  DELETE:              { icon: '🗑️', label: '删除', color: '#F56C6C' },
-}
-
-function actionLabel(action: string) {
-  return actionLabels[action] || { icon: '📋', label: action, color: '#909399' }
-}
-
-function parseAuditValue(v: any): string {
-  if (!v) return ''
-  try {
-    const obj = typeof v === 'string' ? JSON.parse(v) : v
-    const parts: string[] = []
-    if (obj.status) parts.push(`状态→${obj.status}`)
-    if (obj.employee_count !== undefined) parts.push(`${obj.employee_count}人`)
-    if (obj.gross_total !== undefined) parts.push(`应发¥${Number(obj.gross_total).toLocaleString()}`)
-    if (obj.net_total !== undefined) parts.push(`实发¥${Number(obj.net_total).toLocaleString()}`)
-    if (obj.reason) parts.push(`原因: ${obj.reason}`)
-    if (obj.deleted) parts.push(`已删除`)
-    if (obj.records_deleted !== undefined) parts.push(`关联${obj.records_deleted}条记录已删除`)
-    if (obj.email_status) parts.push(`邮件: ${obj.email_status}`)
-    if (obj.sent !== undefined) parts.push(`成功${obj.sent}封${obj.failed ? ` 失败${obj.failed}封` : ''}`)
-    if (parts.length) return parts.join(' | ')
-    return JSON.stringify(obj).substring(0, 150)
-  } catch { return String(v).substring(0, 150) }
-}
-
 function toggleAuditDetail(idx: number) {
   if (expandedAudit.value.has(idx)) { expandedAudit.value.delete(idx) }
   else { expandedAudit.value.add(idx) }
@@ -98,12 +61,6 @@ watch(() => createForm.value.payroll_month, (newMonth) => {
 
 const entities = ref<any[]>([])
 
-const statusConfig: Record<string, { type: string; label: string }> = {
-  draft: { type: '', label: 'payroll.jp.status_draft' },
-  calculated: { type: 'warning', label: 'payroll.jp.status_calculated' },
-  confirmed: { type: 'success', label: 'payroll.jp.status_confirmed' },
-  voided: { type: 'danger', label: 'payroll.jp.status_voided' },
-}
 
 // ── Manual filter (not auto-reactive) ──
 const filtered = ref<any[]>([])
@@ -163,7 +120,7 @@ async function createSheet() {
   if (duplicate) {
     // Block confirmed batches — must rollback first
     if (duplicate.status === 'confirmed') {
-      const dupStatus = t(statusConfig[duplicate.status]?.label || duplicate.status)
+      const dupStatus = t(JP_STATUS_CONFIG[duplicate.status]?.label || duplicate.status)
       ElMessage.warning(t('payroll.jp.confirmed_block_hint', {
         entity: entityLabel(createForm.value.entity_id),
         month: createForm.value.payroll_month,
@@ -172,7 +129,7 @@ async function createSheet() {
       return
     }
     // draft / calculated → auto-void with confirmation
-    const dupStatus = t(statusConfig[duplicate.status]?.label || duplicate.status)
+    const dupStatus = t(JP_STATUS_CONFIG[duplicate.status]?.label || duplicate.status)
     const msg = `${t('payroll.jp.duplicate_batch_warning')}\n\n${t('field.entity_id')}: ${entityLabel(createForm.value.entity_id)}\n${t('field.payroll_month')}: ${createForm.value.payroll_month}\n${t('field.status')}: ${dupStatus}\n\n${t('payroll.jp.auto_void_hint')}`
     try {
       await ElMessageBox.confirm(
@@ -257,7 +214,7 @@ onMounted(() => { load(); loadEntities() })
       </el-select>
       <el-date-picker v-model="filterMonth" type="month" value-format="YYYY-MM" :placeholder="t('field.payroll_month')" clearable style="width:170px" />
       <el-select v-model="filterStatus" :placeholder="t('field.status')" clearable style="width:140px">
-        <el-option v-for="(cfg, key) in statusConfig" :key="key" :label="t(cfg.label)" :value="key" />
+        <el-option v-for="(cfg, key) in JP_STATUS_CONFIG" :key="key" :label="t(cfg.label)" :value="key" />
       </el-select>
       <el-button type="primary" @click="applyFilter">{{ t('action.filter') }}</el-button>
       <el-button @click="clearFilter">{{ t('action.clear') }}</el-button>
@@ -272,7 +229,7 @@ onMounted(() => { load(); loadEntities() })
           <template #default="{row}">{{ entityLabel(row.entity_id) }}</template>
         </el-table-column>
         <el-table-column :label="t('field.status')" min-width="120">
-          <template #default="{row}"><el-tag :type="(statusConfig[row.status]?.type||'') as any" size="small">{{ t(statusConfig[row.status]?.label||row.status) }}</el-tag></template>
+          <template #default="{row}"><el-tag :type="(JP_STATUS_CONFIG[row.status]?.type||'') as any" size="small">{{ t(JP_STATUS_CONFIG[row.status]?.label||row.status) }}</el-tag></template>
         </el-table-column>
         <el-table-column prop="employee_count" :label="t('field.employee_count')" min-width="80" align="center" />
         <el-table-column prop="gross_total" :label="t('field.gross_total')" min-width="130" align="right">
@@ -353,8 +310,8 @@ onMounted(() => { load(); loadEntities() })
           <div class="audit-line">
             <div class="audit-body">
               <div class="audit-head">
-                <el-tag size="small" :color="actionLabel(log.action).color" effect="dark" style="color:#fff">
-                  {{ actionLabel(log.action).label }}
+                <el-tag size="small" :color="jpActionLabel(log.action).color" effect="dark" style="color:#fff">
+                  {{ jpActionLabel(log.action).label }}
                 </el-tag>
                 <span class="audit-user">{{ log.user_name }}</span>
                 <span class="audit-time">{{ (log.created_at || '').replace('T', ' ').substring(0, 19) }}</span>
@@ -362,7 +319,7 @@ onMounted(() => { load(); loadEntities() })
               <div class="audit-summary">
                 <span class="audit-record-id">{{ log.record_id }}</span>
                 <span v-if="log.table_name" class="audit-table">[{{ log.table_name }}]</span>
-                {{ parseAuditValue(log.after_value) || parseAuditValue(log.before_value) || '—' }}
+                {{ parseJpAuditValue(log.after_value) || parseJpAuditValue(log.before_value) || '—' }}
               </div>
               <div v-if="expandedAudit.has(idx)" class="audit-expand">
                 <div v-if="log.before_value" class="audit-json-label">Before:</div>

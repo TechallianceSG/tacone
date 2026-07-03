@@ -99,6 +99,17 @@ const allModules: DashboardModule[] = [
     actionKey: 'action.open_master',
   },
   {
+    key: 'datadict',
+    icon: Collection,
+    titleKey: 'module.datadict',
+    descKey: 'dashboard.datadict_desc',
+    route: '/datadict',
+    color: 'masterdata',
+    status: 'active',
+    permission: 'datadict.access',
+    actionKey: 'action.open',
+  },
+  {
     key: 'timesheet',
     icon: Clock,
     titleKey: 'module.timesheet',

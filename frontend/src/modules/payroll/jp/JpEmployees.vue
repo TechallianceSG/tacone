@@ -2,7 +2,9 @@
 import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { payrollJpApi } from '@/api/client'
+import { useDictOptions } from '@/composables/useDictOptions'
 import { ElMessage } from 'element-plus'
+import { prefectures, prefectureLabel } from '@/constants/prefectures'
 
 const { t } = useI18n()
 
@@ -39,7 +41,6 @@ const toggleName = ref('')
 const toggleActive = ref(false)
 const toggleReason = ref('')
 
-const entities = ref<any[]>([])
 const departments = ref<any[]>([])
 const teams = ref<any[]>([])
 
@@ -51,7 +52,23 @@ const salaryTypes = [
   { value: 'monthly_hour', label: 'payroll.jp.salary_type_monthly_hour' },
 ]
 const bankAccountTypes = ['普通預金', '当座預金', '定期預金']
-const prefectureCodes = Array.from({ length: 47 }, (_, i) => String(i + 1).padStart(2, '0'))
+
+// ── Data Dictionary ──
+const CAT = { SALARY_TYPE: 'salary_type', BANK_ACCOUNT: 'bank_account_type', CURRENCY: 'currency', LEGAL_ENTITY: 'legal_entity' }
+const { loadOptions, getValues, getOptions } = useDictOptions()
+const FALLBACK_DD: Record<string, string[]> = {
+  [CAT.SALARY_TYPE]: ['monthly', 'hourly', 'daily', 'monthly_fixed_ot', 'monthly_hour'],
+  [CAT.BANK_ACCOUNT]: ['futsu', 'toza', 'teiki'],
+  [CAT.CURRENCY]: ['JPY', 'USD', 'CNY', 'SGD'],
+}
+function ddValues(catCode: string): string[] {
+  const dd = getValues(catCode).value; return dd.length > 0 ? dd : FALLBACK_DD[catCode] || []
+}
+function ddOptions(catCode: string) { return getOptions(catCode) }
+
+// Map DD bank account entry_code to display label
+const bankAccountDDLabels: Record<string, string> = { futsu: '普通預金', toza: '当座預金', teiki: '定期預金' }
+function bankAccountLabel(code: string): string { return bankAccountDDLabels[code] || code }
 
 function getItemLabel(item: any): string {
   try { const labels = typeof item.labels === 'string' ? JSON.parse(item.labels) : item.labels; return labels?.ja || labels?.en || item.code || '' } catch { return item.code || '' }
@@ -73,9 +90,8 @@ const departmentOptions = computed(() => [...new Set(allRecords.value.map((r: an
 
 async function load() { loading.value = true; try { const res = await payrollJpApi.employees(); allRecords.value = res.data.data?.items || res.data.data || [] } catch (e: any) { ElMessage.error(e.message) } finally { loading.value = false } }
 async function loadItemDefs() { try { const res = await payrollJpApi.itemDefinitions(); itemDefs.value = res.data.data?.items || res.data.data || [] } catch (_) {} }
-async function loadDropdowns() { try { const [er, dr, tr] = await Promise.all([fetch('/api/masterdata/entities').then(r => r.json()), fetch('/api/masterdata/departments').then(r => r.json()), fetch('/api/masterdata/teams').then(r => r.json())]); entities.value = er.data || []; departments.value = dr.data || []; teams.value = tr.data || [] } catch (_) {} }
-function entityLabel(e: any) { if (!e) return ''; const code = e.entity_code || ''; const name = e.entity_name || ''; const country = e.country || ''; return code ? `${code} - ${name} (${country})` : e.entity_id || '' }
-function entityLabelById(id: string) { const f = entities.value.find((e: any) => e.entity_id === id); return f ? entityLabel(f) : id }
+async function loadDropdowns() { try { const [dr, tr] = await Promise.all([fetch('/api/masterdata/departments').then(r => r.json()), fetch('/api/masterdata/teams').then(r => r.json())]); departments.value = dr.data || []; teams.value = tr.data || [] } catch (_) {} }
+function entityLabelById(id: string) { const f = ddOptions(CAT.LEGAL_ENTITY).value.find((o: any) => o.value === id); return f ? f.label : id }
 function salaryTypeLabel(st: string): string { const f = salaryTypes.find(s => s.value === st); return f ? t(f.label) : st }
 
 function openDetail(row: any) { drawerRecord.value = row; drawerForm.value = { ...row }; drawerVisible.value = true }
@@ -99,7 +115,7 @@ async function confirmToggle() {
   } catch (e: any) { ElMessage.error(e.message) }
 }
 
-onMounted(() => { load(); loadItemDefs(); loadDropdowns() })
+onMounted(() => { load(); loadItemDefs(); loadDropdowns(); loadOptions([CAT.SALARY_TYPE, CAT.BANK_ACCOUNT, CAT.CURRENCY, CAT.LEGAL_ENTITY]) })
 </script>
 
 <template>
@@ -116,7 +132,7 @@ onMounted(() => { load(); loadItemDefs(); loadDropdowns() })
     <div class="fiori-filters">
       <el-input v-model="searchText" :placeholder="t('action.search')" clearable style="width:200px" @input="page=1" />
       <el-select v-model="filterEntity" :placeholder="t('field.entity_id')" clearable style="width:260px" @change="page=1">
-        <el-option v-for="e in entities" :key="e.entity_id" :label="entityLabel(e)" :value="e.entity_id" />
+        <el-option v-for="e in ddOptions(CAT.LEGAL_ENTITY).value" :key="e.value" :label="e.label" :value="e.value" />
       </el-select>
       <el-select v-model="filterDepartment" :placeholder="t('field.department')" clearable style="width:150px" @change="page=1">
         <el-option v-for="d in departmentOptions" :key="d" :label="d" :value="d" />
@@ -219,8 +235,8 @@ onMounted(() => { load(); loadItemDefs(); loadDropdowns() })
         <el-table-column :label="t('field.dependents_count')" min-width="80" align="right">
           <template #default="{row}">{{ row.dependents_count != null ? row.dependents_count : '-' }}</template>
         </el-table-column>
-        <el-table-column :label="t('field.prefecture_code')" min-width="85" align="center">
-          <template #default="{row}">{{ row.prefecture_code || '-' }}</template>
+        <el-table-column :label="t('field.prefecture_code')" min-width="200" align="center">
+          <template #default="{row}">{{ prefectureLabel(row.prefecture_code) }}</template>
         </el-table-column>
         <el-table-column :label="t('field.monthly_resident_tax')" min-width="120" align="right">
           <template #default="{row}">{{ row.monthly_resident_tax ? '¥' + Number(row.monthly_resident_tax).toLocaleString() : '-' }}</template>
@@ -280,7 +296,7 @@ onMounted(() => { load(); loadItemDefs(); loadDropdowns() })
         <div class="fi-card"><div class="fi-card-head"><span>📋</span> {{ t('payroll.jp.tab_basic') }}</div>
           <el-row :gutter="16">
             <el-col :span="12"><label>{{ t('field.email') }}</label><el-input v-model="drawerForm.email" size="small" /></el-col>
-            <el-col :span="12"><label>{{ t('field.payroll_currency') }}</label><el-select v-model="drawerForm.payroll_currency" size="small" style="width:100%"><el-option label="JPY" value="JPY" /><el-option label="USD" value="USD" /></el-select></el-col>
+            <el-col :span="12"><label>{{ t('field.payroll_currency') }}</label><el-select v-model="drawerForm.payroll_currency" size="small" style="width:100%"><el-option v-for="c in ddOptions(CAT.CURRENCY).value" :key="c.value" :label="c.label" :value="c.value" /></el-select></el-col>
             <el-col :span="12"><label>{{ t('field.department') }}</label><el-select v-model="drawerForm.department_label" size="small" style="width:100%" allow-create filterable clearable><el-option v-for="d in departments" :key="d.department_id" :label="d.department_name_en||d.department_name_ja" :value="d.department_name_en||d.department_name_ja" /></el-select></el-col>
             <el-col :span="12"><label>{{ t('field.team') }}</label><el-select v-model="drawerForm.team_label" size="small" style="width:100%" allow-create filterable clearable><el-option v-for="tm in teams" :key="tm.team_id" :label="tm.team_name_en||tm.team_name_ja" :value="tm.team_name_en||tm.team_name_ja" /></el-select></el-col>
             <el-col :span="12"><label>{{ t('field.active') }}</label><div><el-switch v-model="drawerForm.active" size="small" /></div></el-col>
@@ -325,7 +341,7 @@ onMounted(() => { load(); loadItemDefs(); loadDropdowns() })
             <el-col :span="8"><label>{{ t('field.social_insurance') }}</label><div><el-switch v-model="drawerForm.social_insurance_eligible" size="small" /></div></el-col>
             <el-col :span="8"><label>{{ t('field.employment_insurance') }}</label><div><el-switch v-model="drawerForm.employment_insurance_eligible" size="small" /></div></el-col>
             <el-col :span="8"><label>{{ t('field.dependents_count') }}</label><el-input-number v-model="drawerForm.dependents_count" :min="0" :max="20" size="small" style="width:100%" /></el-col>
-            <el-col :span="12"><label>{{ t('field.prefecture_code') }}</label><el-select v-model="drawerForm.prefecture_code" size="small" style="width:100%" filterable><el-option v-for="code in prefectureCodes" :key="code" :label="code" :value="code" /></el-select></el-col>
+            <el-col :span="12"><label>{{ t('field.prefecture_code') }}</label><el-select v-model="drawerForm.prefecture_code" size="small" style="width:100%" filterable><el-option v-for="p in prefectures" :key="p.code" :label="`${p.code} - ${p.name_ja} (${p.name_en})`" :value="p.code" /></el-select></el-col>
             <el-col :span="12"><label>{{ t('field.monthly_resident_tax') }}</label><el-input-number v-model="drawerForm.monthly_resident_tax" :min="0" size="small" style="width:100%" /></el-col>
           </el-row>
         </div>
@@ -334,7 +350,7 @@ onMounted(() => { load(); loadItemDefs(); loadDropdowns() })
           <el-row :gutter="16">
             <el-col :span="12"><label>{{ t('field.bank_name') }}</label><el-input v-model="drawerForm.bank_name" size="small" /></el-col>
             <el-col :span="12"><label>{{ t('field.bank_branch_name') }}</label><el-input v-model="drawerForm.bank_branch_name" size="small" /></el-col>
-            <el-col :span="12"><label>{{ t('field.bank_account_type') }}</label><el-select v-model="drawerForm.bank_account_type" size="small" style="width:100%"><el-option v-for="bt in bankAccountTypes" :key="bt" :label="bt" :value="bt" /></el-select></el-col>
+            <el-col :span="12"><label>{{ t('field.bank_account_type') }}</label><el-select v-model="drawerForm.bank_account_type" size="small" style="width:100%"><el-option v-for="bt in ddOptions(CAT.BANK_ACCOUNT).value" :key="bt.value" :label="bankAccountLabel(bt.value)" :value="bt.value" /></el-select></el-col>
             <el-col :span="12"><label>{{ t('field.bank_account_name') }}</label><el-input v-model="drawerForm.bank_account_name" size="small" /></el-col>
             <el-col :span="12"><label>{{ t('field.bank_account_number') }}</label><el-input v-model="drawerForm.bank_account_number" size="small" /></el-col>
           </el-row>
@@ -348,7 +364,7 @@ onMounted(() => { load(); loadItemDefs(); loadDropdowns() })
     <el-dialog v-model="importDialog" :title="t('payroll.jp.import_employeeadmin')" width="750px" top="2vh">
       <div class="fiori-filters" style="margin-bottom:12px">
         <el-input v-model="importSearch" :placeholder="t('action.search')" clearable style="width:180px" />
-        <el-select v-model="importFilterEntity" :placeholder="t('field.entity_id')" clearable style="width:220px"><el-option v-for="e in entities" :key="e.entity_id" :label="entityLabel(e)" :value="e.entity_id" /></el-select>
+        <el-select v-model="importFilterEntity" :placeholder="t('field.entity_id')" clearable style="width:220px"><el-option v-for="e in ddOptions(CAT.LEGAL_ENTITY).value" :key="e.value" :label="e.label" :value="e.value" /></el-select>
         <el-select v-model="importFilterDept" :placeholder="t('field.department')" clearable style="width:160px"><el-option v-for="d in departments" :key="d.department_id" :label="d.department_name_en||d.department_name_ja" :value="d.department_name_en||d.department_name_ja" /></el-select>
       </div>
       <el-table :data="filteredImportable" max-height="400" @selection-change="(rows:any[])=>selectedImportIds=rows.map((r:any)=>r.employee_id)" border stripe size="small">

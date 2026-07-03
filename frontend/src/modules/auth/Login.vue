@@ -184,8 +184,10 @@ onMounted(async () => {
 <template>
   <main class="login-page">
     <section class="login-card">
-      <div class="brand-mark">TACAI</div>
-      <h1>{{ t('login.title') }}</h1>
+      <div class="login-header">
+        <div class="brand-mark">TACAI</div>
+        <h1>{{ t('login.title') }}</h1>
+      </div>
       <p class="muted login-subtitle">{{ t('login.subtitle') }}</p>
 
       <!-- Language switcher -->

@@ -4,13 +4,14 @@ import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { invoiceApi } from '@/api/client'
 import { ElMessage } from 'element-plus'
+import { INVOICE_STATUS_CONFIG, INVOICE_PAYMENT_METHODS } from '@/constants/invoice'
 
 const route = useRoute()
 const { t } = useI18n()
 const loading = ref(false)
 const invoice = ref<any>({})
 const paymentDialog = ref(false)
-const paymentForm = ref({ amount: 0, payment_method: 'bank_transfer', payment_date: '', reference_number: '' })
+const paymentForm = ref({ amount: 0, payment_method: INVOICE_PAYMENT_METHODS[0].value, payment_date: '', reference_number: '' })
 
 async function load() {
   loading.value = true
@@ -39,7 +40,7 @@ async function registerPayment() {
   } catch (e: any) { ElMessage.error(e.message) }
 }
 
-const statusTagType = (s: string) => s === 'approved' ? 'success' : s === 'sent' ? 'primary' : s === 'paid' ? 'info' : s === 'draft' ? '' : 'warning'
+const statusTagType = (s: string) => (INVOICE_STATUS_CONFIG[s]?.type || 'warning') as string
 
 onMounted(load)
 </script>
@@ -112,7 +113,7 @@ onMounted(load)
         <el-form-item :label="t('field.payment_date')"><el-input v-model="paymentForm.payment_date" type="date" style="width:100%" /></el-form-item>
         <el-form-item :label="t('field.payment_method')">
           <el-select v-model="paymentForm.payment_method" style="width:100%">
-            <el-option label="Bank Transfer" value="bank_transfer" /><el-option label="Check" value="check" />
+            <el-option v-for="pm in INVOICE_PAYMENT_METHODS" :key="pm.value" :label="pm.label" :value="pm.value" />
           </el-select>
         </el-form-item>
         <el-form-item :label="t('field.reference_number')"><el-input v-model="paymentForm.reference_number" /></el-form-item>

@@ -8,9 +8,18 @@
 | 2 | **Claude Code 最高权限** | 本项目内所有操作默认授权，无需逐次审批。 |
 | 3 | **默认 YES** | 所有权限提示默认回答 Yes。遇到确认框 = 直接通过。 |
 
+> **实施任何功能前，AI 必须先阅读 [docs/DEVELOPMENT_STANDARDS.md](docs/DEVELOPMENT_STANDARDS.md)。**
+> 
+> **关键硬性规则：**
+> - 新模块 = 独立 `backend/services/<name>/app.py`（§4.1），**禁止**嵌入现有服务
+> - 新表 = 独立前缀（`dd_`、`pay_jp_` 等），**禁止**复用其他模块前缀
+> - 严格按 §1.2 模板创建 app.py（含 auth_utils、CORS handler、_require_user）
+> - 新增端口后必须同步更新 `SHARED_PORT` / `GATEWAY_ROUTES` / `SHARED_SERVICES` / `start_tacai_lan.sh`
+> - 违反规范的实施 = 自动拒绝，要求重构
+
 ---
 
-Project Root: `/Users/wangchen/Desktop/TACAI/tacai-project`
+Project Root: `/Users/wangchen/Desktop/TACAI/tacone`
 
 Before any task:
 1. Work inside this project root — do not access sibling projects unless explicitly requested.
@@ -168,9 +177,12 @@ All API communication between frontend and backend uses **flat dot-notation keys
 |---------|-----|-----|-----|
 | Portal | 3000 | 4000 | 6000 |
 | User_admin | 3001 | 4001 | 6001 |
+| Employee Admin | 8004 | 8004 | 8004 |
+| Data Dictionary | 8005 | 8005 | 8005 |
 | Masterdata | 8007 | 8007 | 8007 |
 | Messaging | 8012 | 8012 | 8012 |
-| Employee Admin | 8004 | 8004 | 8004 |
+| Payroll JP | 8013 | 8013 | 8013 |
+| Invoice | 8019 | 8019 | 8019 |
 
 
 

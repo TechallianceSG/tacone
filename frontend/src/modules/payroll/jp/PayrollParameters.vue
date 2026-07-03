@@ -2,7 +2,10 @@
 import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { payrollJpApi } from '@/api/client'
+import { useDictOptions } from '@/composables/useDictOptions'
 import { ElMessage } from 'element-plus'
+import { prefectures, prefectureLabel } from '@/constants/prefectures'
+import { JP_RATE_TYPE_LABELS, JP_PARAM_TYPES } from '@/constants/payrollJp'
 
 const { t } = useI18n()
 
@@ -11,16 +14,19 @@ const activeTab = ref('social-insurance')
 const loading = ref(false)
 const allParams = ref<any[]>([])
 
-// ── Rate type labels ──
-const rateTypeLabels: Record<string, string> = {
-  pension: '健康保険',
-  health_insurance: '健康保険',
-  pension_insurance: '厚生年金保険',
-  nursing_care: '介護保険',
-  employment: '雇用保険',
-  employment_insurance: '雇用保険',
-  child_allowance: '児童手当拠出金',
-  care_insurance: '介護保険',
+// ── Data Dictionary ──
+const CAT = { TAX_TABLE: 'tax_table_type' }
+const { loadOptions, getOptions } = useDictOptions()
+const FALLBACK_DD: Record<string, string[]> = {
+  [CAT.TAX_TABLE]: ['monthly', 'daily', 'bonus'],
+}
+function ddValues(catCode: string): string[] {
+  const dd = getOptions(catCode).value.map(o => o.value)
+  return dd.length > 0 ? dd : FALLBACK_DD[catCode] || []
+}
+function ddLabel(catCode: string, val: string): string {
+  const opt = getOptions(catCode).value.find(o => o.value === val)
+  return opt?.label || val
 }
 
 // ── Social Insurance ──
@@ -33,7 +39,7 @@ const siPageSize = ref(20)
 
 const socialInsuranceData = computed(() =>
   allParams.value.filter((p: any) =>
-    p.param_type === 'social_insurance_rate' || p.rate_type !== undefined
+    p.param_type === JP_PARAM_TYPES.SOCIAL_INSURANCE_RATE || p.rate_type !== undefined
   )
 )
 
@@ -52,7 +58,7 @@ const tbPageSize = ref(20)
 
 const taxBracketData = computed(() =>
   allParams.value.filter((p: any) =>
-    p.param_type === 'withholding_tax_bracket' || (p.table_type && p.min_salary !== undefined)
+    p.param_type === JP_PARAM_TYPES.WITHHOLDING_TAX_BRACKET || (p.table_type && p.min_salary !== undefined)
   )
 )
 
@@ -71,7 +77,7 @@ const rgPageSize = ref(20)
 
 const remunerationGradeData = computed(() =>
   allParams.value.filter((p: any) =>
-    p.param_type === 'standard_remuneration_grade' || p.grade_type !== undefined
+    p.param_type === JP_PARAM_TYPES.STANDARD_REMUNERATION_GRADE || p.grade_type !== undefined
   )
 )
 
@@ -90,7 +96,7 @@ const aiPageSize = ref(20)
 
 const accidentInsuranceData = computed(() =>
   allParams.value.filter((p: any) =>
-    p.param_type === 'accident_insurance_rate' || p.industry_code !== undefined
+    p.param_type === JP_PARAM_TYPES.ACCIDENT_INSURANCE_RATE || p.industry_code !== undefined
   )
 )
 
@@ -125,7 +131,7 @@ function fmtPermille(val: any): string {
 // ── Social Insurance CRUD ──
 function openSiCreate() {
   siForm.value = {
-    param_type: 'social_insurance_rate',
+    param_type: JP_PARAM_TYPES.SOCIAL_INSURANCE_RATE,
     rate_type: 'health_insurance',
     prefecture: '',
     employee_rate: 0,
@@ -155,7 +161,7 @@ async function saveSi() {
 // ── Tax Bracket CRUD ──
 function openTbCreate() {
   tbForm.value = {
-    param_type: 'withholding_tax_bracket',
+    param_type: JP_PARAM_TYPES.WITHHOLDING_TAX_BRACKET,
     table_type: 'monthly',
     min_salary: 0,
     max_salary: 0,
@@ -185,7 +191,7 @@ async function saveTb() {
 // ── Remuneration Grade CRUD ──
 function openRgCreate() {
   rgForm.value = {
-    param_type: 'standard_remuneration_grade',
+    param_type: JP_PARAM_TYPES.STANDARD_REMUNERATION_GRADE,
     grade_type: '',
     grade_number: 0,
     min_monthly_amount: 0,
@@ -215,7 +221,7 @@ async function saveRg() {
 // ── Accident Insurance CRUD ──
 function openAiCreate() {
   aiForm.value = {
-    param_type: 'accident_insurance_rate',
+    param_type: JP_PARAM_TYPES.ACCIDENT_INSURANCE_RATE,
     industry_code: '',
     industry_name_en: '',
     industry_name_ja: '',
@@ -241,7 +247,7 @@ async function saveAi() {
   finally { aiSaving.value = false }
 }
 
-onMounted(load)
+onMounted(() => { load(); loadOptions([CAT.TAX_TABLE]) })
 </script>
 
 <template>
@@ -258,10 +264,10 @@ onMounted(load)
         </div>
         <el-table :data="siPaged" v-loading="loading" border stripe size="small" style="width:100%">
           <el-table-column :label="t('field.rate_type')" min-width="180">
-            <template #default="{row}">{{ rateTypeLabels[row.rate_type] || row.rate_type }}</template>
+            <template #default="{row}">{{ JP_RATE_TYPE_LABELS[row.rate_type] || row.rate_type }}</template>
           </el-table-column>
-          <el-table-column prop="prefecture" :label="t('field.prefecture')" min-width="100">
-            <template #default="{row}">{{ row.prefecture || '-' }}</template>
+          <el-table-column :label="t('field.prefecture')" min-width="220">
+            <template #default="{row}">{{ prefectureLabel(row.prefecture) }}</template>
           </el-table-column>
           <el-table-column :label="t('field.employee_rate')" min-width="130" align="right">
             <template #default="{row}">{{ fmtPct(row.employee_rate) }}</template>
@@ -292,11 +298,14 @@ onMounted(load)
           <el-form :model="siForm" label-width="160px">
             <el-form-item :label="t('field.rate_type')">
               <el-select v-model="siForm.rate_type" style="width:100%">
-                <el-option v-for="(label, key) in rateTypeLabels" :key="key" :label="label" :value="key" />
+                <el-option v-for="(label, key) in JP_RATE_TYPE_LABELS" :key="key" :label="label" :value="key" />
               </el-select>
             </el-form-item>
             <el-form-item :label="t('field.prefecture')">
-              <el-input v-model="siForm.prefecture" placeholder="13 (Tokyo)" />
+              <el-select v-model="siForm.prefecture" style="width:100%" clearable filterable :placeholder="t('field.prefecture')">
+                <el-option v-for="p in prefectures" :key="p.code" :label="`${p.code} - ${p.name_ja} (${p.name_en})`" :value="p.code" />
+                <el-option label="全国 - National (全国一律)" value="" />
+              </el-select>
             </el-form-item>
             <el-form-item :label="t('field.employee_rate')">
               <el-input-number v-model="siForm.employee_rate" :min="0" :max="100" :step="0.01" :precision="2" style="width:100%" />
@@ -374,9 +383,7 @@ onMounted(load)
               <el-col :span="12">
                 <el-form-item :label="t('field.table_type')">
                   <el-select v-model="tbForm.table_type" style="width:100%">
-                    <el-option label="Monthly (月額表)" value="monthly" />
-                    <el-option label="Daily (日額表)" value="daily" />
-                    <el-option label="Bonus (賞与)" value="bonus" />
+                    <el-option v-for="tt in ddValues(CAT.TAX_TABLE)" :key="tt" :label="ddLabel(CAT.TAX_TABLE, tt)" :value="tt" />
                   </el-select>
                 </el-form-item>
               </el-col>

@@ -67,22 +67,15 @@ fi
 
 export TACAI_PUBLIC_HOST="${LAN_IP}"
 export TACAI_INTERNAL_HOST="127.0.0.1"
-# ── Shared service URLs (non-env-specific, ports 8000-8018) ──
-export TIMESHEET_PUBLIC_BASE_URL="http://${LAN_IP}:8002"
-export EXPENSE_PUBLIC_BASE_URL="http://${LAN_IP}:8003"
-export EMPLOYEEADMIN_PUBLIC_BASE_URL="http://${LAN_IP}:8004"
+# ── Shared service URLs (active services only) ──
+export EMPLOYEE_ADMIN_PUBLIC_BASE_URL="http://${LAN_IP}:8004"
+export DATADICT_PUBLIC_BASE_URL="http://${LAN_IP}:8005"
 export MASTERDATA_PUBLIC_BASE_URL="http://${LAN_IP}:8007"
 export MASTERDATA_INTERNAL_BASE_URL="http://127.0.0.1:8007"
-export PAYROLL_PUBLIC_BASE_URL="http://${LAN_IP}:8001"
 export TACAIPAY_JP_PUBLIC_BASE_URL="http://${LAN_IP}:8013"
 export TACAIPAY_JP_BASE_URL="${TACAIPAY_JP_PUBLIC_BASE_URL}"
-
-export TACAIPAYSG_PUBLIC_BASE_URL="http://${LAN_IP}:8016"
-export TACAIPAYSG_BASE_URL="${TACAIPAYSG_PUBLIC_BASE_URL}"
-export INTERVIEW_READY_PUBLIC_BASE_URL="http://${LAN_IP}:8000"
 export TACAIMSG_PUBLIC_BASE_URL="http://${LAN_IP}:8012"
 export TACAIINVOICE_PUBLIC_BASE_URL="http://${LAN_IP}:8019"
-export SELFSERVICE_PUBLIC_BASE_URL="http://${LAN_IP}:8018"
 # ── Env-specific URL exports (Portal + User_admin) set by load_env() ──
 # PORTAL_PUBLIC_BASE_URL, USER_ADMIN_PUBLIC_BASE_URL, USER_ADMIN_INTERNAL_BASE_URL
 export TACAI_ALLOWED_PUBLIC_HOSTS="${LAN_IP},127.0.0.1,localhost${TACAI_ALLOWED_PUBLIC_HOSTS:+,${TACAI_ALLOWED_PUBLIC_HOSTS}}"
@@ -92,16 +85,11 @@ CLOUDFLARED_BIN="${CLOUDFLARED_BIN:-${HOME}/.local/bin/cloudflared}"
 
 # ── Shared services (same ports across all envs) ─────────────
 SHARED_SERVICES=(
-  "interview_ready|8000|InterviewReady|python3 -m app.cli web --host 0.0.0.0 --port 8000"
-  "payroll_legacy|8001|backup/TACAI-PRJ|python3 backend/app.py --host 0.0.0.0 --port 8001"
-  "timesheet|8002|TAC-timesheet|python3 backend/app.py --host 0.0.0.0 --port 8002"
-  "expense|8003|TAC-reimbursement|python3 backend/app.py --host 0.0.0.0 --port 8003"
   "employee_admin|8004|backend/services/employee_admin|python3 app.py --host 0.0.0.0 --port 8004"
+  "datadict|8005|backend/services/datadict|python3 app.py --host 0.0.0.0 --port 8005"
   "masterdata|8007|backend/services/masterdata|python3 app.py --host 0.0.0.0 --port 8007"
   "tacaimsg|8012|backend/services/messaging|python3 app.py --host 0.0.0.0 --port 8012"
   "tacaipay_jp|8013|backend/services/payroll/jp|python3 app.py --host 0.0.0.0 --port 8013"
-  "tacaipay_sg|8016|TACAIPAY/tacaipaysg|python3 backend/app.py --host 0.0.0.0 --port 8016"
-  "selfservice|8018|TacSelfService/TacSelfVacation|python3 backend/app.py --host 0.0.0.0 --port 8018"
   "tacaiinvoice|8019|backend/services/invoice|python3 app.py --host 0.0.0.0 --port 8019"
 )
 
@@ -386,11 +374,9 @@ print_access_summary() {
   fi
   echo ""
   echo "Portal modules:"
-  echo "  8000 InterviewReady   8001 Payroll Legacy   8002 Timesheet"
-  echo "  8003 Expense          8004 EmployeeAdmin    ${portal_port} Portal ($(upper "${env_label}"))"
-  echo "  ${auth_port} User_admin ($(upper "${env_label}"))   8007 MasterData"
-  echo "  8012 TACAI Msg Center 8013 TACAI Pay JP     8016 TACAI Pay SG"
-  echo "  8018 Self-Service     8019 TACAI Invoice    8010 Gateway (tunnel)"
+  echo "  ${portal_port} Portal ($(upper "${env_label}"))     ${auth_port} User_admin ($(upper "${env_label}"))"
+  echo "  8004 EmployeeAdmin    8005 DataDict         8007 MasterData"
+  echo "  8012 TACAI Msg Center 8013 TACAI Pay JP     8019 TACAI Invoice"
   echo ""
   echo "Use one host consistently per browser session (127.0.0.1 OR ${LAN_IP}, not both)."
 }

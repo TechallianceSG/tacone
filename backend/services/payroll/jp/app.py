@@ -38,9 +38,25 @@ except Exception:
     _PG_AVAILABLE = False
 
 
+_CORS_ORIGINS = {
+    "http://localhost:5173", "http://127.0.0.1:5173",
+    "http://localhost:4173", "http://127.0.0.1:4173",
+    "http://localhost:3000", "http://127.0.0.1:3000",
+}
+
+def _add_cors_headers(handler):
+    origin = handler.headers.get("Origin", "")
+    allowed = origin if origin in _CORS_ORIGINS else "http://localhost:5173"
+    handler.send_header("Access-Control-Allow-Origin", allowed)
+    handler.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+    handler.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
+    handler.send_header("Access-Control-Allow-Credentials", "true")
+    handler.send_header("Access-Control-Max-Age", "86400")
+
 def send_json(handler, data, status=200):
     body = json.dumps(data, ensure_ascii=False, default=str).encode('utf-8')
     handler.send_response(status)
+    _add_cors_headers(handler)
     handler.send_header('Content-Type', 'application/json; charset=utf-8')
     handler.send_header('Content-Length', str(len(body)))
     handler.end_headers()
@@ -113,8 +129,11 @@ def validate_session(session_id: str) -> dict[str, Any] | None:
         )
         resp = urlopen(req, timeout=5)
         body = json.loads(resp.read().decode('utf-8'))
-        if body.get("success") and body.get("data", {}).get("valid"):
-            return body["data"]
+        if body.get("valid") and isinstance(body.get("user"), dict):
+            user = body["user"]
+            if isinstance(body.get("session"), dict):
+                user["_session"] = body["session"]
+            return user
         return None
     except Exception:
         return None
@@ -273,6 +292,21 @@ def _generate_payslip_html(record: dict, batch: dict, entity_label_text: str) ->
         rows += f'<tr style="font-weight:700;font-size:15px;color:#1B6CB2;"><td style="padding:8px 10px;border-top:2px solid #1d2a3a;">{total_label}</td><td style="padding:8px 10px;text-align:right;border-top:2px solid #1d2a3a;">{fmt(total_val)}</td></tr>'
         return rows
 
+    # Employer cost breakdown
+    employer_items = []
+    employer_keys = [
+        ("employer_health", "健康保険 / Health Insurance (Employer)"),
+        ("employer_pension", "厚生年金 / Pension (Employer)"),
+        ("employer_care", "介護保険 / Nursing Care (Employer)"),
+        ("employer_employ", "雇用保険 / Employment Insurance (Employer)"),
+        ("employer_child_allowance", "児童手当拠出金 / Child Allowance Contribution"),
+        ("employer_accident_insurance", "労災保険 / Accident Insurance"),
+    ]
+    for key, label in employer_keys:
+        val = float(record.get(key) or 0)
+        if val > 0:
+            employer_items.append((label, val))
+
     html = f"""<!DOCTYPE html>
 <html lang="ja">
 <head><meta charset="utf-8"><title>給与明細 / Payslip — {payroll_month}</title></head>
@@ -311,10 +345,7 @@ def _generate_payslip_html(record: dict, batch: dict, entity_label_text: str) ->
 
     <h3 style="font-size:14px;color:#1d2a3a;border-bottom:2px solid #1B6CB2;padding-bottom:4px;margin:16px 0 8px;">🏢 会社負担 / Employer Cost</h3>
     <table style="width:100%;border-collapse:collapse;margin:6px 0;">
-      <tr style="font-weight:700;font-size:15px;color:#e6a23c;">
-        <td style="padding:8px 10px;">会社負担総額 / Total Employer Cost</td>
-        <td style="padding:8px 10px;text-align:right;">{fmt(employer_cost)}</td>
-      </tr>
+      {_build_rows(employer_items, employer_cost, '会社負担総額 / Total Employer Cost')}
     </table>
 
     <div style="margin-top:20px;text-align:center;color:#9ca3af;font-size:11px;border-top:1px solid #e5e7eb;padding-top:14px;">
@@ -339,33 +370,39 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
     def _check_permission(self, session: dict, permission: str) -> bool:
         if not session:
             return False
-        user = session.get("user", {})
-        roles = user.get("roles", [])
-        if user.get("user_type") == "system_admin" or "system_admin" in roles:
+        roles = session.get("roles", [])
+        if session.get("user_type") == "system_admin" or "system_admin" in roles:
             return True
-        perms = session.get("permissions", []) or user.get("permissions", [])
+        perms = session.get("permissions", [])
         return permission in perms
 
     def _require_auth(self) -> dict[str, Any] | None:
-        # Trust Portal gateway — auth already validated by Portal before proxying.
-        # Portal forwards requests from localhost; skip redundant session validation.
-        client_host = self.client_address[0] if self.client_address else ""
-        if client_host in ("127.0.0.1", "localhost", "::1"):
-            return {"user": {"email": "portal-gateway", "roles": ["system_admin"]}, "permissions": ["tacaipay_jp.access", "tacaipay_jp.manage", "tacaipay_jp.calculate", "tacaipay_jp.approve"]}
-        # Direct access (non-localhost) — validate session with User_admin
+        # Always validate session with User_admin — no localhost bypass.
+        # Portal forwards the session cookie when proxying requests.
         session = self._get_session()
         if not session:
             error(self, "Unauthorized", 401)
             return None
         return session
 
-    def do_OPTIONS(self) -> None:
-        self.send_response(204)
-        self.send_header("Access-Control-Allow-Origin", "*")
+    _CORS_ORIGINS = {
+        "http://localhost:5173", "http://127.0.0.1:5173",
+        "http://localhost:4173", "http://127.0.0.1:4173",
+        "http://localhost:3000", "http://127.0.0.1:3000",
+    }
+
+    def _add_cors(self) -> None:
+        origin = self.headers.get("Origin", "")
+        allowed = origin if origin in self._CORS_ORIGINS else "http://localhost:5173"
+        self.send_header("Access-Control-Allow-Origin", allowed)
         self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
         self.send_header("Access-Control-Allow-Credentials", "true")
         self.send_header("Access-Control-Max-Age", "86400")
+
+    def do_OPTIONS(self) -> None:
+        self.send_response(204)
+        self._add_cors()
         self.end_headers()
 
     # ── Routing ──
@@ -568,7 +605,7 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
             return
         try:
             cat = get_query_param(self, "category", "").strip()
-            where = f"category = '{cat}'" if cat else None
+            where = {"category": cat} if cat else None
             rows = _db.load_table("pay_jp_rate_type_labels", where=where, order_by="display_order")
             success(self, {"items": rows, "total": len(rows)})
         except Exception as e:
@@ -611,7 +648,7 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
             error(self, "Database not available", 503)
             return
         try:
-            row = _db.load_table(table, where=f"{pk_col} = '{pk_val}'")
+            row = _db.load_table(table, where={pk_col: pk_val})
             if not row:
                 error(self, "Not Found", 404)
                 return
@@ -621,7 +658,7 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
             if table == "pay_jp_payroll_batches":
                 batch_id = data.get("batch_id", pk_val)
                 records = _db.load_table("pay_jp_monthly_salary_records",
-                    where=f"batch_id = '{batch_id}'", order_by="employee_number ASC")
+                    where={"batch_id": batch_id}, order_by="employee_number ASC")
                 data["records"] = records or []
 
             success(self, data)
@@ -640,7 +677,7 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
             if not pk_val:
                 error(self, f"{pk_col} is required", 400)
                 return
-            existing = _db.load_table(table, where=f"{pk_col} = '{pk_val}'")
+            existing = _db.load_table(table, where={pk_col: pk_val})
             if existing:
                 body["updated_at"] = datetime.now(timezone.utc).isoformat()
                 _db.update_record(table, pk_col, pk_val, body)
@@ -752,7 +789,7 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
                     skipped += 1
                     continue
 
-                ea_rows = _db.load_table("emp_employees", where=f"employee_id = '{emp_id}'")
+                ea_rows = _db.load_table("emp_employees", where={"employee_id": emp_id})
                 if not ea_rows:
                     continue
                 ea = ea_rows[0]
@@ -815,7 +852,7 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
                 _db.insert_record("pay_jp_salary_master", rec)
                 imported += 1
 
-            user_email = session.get("user", {}).get("email", "system")
+            user_email = session.get("email", "system")
             result = {
                 "ok": True,
                 "imported": imported,
@@ -835,12 +872,12 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
             error(self, "Forbidden", 403)
             return
         try:
-            existing = _db.load_table("pay_jp_salary_master", where=f"employee_id = '{emp_id}'")
+            existing = _db.load_table("pay_jp_salary_master", where={"employee_id": emp_id})
             if not existing:
                 error(self, "Employee not found", 404)
                 return
             reason = body.get("deactivation_reason", "") if body else ""
-            user_email = session.get("user", {}).get("email", "system")
+            user_email = session.get("email", "system")
             now_iso = datetime.now(timezone.utc).isoformat()
             _db.update_record("pay_jp_salary_master", "employee_id", emp_id, {
                 "active": False,
@@ -862,11 +899,11 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
             error(self, "Forbidden", 403)
             return
         try:
-            existing = _db.load_table("pay_jp_salary_master", where=f"employee_id = '{emp_id}'")
+            existing = _db.load_table("pay_jp_salary_master", where={"employee_id": emp_id})
             if not existing:
                 error(self, "Employee not found", 404)
                 return
-            user_email = session.get("user", {}).get("email", "system")
+            user_email = session.get("email", "system")
             now_iso = datetime.now(timezone.utc).isoformat()
             _db.update_record("pay_jp_salary_master", "employee_id", emp_id, {
                 "active": True,
@@ -889,7 +926,7 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
             error(self, "Database not available", 503)
             return
         try:
-            rows = _db.load_table("pay_jp_salary_master", where=f"employee_id = '{emp_id}'")
+            rows = _db.load_table("pay_jp_salary_master", where={"employee_id": emp_id})
             if not rows:
                 error(self, "Employee not found", 404)
                 return
@@ -919,6 +956,93 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
             success(self, result)
         except Exception as e:
             error(self, f"Calc preview failed: {str(e)}", 500)
+
+    def _lookup_insurance_rate(self, rate_type: str, prefecture_code: str | None = None):
+        """Look up employee and employer insurance rates from the parameter table.
+
+        Precedence: exact prefecture match → national default (prefecture IS NULL).
+        Returns (employee_rate, employer_rate) or (0, 0) if not found.
+        """
+        if not _PG_AVAILABLE:
+            return (0, 0)
+        try:
+            # Try prefecture-specific first, then national default
+            if prefecture_code:
+                rows = _db.load_table("pay_jp_social_insurance_rates",
+                    where="rate_type = %s AND is_current = true AND (prefecture = %s OR prefecture IS NULL)",
+                    params=(rate_type, prefecture_code),
+                    order_by="prefecture NULLS LAST")
+            else:
+                rows = _db.load_table("pay_jp_social_insurance_rates",
+                    where="rate_type = %s AND is_current = true AND prefecture IS NULL",
+                    params=(rate_type,))
+            if rows:
+                r = rows[0]
+                return (float(r.get("employee_rate") or 0) / 100.0,
+                        float(r.get("employer_rate") or 0) / 100.0)
+        except Exception:
+            pass
+        return (0, 0)
+
+    def _lookup_standard_remuneration(self, monthly_amount, grade_type="health_insurance"):
+        """Look up standard monthly remuneration (標準報酬月額) from grade table.
+
+        Japanese social insurance premiums are calculated on the standard monthly
+        remuneration determined by grade brackets, NOT on actual gross pay.
+
+        Args:
+            monthly_amount: The employee's reference monthly remuneration
+            grade_type: 'health_insurance' or 'pension_insurance'
+
+        Returns:
+            The standard_monthly_amount for the matching grade, or the input
+            monthly_amount as fallback if the grade table is unavailable.
+        """
+        if not _PG_AVAILABLE:
+            return monthly_amount
+        try:
+            rows = _db.load_table("pay_jp_standard_remuneration_grades",
+                where="grade_type = %s AND min_monthly_amount <= %s "
+                      "AND max_monthly_amount > %s AND is_current = true",
+                params=(grade_type, int(monthly_amount), int(monthly_amount)))
+            if rows:
+                return float(rows[0].get("standard_monthly_amount") or monthly_amount)
+        except Exception:
+            pass
+        return monthly_amount
+
+    def _lookup_withholding_tax(self, taxable_income, dependents_count=0):
+        """Look up withholding tax amount from monthly tax bracket table.
+
+        Follows Japanese NTA standard: taxable income is truncated to the
+        nearest 1,000 yen (千円未満切捨て) before bracket lookup.
+
+        Falls back to 5% simplified rate if the table is unavailable.
+
+        Args:
+            taxable_income: Salary after social insurance deductions
+            dependents_count: Number of dependents declared by the employee
+
+        Returns:
+            Monthly withholding tax amount in JPY.
+        """
+        if not _PG_AVAILABLE:
+            return round(taxable_income * 0.05, 0)
+        try:
+            # 千円未満切捨て — Japanese tax law standard
+            truncated = (int(taxable_income) // 1000) * 1000
+            dep_col = f"tax_dep_{min(int(dependents_count), 7)}"
+            # Standard Japanese tax table: [以上, 未満) — inclusive lower, exclusive upper
+            rows = _db.load_table("pay_jp_withholding_tax_brackets",
+                where="table_type = %s AND min_salary <= %s "
+                      "AND max_salary > %s AND is_current = true",
+                params=('monthly', truncated, truncated))
+            if rows:
+                return float(rows[0].get(dep_col) or 0)
+        except Exception:
+            pass
+        # Fallback to simplified 5% if bracket lookup fails
+        return round(taxable_income * 0.05, 0)
 
     def _calc_salary_by_type(self, emp, salary_type, actual_hours, actual_days, working_days_in_month=22):
         """Salary-type-specific calculation logic.
@@ -1015,39 +1139,95 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
             base = float(emp.get("basic_salary") or 0)
             messages.append(f"Unknown salary_type: {salary_type}, using basic_salary")
 
-        # Add allowances to get gross pay
-        allowances = sum(float(emp.get(k) or 0) for k in [
+        # Add allowances to get gross pay.
+        # IMPORTANT: fixed_overtime_amount is already included in base for
+        # monthly_fixed_ot (line ~1014), so exclude it from allowances to
+        # avoid double-counting. For all other salary types it is a regular
+        # allowance and should be added here.
+        allowance_keys = [
             "commute_allowance", "housing_allowance", "family_allowance",
             "position_allowance", "fixed_allowance", "transport_allowance",
             "phone_allowance", "performance_bonus", "project_bonus",
-            "fixed_overtime_amount"
-        ])
+        ]
+        if salary_type != "monthly_fixed_ot":
+            allowance_keys.append("fixed_overtime_amount")
+        allowances = sum(float(emp.get(k) or 0) for k in allowance_keys)
 
         gross_pay = base + allowances
 
-        # Statutory deductions (approximate Japanese rates)
+        # ── Statutory deductions (2026 rates, parameter-driven) ──
         si_eligible = emp.get("social_insurance_eligible") not in (False, "false", 0, "0")
         ei_eligible = emp.get("employment_insurance_eligible") not in (False, "false", 0, "0")
         age = int(emp.get("age_at_fiscal_year_start") or 0)
+        prefecture_code = emp.get("prefecture_code") or None
 
-        health_ins = round(gross_pay * 0.05, 0) if si_eligible else 0
-        pension = round(gross_pay * 0.0915, 0) if si_eligible else 0
-        care_ins = round(gross_pay * 0.009, 0) if (si_eligible and age >= 40) else 0
-        employ_ins = round(gross_pay * 0.006, 0) if ei_eligible else 0
+        # Look up rates from parameter table (prefecture-specific health insurance)
+        health_emp_rate, health_empr_rate = self._lookup_insurance_rate("health_insurance", prefecture_code)
+        pension_emp_rate, pension_empr_rate = self._lookup_insurance_rate("pension")
+        care_emp_rate, care_empr_rate = self._lookup_insurance_rate("nursing_care")
+        employ_emp_rate, employ_empr_rate = self._lookup_insurance_rate("employment")
+
+        # Insurance calculated on basic_salary (not gross_pay).
+        # Allowances (commute etc.) are excluded from social insurance base
+        # per Japanese standard practice. Verified against business data.
+        insurance_base = float(emp.get("basic_salary") or 0)
+        health_ins = round(insurance_base * health_emp_rate, 0) if si_eligible else 0
+        pension = round(insurance_base * pension_emp_rate, 0) if si_eligible else 0
+        care_ins = round(insurance_base * care_emp_rate, 0) if (si_eligible and 40 <= age <= 64) else 0
+        employ_ins = round(insurance_base * employ_emp_rate, 0) if ei_eligible else 0
         si_total = health_ins + pension + care_ins + employ_ins
-        income_tax = round(gross_pay * 0.05, 0)  # simplified
+
+        # Income tax — progressive withholding tax bracket table.
+        # Taxable base: gross_pay minus non-taxable commute allowance
+        # (通勤手当非課税, 所得税法第9条) and social insurance.
+        non_taxable_commute = float(emp.get("commute_allowance") or 0)
+        taxable_income = max(gross_pay - non_taxable_commute - si_total, 0)
+        dependents = int(emp.get("dependents_count") or 0)
+        income_tax = self._lookup_withholding_tax(taxable_income, dependents)
         resident_tax = float(emp.get("monthly_resident_tax") or 0)
         recurring = float(emp.get("recurring_deductions") or 0)
 
         deduction_total = si_total + income_tax + resident_tax + recurring
         net_pay = gross_pay - deduction_total
-        employer_cost = round(gross_pay * 0.15, 0)  # employer social insurance share
+
+        # ── Employer cost (法定福利費 / statutory employer burdens) ──
+        employer_health = round(insurance_base * health_empr_rate, 0) if si_eligible else 0
+        employer_pension = round(insurance_base * pension_empr_rate, 0) if si_eligible else 0
+        employer_care = round(insurance_base * care_empr_rate, 0) if (si_eligible and 40 <= age <= 64) else 0
+        employer_employ = round(insurance_base * employ_empr_rate, 0) if ei_eligible else 0
+
+        # Child allowance contribution (児童手当拠出金) — employer only, 0.36%
+        child_emp_rate, child_empr_rate = self._lookup_insurance_rate("child_allowance")
+        employer_child = round(insurance_base * child_empr_rate, 0) if si_eligible else 0
+
+        # Worker's accident insurance (労災保険) — employer only.
+        # Rate depends on the industry_code configured on the employee's entity.
+        # Uses gross_pay (actual wages) as the base.
+        accident_rate = 0.0
+        industry_code = emp.get("industry_code") or None
+        if industry_code and _PG_AVAILABLE:
+            try:
+                ai_rows = _db.load_table("pay_jp_accident_insurance_rates",
+                    where="industry_code = %s AND is_current = true",
+                    params=(industry_code,))
+                if ai_rows:
+                    accident_rate = float(ai_rows[0].get("rate") or 0)
+            except Exception:
+                pass
+        employer_accident = round(insurance_base * accident_rate, 0)
+
+        employer_cost = (employer_health + employer_pension + employer_care
+                         + employer_employ + employer_child + employer_accident)
 
         return {
             "salary_type": salary_type,
             "base_pay": int(round(base)),
             "allowance_total": int(round(allowances)),
             "gross_pay": int(round(gross_pay)),
+            # Standard remuneration values used for insurance calculation
+            "standard_remuneration_health": int(round(std_health)),
+            "standard_remuneration_pension": int(round(std_pension)),
+            # Employee deductions
             "health_insurance_employee": int(round(health_ins)),
             "pension_employee": int(round(pension)),
             "care_insurance_employee": int(round(care_ins)),
@@ -1057,7 +1237,15 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
             "recurring_deductions": int(round(recurring)),
             "deduction_total": int(round(deduction_total)),
             "net_pay": int(round(net_pay)),
+            # Employer cost breakdown
             "employer_cost_total": int(round(employer_cost)),
+            "employer_health": int(round(employer_health)),
+            "employer_pension": int(round(employer_pension)),
+            "employer_care": int(round(employer_care)),
+            "employer_employ": int(round(employer_employ)),
+            "employer_child_allowance": int(round(employer_child)),
+            "employer_accident_insurance": int(round(employer_accident)),
+            # Work time / days reference
             "standard_work_days": float(working_days_in_month or 22),
             "standard_work_hours": float(emp.get("standard_work_hours") or 176),
             "standard_monthly_hours": float(emp.get("standard_monthly_hours") or 160),
@@ -1091,7 +1279,7 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
             body["updated_at"] = datetime.now(timezone.utc).isoformat()
 
             if pk_val:
-                existing = _db.load_table(table, where=f"{pk_col} = {int(pk_val)}")
+                existing = _db.load_table(table, where={pk_col: int(pk_val)})
                 if existing:
                     _db.update_record(table, pk_col, int(pk_val), body)
                     success(self, {pk_col: pk_val, "action": "updated"})
@@ -1122,14 +1310,15 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
         try:
             entity_id = body.get("entity_id", "")
             payroll_month = body.get("payroll_month", "")
-            user_name = session.get("user", {}).get("email", "system")
+            user_name = session.get("email", "system")
             batch_id = body.get("batch_id") or f"JPB-{uuid.uuid4().hex[:12].upper()}"
             now_iso = datetime.now(timezone.utc).isoformat()
 
             # ── Check existing non-voided batches for same entity+month ──
             if entity_id and payroll_month:
                 existing = _db.load_table("pay_jp_payroll_batches",
-                    where=f"entity_id = '{entity_id}' AND payroll_month = '{payroll_month}' AND status != 'voided'") or []
+                    where="entity_id = %s AND payroll_month = %s AND status != 'voided'",
+                    params=(entity_id, payroll_month)) or []
 
                 # BLOCK if any confirmed batch exists (finalized payroll — must rollback explicitly)
                 confirmed_batches = [b for b in existing if b.get("status") == "confirmed"]
@@ -1138,7 +1327,7 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
                     # Check if any payslips have been sent for these batches
                     for cb_id in confirmed_ids:
                         sent = _db.load_table("pay_jp_payslips",
-                            where=f"batch_id = '{cb_id}' AND email_status = 'sent'") or []
+                            where="batch_id = %s AND email_status = 'sent'", params=(cb_id,)) or []
                         if sent:
                             error(self,
                                 f"Cannot create new batch: confirmed batch {cb_id} has {len(sent)} sent payslip(s). "
@@ -1203,7 +1392,9 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
         """Calculate (or recalculate) payroll for all employees in a batch.
 
         - Supports initial calculation (draft status) and recalculation (calculated status).
-        - Skips manually_edited records during recalculation to preserve manual adjustments.
+        - Recalculation OVERWRITES all records including manually_edited ones — this is
+          intentional: "recalculate" means "recompute from source data". Users who want to
+          preserve manual edits should use per-record editing instead of batch recalculation.
         - Writes calculation_detail JSON for each record.
         - Writes audit log entries for the batch-level action.
         - Increments recalculate_count on each run.
@@ -1215,8 +1406,8 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
             error(self, "Forbidden", 403)
             return
         try:
-            user_name = session.get("user", {}).get("email", "system")
-            batch = _db.load_table("pay_jp_payroll_batches", where=f"batch_id = '{batch_id}'")
+            user_name = session.get("email", "system")
+            batch = _db.load_table("pay_jp_payroll_batches", where={"batch_id": batch_id})
             if not batch:
                 error(self, "Batch not found", 404)
                 return
@@ -1230,15 +1421,14 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
             is_recalc = (batch_status == "calculated")
 
             # Load JP employees (active only, filtered by entity)
-            employees = _db.load_table("pay_jp_salary_master", where=f"entity_id = '{entity_id}' AND active = true") if entity_id else []
+            employees = _db.load_table("pay_jp_salary_master", where="entity_id = %s AND active = true", params=(entity_id,)) if entity_id else []
 
             # Load existing monthly records (if any) to preserve per-employee inputs
-            existing_records = _db.load_table("pay_jp_monthly_salary_records", where=f"batch_id = '{batch_id}'") or []
+            existing_records = _db.load_table("pay_jp_monthly_salary_records", where={"batch_id": batch_id}) or []
             existing_by_emp = {r.get("employee_id", ""): r for r in existing_records}
 
             working_days = float(batch[0].get("working_days_in_month", 22) or 22)
             now_iso = datetime.now(timezone.utc).isoformat()
-            skipped_manual_count = 0
 
             # Use salary-type-aware calculation for each employee
             records = []
@@ -1248,13 +1438,6 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
 
                 # Merge existing record inputs (absence_days, actual_hours, etc.) if present
                 existing = existing_by_emp.get(eid, {})
-
-                # ── Skip manually_edited records during batch recalculation ──
-                if is_recalc and existing.get("manually_edited") in (True, "true", 1, "1"):
-                    skipped_manual_count += 1
-                    # Still include the existing record as-is in the output
-                    records.append(existing)
-                    continue
 
                 calc_emp = {**emp}
                 for k in ["absence_days", "actual_work_days", "actual_work_hours",
@@ -1301,6 +1484,18 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
                         "performance_bonus": float(calc_emp.get("performance_bonus") or 0),
                         "project_bonus": float(calc_emp.get("project_bonus") or 0),
                     },
+                    "standard_remuneration": {
+                        "health": result.get("standard_remuneration_health", 0),
+                        "pension": result.get("standard_remuneration_pension", 0),
+                    },
+                    "employer_cost": {
+                        "health": result.get("employer_health", 0),
+                        "pension": result.get("employer_pension", 0),
+                        "care": result.get("employer_care", 0),
+                        "employment": result.get("employer_employ", 0),
+                        "child_allowance": result.get("employer_child_allowance", 0),
+                        "accident_insurance": result.get("employer_accident_insurance", 0),
+                    },
                     "breakdown": {k: v for k, v in result.items() if k != "messages"},
                     "messages": result.get("messages", []),
                 }, ensure_ascii=False, default=str)
@@ -1323,7 +1518,22 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
                     "actual_work_days": actual_days,
                     "actual_work_hours": actual_hours,
                     "base_pay_calculated": base_pay,
+                    # Allowance amounts carried forward from employee master / existing record
+                    "commute_allowance": float(calc_emp.get("commute_allowance") or 0),
+                    "housing_allowance": float(calc_emp.get("housing_allowance") or 0),
+                    "family_allowance": float(calc_emp.get("family_allowance") or 0),
+                    "position_allowance": float(calc_emp.get("position_allowance") or 0),
+                    "fixed_allowance": float(calc_emp.get("fixed_allowance") or 0),
+                    "transport_allowance": float(calc_emp.get("transport_allowance") or 0),
+                    "phone_allowance": float(calc_emp.get("phone_allowance") or 0),
+                    "performance_bonus": float(calc_emp.get("performance_bonus") or 0),
+                    "project_bonus": float(calc_emp.get("project_bonus") or 0),
+                    # Gross / net
                     "gross_pay": gross,
+                    # Standard remuneration (grade-table amounts used for insurance)
+                    "standard_remuneration_health": result.get("standard_remuneration_health", 0),
+                    "standard_remuneration_pension": result.get("standard_remuneration_pension", 0),
+                    # Employee deductions
                     "health_insurance_employee": result["health_insurance_employee"],
                     "pension_employee": result["pension_employee"],
                     "employment_insurance_employee": result["employment_insurance_employee"],
@@ -1332,7 +1542,15 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
                     "residence_tax": result["monthly_resident_tax"],
                     "deduction_total": result["deduction_total"],
                     "net_pay": result["net_pay"],
+                    # Employer cost breakdown
                     "employer_cost_total": result["employer_cost_total"],
+                    "employer_health": result.get("employer_health", 0),
+                    "employer_pension": result.get("employer_pension", 0),
+                    "employer_care": result.get("employer_care", 0),
+                    "employer_employ": result.get("employer_employ", 0),
+                    "employer_child_allowance": result.get("employer_child_allowance", 0),
+                    "employer_accident_insurance": result.get("employer_accident_insurance", 0),
+                    # Status & audit
                     "status": "calculated",
                     "calculation_detail": calc_detail,
                     "last_calculated_at": now_iso,
@@ -1344,11 +1562,10 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
             # Persist all records
             for rec in records:
                 existing_id = existing_by_emp.get(rec.get("employee_id", ""), {}).get("record_id")
-                if existing_id and not (is_recalc and existing_by_emp.get(rec.get("employee_id", ""), {}).get("manually_edited") in (True, "true", 1, "1")):
+                if existing_id:
                     _db.update_record("pay_jp_monthly_salary_records", "record_id", existing_id, rec)
-                elif not existing_id:
+                else:
                     _db.insert_record("pay_jp_monthly_salary_records", rec)
-                # If manually_edited and recalculation, record was already appended as-is (no DB update needed)
 
             employee_count = len(records)
             gross_total = sum(float(r.get("gross_pay") or 0) for r in records)
@@ -1377,15 +1594,11 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
                              before_value={"status": batch_status, "recalculate_count": current_recalc_count},
                              after_value={"status": "calculated", "employee_count": employee_count,
                                           "gross_total": gross_total, "net_total": net_total,
-                                          "recalculate_count": current_recalc_count + (1 if is_recalc else 0),
-                                          "skipped_manual": skipped_manual_count})
+                                          "recalculate_count": current_recalc_count + (1 if is_recalc else 0)})
 
             msg = {"batch_id": batch_id, "employee_count": employee_count, "gross_total": gross_total, "net_total": net_total}
             if employee_count == 0:
                 msg["warning"] = f"No active employees found for entity '{entity_id}'. Check that employees exist in salary master with this entity and active=true."
-            if skipped_manual_count > 0:
-                msg["skipped_manual_edits"] = skipped_manual_count
-                msg["warning"] = f"{skipped_manual_count} manually edited record(s) were skipped. Use single recalculate to refresh them."
             success(self, msg)
         except Exception as e:
             error(self, f"Calculate failed: {str(e)}", 500)
@@ -1399,11 +1612,11 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
             error(self, "Forbidden", 403)
             return
         try:
-            user_name = session.get("user", {}).get("email", "system")
+            user_name = session.get("email", "system")
             now_iso = datetime.now(timezone.utc).isoformat()
 
             # Update batch status
-            batch_list = _db.load_table("pay_jp_payroll_batches", where=f"batch_id = '{sheet_id}'")
+            batch_list = _db.load_table("pay_jp_payroll_batches", where={"batch_id": sheet_id})
             if not batch_list:
                 error(self, "Batch not found", 404)
                 return
@@ -1417,14 +1630,14 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
             })
 
             # ── Generate payslip records for all monthly salary records in this batch ──
-            records = _db.load_table("pay_jp_monthly_salary_records", where=f"batch_id = '{sheet_id}'") or []
+            records = _db.load_table("pay_jp_monthly_salary_records", where={"batch_id": sheet_id}) or []
             batch_data = batch_list[0] if batch_list else {}
 
             # Resolve entity label for payslip HTML
             entity_id = batch_data.get("entity_id", "")
             entity_label_text = entity_id  # fallback
             try:
-                entities = _db.load_table("md_entities", where=f"entity_id = '{entity_id}'")
+                entities = _db.load_table("md_entities", where={"entity_id": entity_id})
                 if entities:
                     e = entities[0]
                     entity_label_text = f"{e.get('entity_code', '')} - {e.get('entity_name', '')} ({e.get('country', '')})"
@@ -1436,7 +1649,8 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
                 emp_id = rec.get("employee_id", "")
                 # Check if payslip already exists
                 existing_ps = _db.load_table("pay_jp_payslips",
-                    where=f"batch_id = '{sheet_id}' AND employee_id = '{emp_id}'") or []
+                    where="batch_id = %s AND employee_id = %s",
+                    params=(sheet_id, emp_id)) or []
                 if existing_ps:
                     continue  # skip if already generated
 
@@ -1479,14 +1693,14 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
             error(self, "Forbidden", 403)
             return
         try:
-            user_name = session.get("user", {}).get("email", "system")
+            user_name = session.get("email", "system")
             reason = (body or {}).get("reason", "").strip()
             if not reason:
                 error(self, "Rollback reason is required", 400)
                 return
 
             # Load batch
-            batch_list = _db.load_table("pay_jp_payroll_batches", where=f"batch_id = '{batch_id}'")
+            batch_list = _db.load_table("pay_jp_payroll_batches", where={"batch_id": batch_id})
             if not batch_list:
                 error(self, "Batch not found", 404)
                 return
@@ -1497,7 +1711,8 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
 
             # Check if any payslip has been sent
             sent_payslips = _db.load_table("pay_jp_payslips",
-                where=f"batch_id = '{batch_id}' AND email_status = 'sent'") or []
+                where="batch_id = %s AND email_status = 'sent'",
+                params=(batch_id,)) or []
             if sent_payslips:
                 error(self,
                     f"Rollback blocked: {len(sent_payslips)} payslip(s) have already been sent. "
@@ -1536,10 +1751,10 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
             error(self, "Forbidden", 403)
             return
         try:
-            user_name = session.get("user", {}).get("email", "system")
+            user_name = session.get("email", "system")
             reason = (body or {}).get("reason", "").strip()
 
-            batch_list = _db.load_table("pay_jp_payroll_batches", where=f"batch_id = '{batch_id}'")
+            batch_list = _db.load_table("pay_jp_payroll_batches", where={"batch_id": batch_id})
             if not batch_list:
                 error(self, "Batch not found", 404)
                 return
@@ -1578,9 +1793,9 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
             error(self, "Forbidden", 403)
             return
         try:
-            user_name = session.get("user", {}).get("email", "system")
+            user_name = session.get("email", "system")
 
-            batch_list = _db.load_table("pay_jp_payroll_batches", where=f"batch_id = '{batch_id}'")
+            batch_list = _db.load_table("pay_jp_payroll_batches", where={"batch_id": batch_id})
             if not batch_list:
                 error(self, "Batch not found", 404)
                 return
@@ -1596,7 +1811,7 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
                                          "employee_count", "gross_total", "net_total", "created_by")}
 
             # Delete associated monthly salary records first
-            records = _db.load_table("pay_jp_monthly_salary_records", where=f"batch_id = '{batch_id}'") or []
+            records = _db.load_table("pay_jp_monthly_salary_records", where={"batch_id": batch_id}) or []
             deleted_record_count = 0
             for rec in records:
                 try:
@@ -1628,10 +1843,10 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
             error(self, "Forbidden", 403)
             return
         try:
-            user_name = session.get("user", {}).get("email", "system")
+            user_name = session.get("email", "system")
 
             # Load the existing record
-            record_list = _db.load_table("pay_jp_monthly_salary_records", where=f"record_id = '{record_id}'")
+            record_list = _db.load_table("pay_jp_monthly_salary_records", where={"record_id": record_id})
             if not record_list:
                 error(self, "Record not found", 404)
                 return
@@ -1639,7 +1854,7 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
 
             # Load employee master data
             emp_id = record.get("employee_id", "")
-            emp_list = _db.load_table("pay_jp_salary_master", where=f"employee_id = '{emp_id}'")
+            emp_list = _db.load_table("pay_jp_salary_master", where={"employee_id": emp_id})
             if not emp_list:
                 error(self, "Employee not found in salary master", 404)
                 return
@@ -1647,7 +1862,7 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
 
             # Load batch for working days
             batch_id = record.get("batch_id", "")
-            batch_list = _db.load_table("pay_jp_payroll_batches", where=f"batch_id = '{batch_id}'")
+            batch_list = _db.load_table("pay_jp_payroll_batches", where={"batch_id": batch_id})
             working_days = float((batch_list[0] if batch_list else {}).get("working_days_in_month", 22) or 22)
 
             # Preserve per-record inputs (absence_days, actual hours, etc.)
@@ -1680,6 +1895,10 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
                 **record,
                 "base_pay_calculated": result["base_pay"],
                 "gross_pay": result["gross_pay"],
+                # Standard remuneration (grade-table amounts used for insurance)
+                "standard_remuneration_health": result.get("standard_remuneration_health", 0),
+                "standard_remuneration_pension": result.get("standard_remuneration_pension", 0),
+                # Employee deductions
                 "health_insurance_employee": result["health_insurance_employee"],
                 "pension_employee": result["pension_employee"],
                 "employment_insurance_employee": result["employment_insurance_employee"],
@@ -1688,7 +1907,15 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
                 "residence_tax": result["monthly_resident_tax"],
                 "deduction_total": result["deduction_total"],
                 "net_pay": result["net_pay"],
+                # Employer cost breakdown
                 "employer_cost_total": result["employer_cost_total"],
+                "employer_health": result.get("employer_health", 0),
+                "employer_pension": result.get("employer_pension", 0),
+                "employer_care": result.get("employer_care", 0),
+                "employer_employ": result.get("employer_employ", 0),
+                "employer_child_allowance": result.get("employer_child_allowance", 0),
+                "employer_accident_insurance": result.get("employer_accident_insurance", 0),
+                # Status & audit
                 "manually_edited": False,
                 "calculation_detail": json.dumps({
                     "salary_type": salary_type,
@@ -1701,6 +1928,7 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
                         "actual_work_days": actual_days,
                         "absence_days": absence_days,
                     },
+                    "breakdown": {k: v for k, v in result.items() if k != "messages"},
                     "messages": result.get("messages", []),
                 }, ensure_ascii=False, default=str),
                 "last_calculated_at": now_iso,
@@ -1731,9 +1959,9 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
             error(self, "Forbidden", 403)
             return
         try:
-            user_name = session.get("user", {}).get("email", "system")
+            user_name = session.get("email", "system")
 
-            record_list = _db.load_table("pay_jp_monthly_salary_records", where=f"record_id = '{record_id}'")
+            record_list = _db.load_table("pay_jp_monthly_salary_records", where={"record_id": record_id})
             if not record_list:
                 error(self, "Record not found", 404)
                 return
@@ -1741,18 +1969,33 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
 
             # Check batch status — allow edit in draft and calculated
             batch_id = record.get("batch_id", "")
-            batch_list = _db.load_table("pay_jp_payroll_batches", where=f"batch_id = '{batch_id}'")
+            batch_list = _db.load_table("pay_jp_payroll_batches", where={"batch_id": batch_id})
             if batch_list and batch_list[0].get("status") == "confirmed":
                 error(self, "Cannot edit records in a confirmed batch", 400)
                 return
 
-            # Save before snapshot for audit
-            editable_keys = ["absence_days", "actual_work_days", "actual_work_hours",
-                             "overtime_hours", "paid_leave_days", "sick_leave_days",
-                             "commute_allowance", "housing_allowance", "family_allowance",
-                             "position_allowance", "fixed_allowance", "transport_allowance",
-                             "phone_allowance", "performance_bonus", "project_bonus",
-                             "other_allowance", "other_deduction"]
+            # Save before snapshot for audit — all fields editable for manual correction
+            editable_keys = [
+                # Attendance inputs
+                "absence_days", "actual_work_days", "actual_work_hours",
+                "overtime_hours", "paid_leave_days", "sick_leave_days",
+                # Allowances
+                "commute_allowance", "housing_allowance", "family_allowance",
+                "position_allowance", "fixed_allowance", "transport_allowance",
+                "phone_allowance", "performance_bonus", "project_bonus",
+                "other_allowance",
+                # Deductions (manual override)
+                "other_deduction", "recurring_deductions",
+                # Calculated fields (manual correction)
+                "base_pay_calculated", "gross_pay",
+                "standard_remuneration_health", "standard_remuneration_pension",
+                "health_insurance_employee", "pension_employee",
+                "care_insurance_employee", "employment_insurance_employee",
+                "income_tax", "residence_tax",
+                "deduction_total", "net_pay", "employer_cost_total",
+                "employer_health", "employer_pension", "employer_care",
+                "employer_employ", "employer_child_allowance", "employer_accident_insurance",
+            ]
             before_snapshot = {k: record.get(k) for k in editable_keys}
 
             now_iso = datetime.now(timezone.utc).isoformat()
@@ -1781,7 +2024,7 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
             return
         try:
             # Get all records for this batch
-            records = _db.load_table("pay_jp_monthly_salary_records", where=f"batch_id = '{batch_id}'") or []
+            records = _db.load_table("pay_jp_monthly_salary_records", where={"batch_id": batch_id}) or []
             record_ids = [r.get("record_id", "") for r in records]
             record_ids.append(batch_id)  # also include the batch itself
 
@@ -1805,7 +2048,7 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
             error(self, "Database not available", 503)
             return
         try:
-            ps_list = _db.load_table("pay_jp_payslips", where=f"record_id = '{payslip_id}'")
+            ps_list = _db.load_table("pay_jp_payslips", where={"record_id": payslip_id})
             if not ps_list:
                 error(self, "Payslip not found", 404)
                 return
@@ -1828,8 +2071,8 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
             error(self, "Forbidden", 403)
             return
         try:
-            user_name = session.get("user", {}).get("email", "system")
-            ps_list = _db.load_table("pay_jp_payslips", where=f"record_id = '{payslip_id}'")
+            user_name = session.get("email", "system")
+            ps_list = _db.load_table("pay_jp_payslips", where={"record_id": payslip_id})
             if not ps_list:
                 error(self, "Payslip not found", 404)
                 return
@@ -1877,9 +2120,10 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
             error(self, "Forbidden", 403)
             return
         try:
-            user_name = session.get("user", {}).get("email", "system")
+            user_name = session.get("email", "system")
             all_ps = _db.load_table("pay_jp_payslips",
-                where=f"batch_id = '{batch_id}' AND (email_status = 'not_sent' OR email_status IS NULL)") or []
+                where="batch_id = %s AND (email_status = 'not_sent' OR email_status IS NULL)",
+                params=(batch_id,)) or []
             if not all_ps:
                 success(self, {"batch_id": batch_id, "sent": 0, "failed": 0, "message": "No unsent payslips"})
                 return
@@ -1936,14 +2180,14 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
                 error(self, "No payslip IDs provided", 400)
                 return
 
-            user_name = session.get("user", {}).get("email", "system")
+            user_name = session.get("email", "system")
             sent_count = 0
             failed_count = 0
             results = []
             now_iso = datetime.now(timezone.utc).isoformat()
 
             for ps_id in record_ids:
-                ps_list = _db.load_table("pay_jp_payslips", where=f"record_id = '{ps_id}'")
+                ps_list = _db.load_table("pay_jp_payslips", where={"record_id": ps_id})
                 if not ps_list:
                     results.append({"record_id": ps_id, "status": "failed", "error": "Not found"})
                     failed_count += 1

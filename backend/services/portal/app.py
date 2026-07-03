@@ -225,6 +225,8 @@ DEFAULT_MODULES = [
         "enabled": True,
     },
     {
+        # TODO: Self-service backend is not yet implemented (port 8018).
+        # Disabled until the service is deployed. See config.py / start_tacai_lan.sh.
         "module_key": "selfservice",
         "label": "Employee Self-Service",
         "labels": {"ja": "従業員セルフサービス", "zh": "员工自助", "en": "Employee Self-Service"},
@@ -235,10 +237,10 @@ DEFAULT_MODULES = [
             "en": "Leave requests (personal/sick/compensatory), supervisor approval, HR approval, auto-timeout",
         },
         "url": f"{public_base_url('SELFSERVICE_PUBLIC_BASE_URL', 8018)}/dashboard",
-        "status": "Connected module",
-        "statuses": {"ja": "連携済み", "zh": "已连接模块", "en": "Connected module"},
+        "status": "Planned",
+        "statuses": {"ja": "計画中", "zh": "计划中", "en": "Planned"},
         "required_permission": "selfservice.access",
-        "enabled": True,
+        "enabled": False,
     },
     {
         "module_key": "employee_management",
@@ -394,17 +396,18 @@ def public_local_url(url: str, request_host: str | None = None) -> str:
         if request_host and request_host in {"127.0.0.1", "localhost"}:
             return parsed._replace(netloc=f"127.0.0.1:{parsed.port}").geturl()
         env_by_port = {
-            8000: "INTERVIEW_READY_PUBLIC_BASE_URL",
-            8001: "PAYROLL_PUBLIC_BASE_URL",
-            8002: "TIMESHEET_PUBLIC_BASE_URL",
-            8003: "EXPENSE_PUBLIC_BASE_URL",
+            # Planned / future services (not yet deployed)
+            8000: "INTERVIEW_READY_PUBLIC_BASE_URL",   # planned
+            8001: "PAYROLL_PUBLIC_BASE_URL",            # planned
+            8002: "TIMESHEET_PUBLIC_BASE_URL",          # planned
+            8003: "EXPENSE_PUBLIC_BASE_URL",             # planned
+            8016: "TACAIPAYSG_PUBLIC_BASE_URL",          # planned (SG payroll)
+            8018: "SELFSERVICE_PUBLIC_BASE_URL",         # planned
+            # Active shared services
             8004: "EMPLOYEE_ADMIN_PUBLIC_BASE_URL",
+            8005: "DATADICT_PUBLIC_BASE_URL",
             8007: "MASTERDATA_PUBLIC_BASE_URL",
             8012: "TACAIMSG_PUBLIC_BASE_URL",
-            8016: "TACAIPAYSG_PUBLIC_BASE_URL",
-            8018: "SELFSERVICE_PUBLIC_BASE_URL",
-            # Fixed shared ports (legacy — retained for backward compatibility)
-            **{8005: "PORTAL_PUBLIC_BASE_URL", 8006: "USER_ADMIN_PUBLIC_BASE_URL"},
             # Dynamic per-environment ports
             **{_PORTAL_FALLBACK_PORT: "PORTAL_PUBLIC_BASE_URL", _AUTH_FALLBACK_PORT: "USER_ADMIN_PUBLIC_BASE_URL"},
         }
