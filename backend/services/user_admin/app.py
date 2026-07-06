@@ -20,6 +20,7 @@ import secrets
 import sys as _sys
 from typing import Any
 from urllib.parse import parse_qs, quote, unquote, urlencode, urlparse
+from urllib.request import Request, urlopen
 # === PostgreSQL integration ===
 # ── Shared libraries (backend/shared/) ──
 _shared_path = Path(__file__).resolve().parents[2] / 'shared'
@@ -84,6 +85,48 @@ FLASH_COOKIE = "tacai_flash"
 SESSION_TIMEOUT_MINUTES = 480
 PASSWORD_ITERATIONS = 120_000
 MAX_FAILED_LOGINS = 5
+
+# ── IP-based login rate limiting ──
+_LOGIN_RATE_LIMITS: dict[str, tuple[int, float, float]] = {}  # ip → (failures, last_attempt_ts, backoff_until_ts)
+
+
+def _check_login_rate_limit(ip: str) -> tuple[bool, float]:
+    """Check if an IP is rate-limited for login attempts.
+
+    Returns (blocked, retry_after_seconds).
+    Exponential backoff: 1s, 2s, 4s, 8s, 16s, 32s (caps at 60s).
+    """
+    import time as _time
+    now = _time.monotonic()
+    entry = _LOGIN_RATE_LIMITS.get(ip)
+    if entry is None:
+        return False, 0
+    _failures, _last, backoff_until = entry
+    if now < backoff_until:
+        return True, backoff_until - now
+    return False, 0
+
+
+def _record_login_rate_limit(ip: str) -> None:
+    """Record a failed login attempt and increase backoff."""
+    import time as _time
+    now = _time.monotonic()
+    entry = _LOGIN_RATE_LIMITS.get(ip)
+    failures = (entry[0] + 1) if entry else 1
+    backoff = min(60.0, 2.0 ** (failures - 1))  # 1, 2, 4, 8, 16, 32, 60, 60...
+    _LOGIN_RATE_LIMITS[ip] = (failures, now, now + backoff)
+    # Prune old entries (> 5 min since last attempt)
+    stale = [k for k, v in _LOGIN_RATE_LIMITS.items() if now - v[1] > 300]
+    for k in stale:
+        del _LOGIN_RATE_LIMITS[k]
+
+
+def _clear_login_rate_limit(ip: str) -> None:
+    """Clear rate limit on successful login."""
+    _LOGIN_RATE_LIMITS.pop(ip, None)
+
+
+# ── Password policy ──
 USER_STATUSES = {"active", "inactive", "locked", "suspended"}
 USER_TYPES = {"employee", "admin", "external", "system"}
 TACAI_PUBLIC_HOST = os.environ.get("TACAI_PUBLIC_HOST", "127.0.0.1").strip() or "127.0.0.1"
@@ -155,7 +198,33 @@ def clear_session_cookie_header() -> str:
 
 
 INITIAL_ADMIN_EMAIL = "admin@tacai.local"
-INITIAL_ADMIN_PASSWORD_HASH = "pbkdf2_sha256$120000$local_mvp_bootstrap_admin_salt$91f57a94132fb289a58e10af6b18e54ab7bc2efa109d773af3d6e3eef5316033"
+
+def _bootstrap_admin_password_hash() -> str:
+    """Generate initial admin password hash from env or random credential.
+
+    If TACAI_INITIAL_ADMIN_PASSWORD is set in the environment, hash that.
+    Otherwise, generate a random password, print it ONCE to stderr, and hash it.
+    The printed password is the only time the credential is visible.
+    """
+    import hashlib
+    init_password = os.environ.get("TACAI_INITIAL_ADMIN_PASSWORD", "").strip()
+    if init_password:
+        return hash_password(init_password)
+    # Generate a secure random password for first-time setup
+    random_pw = secrets.token_urlsafe(16)
+    print(
+        f"\n{'='*60}\n"
+        f"  INITIAL ADMIN CREDENTIALS (save these now):\n"
+        f"  Email:    {INITIAL_ADMIN_EMAIL}\n"
+        f"  Password: {random_pw}\n"
+        f"  CHANGE THIS PASSWORD AFTER FIRST LOGIN.\n"
+        f"{'='*60}\n",
+        file=_sys.stderr,
+    )
+    return hash_password(random_pw)
+
+
+INITIAL_ADMIN_PASSWORD_HASH = _bootstrap_admin_password_hash()
 
 ROLE_DEFINITIONS = [
     {"role_id": "ROLE-SYSTEM-ADMIN", "role_key": "system_admin", "role_name": "System Admin", "description_key": "role.system_admin.description"},
@@ -498,23 +567,96 @@ def save_user_entity_mappings(records: list[dict[str, Any]]) -> None:
     save_json_array(USER_ENTITY_MAPPING_PATH, records)
 
 
-def load_masterdata_entities() -> list[dict[str, Any]]:
+# ── Cross-service data access with TTL caching ──
+# Replaces direct _db.load_table() reads of other services' tables.
+# Uses the internal (no-auth, localhost-only) endpoints added to each service.
+
+_CROSS_SERVICE_CACHE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
+_CROSS_SERVICE_CACHE_TTL = 60  # seconds
+
+
+def _cached_internal_api(endpoint: str, ttl: int | None = None) -> list[dict[str, Any]]:
+    """Call a TACAI internal API endpoint with TTL caching."""
+    import time as _time
+    now = _time.monotonic()
+    ttl = ttl if ttl is not None else _CROSS_SERVICE_CACHE_TTL
+    entry = _CROSS_SERVICE_CACHE.get(endpoint)
+    if entry is not None:
+        ts, data = entry
+        if now - ts < ttl:
+            return data
+    # Cache miss — call internal API
     try:
-        return _db.load_table(f"{MD_PREFIX}_entities")
+        req = Request(
+            f"http://127.0.0.1:8007{endpoint}",
+            headers={"Accept": "application/json"},
+            method="GET",
+        )
+        with urlopen(req, timeout=3) as resp:
+            body = json.loads(resp.read().decode("utf-8"))
+        data = body.get("entities") or body.get("departments") or body.get("teams") or []
+        if isinstance(data, dict):
+            data = [data]  # Normalize single-entity response
+        _CROSS_SERVICE_CACHE[endpoint] = (now, data)
+        return data
     except Exception:
+        # Fallback: return cached data even if expired (graceful degradation)
+        if entry is not None:
+            return entry[1]
         return []
+
+
+def load_masterdata_entities() -> list[dict[str, Any]]:
+    return _cached_internal_api("/api/internal/entities/active")
 
 
 def load_masterdata_departments() -> list[dict[str, Any]]:
+    return _cached_internal_api("/api/internal/departments", ttl=120)
+
+
+def load_employeeadmin_employees() -> list[dict[str, Any]]:
+    """Load all employees via employee_admin internal API (no direct DB read)."""
     try:
-        return _db.load_table(f"{MD_PREFIX}_departments")
+        req = Request(
+            "http://127.0.0.1:8004/api/internal/employees",
+            headers={"Accept": "application/json"},
+            method="GET",
+        )
+        with urlopen(req, timeout=5) as resp:
+            body = json.loads(resp.read().decode("utf-8"))
+        return body.get("employees") or []
     except Exception:
         return []
 
 
-def load_employeeadmin_employees() -> list[dict[str, Any]]:
+def load_employeeadmin_employee_by_id(employee_id: str) -> dict[str, Any] | None:
+    """Load a single employee by ID via employee_admin internal API."""
     try:
-        return _db.load_table(f"{EMP_PREFIX}_employees")
+        req = Request(
+            f"http://127.0.0.1:8004/api/internal/employees/{employee_id}",
+            headers={"Accept": "application/json"},
+            method="GET",
+        )
+        with urlopen(req, timeout=3) as resp:
+            body = json.loads(resp.read().decode("utf-8"))
+        return body.get("employee") if body.get("success") else None
+    except Exception:
+        return None
+
+
+def load_employeeadmin_employees_by_ids(employee_ids: list[str]) -> list[dict[str, Any]]:
+    """Batch-load employees by IDs via employee_admin internal API."""
+    if not employee_ids:
+        return []
+    try:
+        req = Request(
+            f"http://127.0.0.1:8004/api/internal/employees?employee_ids={','.join(employee_ids)}",
+            headers={"Accept": "application/json"},
+            method="GET",
+        )
+        with urlopen(req, timeout=5) as resp:
+            body = json.loads(resp.read().decode("utf-8"))
+        return body.get("employees") or []
     except Exception:
         return []
 
@@ -577,7 +719,7 @@ def password_policy_errors(password: str, messages: dict[str, str]) -> list[str]
     errors: list[str] = []
     if len(password) < 6:
         errors.append(t(messages, "validation.password_min_length"))
-    if len(password) > 10:
+    if len(password) > 128:
         errors.append(t(messages, "validation.password_max_length"))
     if not any(char.isupper() for char in password):
         errors.append(t(messages, "validation.password_uppercase"))
@@ -987,16 +1129,18 @@ def employee_status(employee: dict[str, Any]) -> str:
 
 
 def visible_employeeadmin_employees() -> list[dict[str, Any]]:
-    return [employee for employee in load_employeeadmin_employees() if not bool(get_nested(employee, "metadata.deleted", False))]
+    """Load all employees via employee_admin internal API (cached by caller pattern)."""
+    return [e for e in load_employeeadmin_employees() if not bool(get_nested(e, "metadata.deleted", False))]
 
 
 def find_employeeadmin_employee(employee_id: str) -> dict[str, Any] | None:
+    """Find a single employee by ID via employee_admin internal API."""
     target = str(employee_id or "").strip()
     if not target:
         return None
-    for employee in visible_employeeadmin_employees():
-        if str(employee.get("employee_id", "")) == target:
-            return employee
+    emp = load_employeeadmin_employee_by_id(target)
+    if emp and not bool(get_nested(emp, "metadata.deleted", False)):
+        return emp
     return None
 
 
@@ -1005,10 +1149,25 @@ def employee_number_key(value: Any) -> str:
 
 
 def find_employeeadmin_employee_by_number(employee_number: str, employee_id_hint: str = "") -> tuple[dict[str, Any] | None, str]:
+    """Find employee by number via employee_admin internal API (targeted search)."""
     target = employee_number_key(employee_number)
     if not target:
         return None, ""
-    matches = [employee for employee in visible_employeeadmin_employees() if employee_number_key(employee_number_from_record(employee)) == target]
+    # Use targeted API call instead of loading all employees
+    try:
+        req = Request(
+            f"http://127.0.0.1:8004/api/internal/employees?employee_number={target}",
+            headers={"Accept": "application/json"},
+            method="GET",
+        )
+        with urlopen(req, timeout=3) as resp:
+            body = json.loads(resp.read().decode("utf-8"))
+        candidates = body.get("employees") or []
+    except Exception:
+        # Fallback: load all and filter (graceful degradation)
+        candidates = visible_employeeadmin_employees()
+
+    matches = [e for e in candidates if employee_number_key(employee_number_from_record(e)) == target]
     if not matches:
         return None, "not_found"
     if len(matches) == 1:
@@ -1210,6 +1369,11 @@ def module_display_name(module_key: str, messages: dict[str, str]) -> str:
 
 
 def record_session_activity(session_id: str, module_key: str = "", module_path: str = "", source: str = "") -> dict[str, Any]:
+    """Record session activity with a targeted UPDATE (industry-standard single-row write).
+
+    Replaces the previous load-all → modify → save-all pattern that caused O(n)
+    full-table rewrites on every API request.
+    """
     session_id = str(session_id or "").strip()
     if not session_id:
         return {}
@@ -1218,49 +1382,65 @@ def record_session_activity(session_id: str, module_key: str = "", module_path: 
     source_text = sanitize_module_key(source) or "session_activity"
     now_text = now_iso()
     now_dt = parse_iso(now_text)
-    sessions = load_sessions()
-    updated_session: dict[str, Any] = {}
-    audit_payload: tuple[dict[str, Any], dict[str, Any], str, str] | None = None
-    for session in sessions:
-        if session.get("session_id") != session_id:
-            continue
-        expires_at = parse_iso(str(session.get("expires_at", "")))
-        if not session.get("active", True) or (expires_at and now_dt and expires_at <= now_dt):
-            break
-        before_module = str(session.get("current_module_key", "") or "")
-        before_path = str(session.get("current_module_path", "") or "")
-        session["last_seen_at"] = now_text
-        session["last_activity_source"] = source_text
-        if clean_module_key:
-            module_changed = before_module != clean_module_key
-            path_changed = before_path != clean_module_path
-            if module_changed or path_changed or not session.get("current_module_opened_at"):
-                before_value = {
-                    "session_id_suffix": str(session.get("session_id", ""))[-8:],
-                    "current_module_key": before_module,
-                    "current_module_path": before_path,
-                }
-                session["current_module_key"] = clean_module_key
-                session["current_module_path"] = clean_module_path
-                if module_changed or not session.get("current_module_opened_at"):
-                    session["current_module_opened_at"] = now_text
-                if module_changed:
-                    after_value = {
-                        "session_id_suffix": str(session.get("session_id", ""))[-8:],
-                        "current_module_key": clean_module_key,
-                        "current_module_path": clean_module_path,
-                        "current_module_opened_at": session.get("current_module_opened_at", ""),
-                    }
-                    audit_user = actor_label(find_user_by_id(str(session.get("user_id", ""))))
-                    audit_payload = (before_value, after_value, str(session.get("user_id", "")), audit_user)
-        updated_session = dict(session)
-        break
-    if updated_session:
-        save_sessions(sessions)
-        if audit_payload:
-            before_value, after_value, record_id, audit_user = audit_payload
-            append_audit("user_management", record_id, audit_user, "session_module_opened", before_value, after_value)
-    return session_context(updated_session)
+
+    # ── Load only the target session (not all sessions) ──
+    rows = _db.load_table("ua_user_sessions", where={"session_id": session_id})
+    session = rows[0] if rows else None
+    if not session:
+        return {}
+
+    # ── Validate session is active and not expired ──
+    if not session.get("active", True):
+        return {}
+    expires_at = parse_iso(str(session.get("expires_at", "")))
+    if expires_at and now_dt and expires_at <= now_dt:
+        return {}
+
+    # ── Compute updates ──
+    updates: dict[str, Any] = {
+        "last_seen_at": now_text,
+        "last_activity_source": source_text,
+        "expires_at": (now_dt + timedelta(minutes=SESSION_TIMEOUT_MINUTES)).isoformat() if now_dt else session.get("expires_at"),
+    }
+
+    # Track module changes for audit
+    before_module = str(session.get("current_module_key", "") or "")
+    before_path = str(session.get("current_module_path", "") or "")
+    module_changed = False
+
+    if clean_module_key:
+        module_changed = before_module != clean_module_key
+        path_changed = before_path != clean_module_path
+        if module_changed or path_changed or not session.get("current_module_opened_at"):
+            updates["current_module_key"] = clean_module_key
+            updates["current_module_path"] = clean_module_path
+            if module_changed or not session.get("current_module_opened_at"):
+                updates["current_module_opened_at"] = now_text
+
+    # ── Execute targeted UPDATE (single row, not full table rewrite) ──
+    _db.update_record("ua_user_sessions", "session_id", session_id, updates)
+
+    # ── Write audit log for module switches ──
+    if module_changed:
+        before_value = {
+            "session_id_suffix": session_id[-8:],
+            "current_module_key": before_module,
+            "current_module_path": before_path,
+        }
+        after_value = {
+            "session_id_suffix": session_id[-8:],
+            "current_module_key": clean_module_key,
+            "current_module_path": clean_module_path,
+            "current_module_opened_at": updates.get("current_module_opened_at", ""),
+        }
+        audit_user = actor_label(find_user_by_id(str(session.get("user_id", ""))))
+        append_audit("user_management", str(session.get("user_id", "")), audit_user,
+                     "session_module_opened", before_value, after_value)
+
+    # ── Merge updates back for return value ──
+    updated = dict(session)
+    updated.update(updates)
+    return session_context(updated)
 
 
 def append_audit(module: str, record_id: str, user: str, action: str, before_value: Any, after_value: Any) -> None:
@@ -1397,38 +1577,76 @@ def seed_data() -> None:
 
 
 def active_sessions() -> list[dict[str, Any]]:
+    """Return all session records after marking expired ones inactive.
+
+    Uses a targeted SQL UPDATE to mark expired sessions (single UPDATE, not
+    full table rewrite), then SELECTs all sessions for listing/UI purposes.
+
+    Also runs periodic cleanup of old inactive sessions (probabilistic, ~1%
+    of calls) to prevent unbounded table growth.
+    """
     now = datetime.now(timezone.utc)
-    sessions = []
-    changed = False
-    for session in load_sessions():
-        expires_at = parse_iso(str(session.get("expires_at", "")))
-        if session.get("active", True) and expires_at and expires_at <= now:
-            session["active"] = False
-            session["logout_time"] = session.get("logout_time") or now_iso()
-            changed = True
-        sessions.append(session)
-    if changed:
-        save_sessions(sessions)
-    return sessions
+    # ── Mark expired sessions with targeted UPDATE (O(1) write, not O(n) rewrite) ──
+    try:
+        _db.execute(
+            'UPDATE "ua_user_sessions" SET "active" = %s, "logout_time" = %s '
+            'WHERE "active" = %s AND "expires_at" <= %s',
+            (False, now_iso(), True, now.isoformat()),
+        )
+    except Exception:
+        pass  # Non-critical — expired sessions will be caught at validation time
+
+    # ── Periodic cleanup: delete sessions inactive for > 7 days (~1% chance per call) ──
+    _maybe_cleanup_old_sessions()
+
+    return load_sessions()
+
+
+def _maybe_cleanup_old_sessions() -> None:
+    """Delete sessions that have been inactive for > 7 days.
+
+    Runs probabilistically (~1% of calls) to avoid adding latency to every request.
+    Uses expires_at as the time reference (always set at session creation/extension).
+    """
+    import random as _random
+    if _random.randint(1, 100) > 1:
+        return
+    try:
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+        deleted = _db.execute(
+            'DELETE FROM "ua_user_sessions" WHERE "active" = %s AND "expires_at" < %s',
+            (False, cutoff),
+        )
+        if deleted and deleted > 0:
+            print(f"[user_admin] Cleaned up {deleted} old inactive sessions", file=_sys.stderr)
+    except Exception:
+        pass  # Non-critical — sessions table can survive without cleanup for a while
 
 
 def validate_session_id(session_id: str) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    """Validate a session by ID using a targeted DB lookup (not full table scan)."""
     if not session_id:
         return None, None
     now = datetime.now(timezone.utc)
-    for session in active_sessions():
-        if session.get("session_id") != session_id or not session.get("active", True):
-            continue
-        expires_at = parse_iso(str(session.get("expires_at", "")))
-        if not expires_at or expires_at <= now:
-            return None, None
-        user = find_user_by_id(str(session.get("user_id", "")))
-        if not user or user.get("status") != "active" or user.get("account_locked"):
-            return None, None
-        if not session_has_active_entity(session):
-            return None, None
-        return session, user
-    return None, None
+
+    # ── Targeted load: fetch only the requested session (not all sessions) ──
+    rows = _db.load_table("ua_user_sessions", where={"session_id": session_id})
+    session = rows[0] if rows else None
+    if not session:
+        return None, None
+
+    # ── Validate ──
+    if not session.get("active", True):
+        return None, None
+    expires_at = parse_iso(str(session.get("expires_at", "")))
+    if not expires_at or expires_at <= now:
+        return None, None
+    user = find_user_by_id(str(session.get("user_id", "")))
+    if not user or user.get("status") != "active" or user.get("account_locked"):
+        return None, None
+    if not session_has_active_entity(session):
+        return None, None
+    return session, user
 
 
 def render_page(title: str, body: str, lang: str, messages: dict[str, str], current_user: dict[str, Any] | None = None, current_url: str = "/", current_session: dict[str, Any] | None = None) -> bytes:
@@ -1568,6 +1786,10 @@ class UserAdminHandler(BaseHTTPRequestHandler):
     def do_OPTIONS(self) -> None:
         handle_preflight(self)
 
+    def _is_localhost(self) -> bool:
+        client = (self.client_address[0] if self.client_address else "")
+        return client in ("127.0.0.1", "::1", "localhost")
+
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
         query = parse_qs(parsed.query)
@@ -1578,6 +1800,10 @@ class UserAdminHandler(BaseHTTPRequestHandler):
 
         if path == "/health":
             self.send_text(200, "OK")
+        # ── Internal API endpoints (no auth, localhost-only) ──
+        elif self._is_localhost() and path.startswith("/api/internal/"):
+            self._handle_internal_api(path, query)
+            return
         elif path in {"/", "/login"}:
             # ── Redirect to Vue 3 SPA login (unified login page) ──
             next_url = safe_next_url(query.get("next", [""])[0], "/dashboard")
@@ -1740,6 +1966,26 @@ class UserAdminHandler(BaseHTTPRequestHandler):
                 self.send_json(401, {"error": "Unauthorized"})
         else:
             self.send_not_found(lang, messages, user)
+
+    def _handle_internal_api(self, path: str, query: dict[str, list[str]]) -> None:
+        """Handle internal API calls from other TACAI services (no auth)."""
+        # ── GET /api/internal/users?user_id=...&role_key=...&entity_id=... ──
+        if path == "/api/internal/users":
+            uid = query.get("user_id", [""])[0]
+            role = query.get("role_key", [""])[0]
+            eid = query.get("entity_id", [""])[0]
+            users = load_users()
+            if uid:
+                users = [u for u in users if str(u.get("user_id", "")) == uid]
+            if role:
+                from auth_utils import is_system_admin
+                users = [u for u in users if role in [str(r).strip().lower() for r in u.get("roles", [])] or is_system_admin(u)]
+            if eid:
+                users = [u for u in users if str(u.get("entity_id", "")) == eid or is_system_admin(u)]
+            self.send_json(200, {"users": users})
+            return
+
+        self.send_json(404, {"error": "Internal endpoint not found"})
 
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
@@ -2805,18 +3051,31 @@ class UserAdminHandler(BaseHTTPRequestHandler):
 
     def handle_api_login(self, lang: str, messages: dict[str, str]) -> None:
         """JSON-based login for Vue 3 SPA frontend."""
+        # ── IP-based rate limiting (exponential backoff) ──
+        client_ip = self.client_address[0] if self.client_address else "unknown"
+        blocked, retry_after = _check_login_rate_limit(client_ip)
+        if blocked:
+            self.send_json(429, {
+                "error": "Too many login attempts",
+                "message": t(messages, "validation.rate_limited", "Too many attempts. Try again later."),
+                "retry_after": int(retry_after),
+            })
+            return
+
         data = self.parse_json_body()
         email = str(data.get("email", "")).strip().lower()
         password = str(data.get("password", ""))
         entity_code = str(data.get("entity_code", "")).strip()
         user = find_user_by_email(email)
         if not user:
+            _record_login_rate_limit(client_ip)
             self.send_json(401, {"error": "Invalid credentials", "message": t(messages, "validation.invalid_login")})
             return
         if user.get("account_locked") or user.get("status") not in {"active"}:
             self.send_json(401, {"error": "Account locked", "message": t(messages, "validation.account_locked")})
             return
         if not verify_password(password, str(user.get("password_hash", ""))):
+            _record_login_rate_limit(client_ip)
             self.record_failed_login(user)
             locked_after = int(user.get("failed_login_count", 0)) + 1 >= MAX_FAILED_LOGINS
             msg = t(messages, "validation.account_locked") if locked_after else t(messages, "validation.invalid_login")
@@ -2826,6 +3085,7 @@ class UserAdminHandler(BaseHTTPRequestHandler):
         if entity_errors or not entity_context:
             self.send_json(401, {"error": "Invalid entity", "message": entity_errors[0] if entity_errors else ""})
             return
+        _clear_login_rate_limit(client_ip)
         self.record_successful_login(user)
         session_id = secrets.token_urlsafe(32)
         expires_at = datetime.now(timezone.utc) + timedelta(minutes=SESSION_TIMEOUT_MINUTES)

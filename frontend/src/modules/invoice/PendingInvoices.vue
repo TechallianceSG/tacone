@@ -45,7 +45,7 @@ onMounted(load)
       <el-table-column prop="status" :label="t('field.status')">
         <template #default="{ row }"><el-tag size="small" :type="(INVOICE_PENDING_STATUS_CONFIG[row.status]?.type || 'info') as any">{{ row.status }}</el-tag></template>
       </el-table-column>
-      <el-table-column :label="t('action.actions')" width="200">
+      <el-table-column :label="t('action.actions')" width="200" fixed="right">
         <template #default="{ row }">
           <template v-if="row.status === 'pending'">
             <el-button size="small" text type="primary" @click="convert(row.pending_id)">{{ t('invoice.convert') }}</el-button>

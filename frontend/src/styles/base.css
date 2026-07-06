@@ -468,8 +468,8 @@ textarea:focus {
   margin-bottom: 0.85rem;
 }
 
-/* ---- Tables ---- */
-table {
+/* ---- Tables (plain HTML tables only — exclude Element Plus) ---- */
+table:not([class*="el-table"]) {
   width: 100%;
   border-collapse: collapse;
   background: #fff;
@@ -478,20 +478,21 @@ table {
   overflow: hidden;
 }
 
-th, td {
+table:not([class*="el-table"]) th,
+table:not([class*="el-table"]) td {
   border-bottom: 1px solid var(--tacai-border);
   padding: 10px 12px;
   text-align: left;
   vertical-align: top;
 }
 
-th {
+table:not([class*="el-table"]) th {
   background: #eef4ff;
   color: var(--tacai-sidebar);
   font-size: 0.9rem;
 }
 
-tr:last-child td { border-bottom: 0; }
+table:not([class*="el-table"]) tr:last-child td { border-bottom: 0; }
 
 .table-scroll {
   overflow-x: auto;
@@ -805,5 +806,5 @@ tr:last-child td { border-bottom: 0; }
   .login-hint { margin-top: 8px; font-size: 0.78rem; }
   .actions { flex-direction: column; align-items: stretch; }
   .actions .button, .actions button { text-align: center; width: 100%; }
-  table { display: block; overflow-x: auto; min-width: 760px; }
+  table:not([class*="el-table"]) { display: block; overflow-x: auto; min-width: 760px; }
 }

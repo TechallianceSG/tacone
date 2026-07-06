@@ -20,10 +20,13 @@ from __future__ import annotations
 import json
 import os
 import sys
+from datetime import date, datetime, time
+from decimal import Decimal
 from typing import Any, Optional, Union
 
 import psycopg2
 import psycopg2.extras
+import psycopg2.pool
 
 # ── Configuration (from environment) ────────────────────────
 DB_CONFIG = {
@@ -61,17 +64,43 @@ def require_pg() -> bool:
     return True
 
 
-# ── Connection management ───────────────────────────────────
-_conn = None
+# ── Connection pool (thread-safe) ───────────────────────────
+_pool: Any = None
+_pool_lock: Any = None  # threading.Lock, set on first use
+
+
+def _init_pool():
+    """Initialize the connection pool (lazy, thread-safe)."""
+    global _pool, _pool_lock
+    import threading as _thr
+    if _pool_lock is None:
+        _pool_lock = _thr.Lock()
+    with _pool_lock:
+        if _pool is None:
+            _pool = psycopg2.pool.ThreadedConnectionPool(
+                minconn=2,
+                maxconn=int(os.environ.get("DB_POOL_MAX", "10")),
+                **DB_CONFIG,
+            )
+    return _pool
 
 
 def _get_conn():
-    """Get or create a database connection."""
-    global _conn
-    if _conn is None or _conn.closed:
-        _conn = psycopg2.connect(**DB_CONFIG)
-        _conn.autocommit = False
-    return _conn
+    """Get a connection from the pool (thread-safe)."""
+    return _init_pool().getconn()
+
+
+def _put_conn(conn):
+    """Return a connection to the pool."""
+    global _pool
+    if _pool and conn and not conn.closed:
+        try:
+            _pool.putconn(conn)
+        except Exception:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 
 def _is_available():
@@ -83,6 +112,7 @@ def _is_available():
         cur = conn.cursor()
         cur.execute("SELECT 1")
         cur.close()
+        _put_conn(conn)
         return True
     except Exception:
         return False
@@ -97,18 +127,69 @@ def _ensure_pg():
         )
 
 
+# ── Internal helpers ──────────────────────────────────────────
+
+def _db_op(operation):
+    """Execute a DB operation with proper connection lifecycle.
+
+    Usage:
+        def my_fn(conn, cur):
+            cur.execute(...)
+            return result
+        return _db_op(my_fn)
+    """
+    _ensure_pg()
+    conn = _get_conn()
+    cur = conn.cursor()
+    try:
+        result = operation(conn, cur)
+        conn.commit()
+        return result
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+        _put_conn(conn)
+
+
+# ── JSONB column metadata cache ──────────────────────────────
+_jsonb_columns: dict[str, set[str]] = {}
+
+
+def _get_jsonb_columns(table_name: str) -> set[str]:
+    """Return the set of JSONB column names for a table (cached)."""
+    if table_name in _jsonb_columns:
+        return _jsonb_columns[table_name]
+    try:
+        conn = _get_conn()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = %s AND data_type = 'jsonb'",
+            (table_name,),
+        )
+        cols = {row[0] for row in cur.fetchall()}
+        cur.close()
+        _put_conn(conn)
+    except Exception:
+        cols = set()
+    _jsonb_columns[table_name] = cols
+    return cols
+
+
 # ── Core CRUD Operations ────────────────────────────────────
 
 def load_table(table_name: str, where = None,
                order_by: Optional[str] = None,
                params: Optional[tuple] = None) -> list[dict[str, Any]]:
-    """Load all rows from a PostgreSQL table. Returns list of dicts.
+    """Load rows from a PostgreSQL table. Returns list of dicts.
 
     Args:
         table_name: PostgreSQL table name.
         where: WHERE clause as either:
-            - str: raw SQL condition (legacy; use only for trusted inputs)
             - dict: {column: value} → parameterized "col" = %s AND ...
+            - str: raw SQL condition (legacy; use only for trusted inputs)
         order_by: ORDER BY clause (column name or raw SQL).
         params: tuple of values for %s placeholders when `where` is a str.
     """
@@ -122,17 +203,13 @@ def load_table(table_name: str, where = None,
 
         if where is not None:
             if isinstance(where, dict):
-                # Parameterized dict → "col1" = %s AND "col2" = %s
                 clauses = [f'"{k}" = %s' for k in where.keys()]
                 sql += " WHERE " + " AND ".join(clauses)
                 query_params = tuple(where.values())
             elif isinstance(where, str) and where.strip():
-                # String WHERE clause (legacy / trusted input)
                 sql += f" WHERE {where}"
                 if params:
                     query_params = params
-            elif isinstance(where, str):
-                pass  # empty string → no WHERE
 
         if order_by:
             sql += f" ORDER BY {order_by}"
@@ -141,14 +218,17 @@ def load_table(table_name: str, where = None,
             cur.execute(sql, query_params)
         else:
             cur.execute(sql)
-        columns = [desc[0] for desc in cur.description]
+
+        columns = [desc[0] for desc in cur.description] if cur.description else []
+        # Determine which columns are JSONB (from schema metadata, not string guessing)
+        jsonb_cols = _get_jsonb_columns(table_name)
+
         rows = []
         for row in cur.fetchall():
             record = {}
             for i, col in enumerate(columns):
                 val = row[i]
-                # Convert JSONB strings back to Python objects
-                if isinstance(val, str) and (val.startswith('{') or val.startswith('[')):
+                if col in jsonb_cols and isinstance(val, str):
                     try:
                         record[col] = json.loads(val)
                     except (json.JSONDecodeError, ValueError):
@@ -163,6 +243,7 @@ def load_table(table_name: str, where = None,
         raise
     finally:
         cur.close()
+        _put_conn(conn)
 
 
 def save_table(table_name: str, records: list[dict[str, Any]],
@@ -224,6 +305,7 @@ def save_table(table_name: str, records: list[dict[str, Any]],
         raise
     finally:
         cur.close()
+        _put_conn(conn)
 
 
 def insert_record(table_name: str, record: dict[str, Any],
@@ -268,6 +350,7 @@ def insert_record(table_name: str, record: dict[str, Any],
         raise
     finally:
         cur.close()
+        _put_conn(conn)
 
 
 def update_record(table_name: str, pk_column: str, pk_value: Any,
@@ -293,6 +376,7 @@ def update_record(table_name: str, pk_column: str, pk_value: Any,
         raise
     finally:
         cur.close()
+        _put_conn(conn)
 
 
 def delete_record(table_name: str, pk_column: str, pk_value: Any) -> bool:
@@ -311,12 +395,14 @@ def delete_record(table_name: str, pk_column: str, pk_value: Any) -> bool:
         raise
     finally:
         cur.close()
+        _put_conn(conn)
 
 
 # ── Helpers ─────────────────────────────────────────────────
 
 def _detect_pk(table_name: str) -> Optional[str]:
     """Auto-detect primary key column for a table."""
+    conn = None
     try:
         conn = _get_conn()
         cur = conn.cursor()
@@ -329,22 +415,46 @@ def _detect_pk(table_name: str) -> Optional[str]:
               AND tc.table_name = %s
         """, (table_name,))
         row = cur.fetchone()
-        cur.close()
         return row[0] if row else None
     except Exception:
         return None
+    finally:
+        _put_conn(conn)
 
 
 def _serialize_for_db(val: Any) -> Any:
-    """Convert Python value to PostgreSQL-compatible format."""
+    """Convert Python value to PostgreSQL-compatible format.
+
+    Uses psycopg2 native type adapters where available:
+      - None            → SQL NULL
+      - bool            → PG BOOLEAN
+      - int             → PG INTEGER / BIGINT
+      - float           → PG DOUBLE PRECISION
+      - Decimal         → PG NUMERIC (exact)
+      - datetime / date → PG TIMESTAMPTZ / DATE (native psycopg2 adapter)
+      - dict / list     → json.dumps() for PG JSONB
+      - unknown types   → str() with stderr warning
+    """
     if val is None:
         return None
     if isinstance(val, bool):
         return val
-    if isinstance(val, (int, float)):
+    if isinstance(val, int):
         return val
+    if isinstance(val, float):
+        return val
+    if isinstance(val, Decimal):
+        return val
+    if isinstance(val, (datetime, date)):
+        return val  # psycopg2 natively adapts these
     if isinstance(val, (dict, list)):
         return json.dumps(val, ensure_ascii=False, default=str)
+    # Unknown type — stringify with a warning for debugging
+    print(
+        f"[db_utils] WARNING: serializing {type(val).__name__} as string. "
+        f"Consider explicit conversion before passing to db_utils.",
+        file=sys.stderr,
+    )
     return str(val)
 
 
@@ -367,6 +477,7 @@ def execute(sql: str, params=None):
         raise
     finally:
         cur.close()
+        _put_conn(conn)
 
 
 def execute_many(sql: str, params_list: list):
@@ -383,10 +494,16 @@ def execute_many(sql: str, params_list: list):
         raise
     finally:
         cur.close()
+        _put_conn(conn)
 
 
 def fetch_all(sql: str, params=None):
-    """Execute a raw SELECT and return all rows as list of dicts."""
+    """Execute a raw SELECT and return all rows as list of dicts.
+
+    Note: Does NOT auto-parse JSONB columns (table name unknown).
+    Use load_table() for automatic JSONB detection, or call json.loads()
+    on specific columns in application code.
+    """
     _ensure_pg()
     conn = _get_conn()
     cur = conn.cursor()
@@ -400,6 +517,7 @@ def fetch_all(sql: str, params=None):
         return [dict(zip(cols, row)) for row in rows]
     finally:
         cur.close()
+        _put_conn(conn)
 
 
 # ── Startup status ──────────────────────────────────────────

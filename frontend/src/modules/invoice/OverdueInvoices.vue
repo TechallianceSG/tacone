@@ -39,7 +39,7 @@ onMounted(load)
           <el-tag :type="row.overdue_days > 60 ? 'danger' : row.overdue_days > 30 ? 'warning' : ''" size="small">{{ row.overdue_days }} days</el-tag>
         </template>
       </el-table-column>
-      <el-table-column :label="t('action.actions')" width="120">
+      <el-table-column :label="t('action.actions')" width="120" fixed="right">
         <template #default="{ row }"><el-button size="small" text @click="viewDetail(row.invoice_id)">{{ t('action.detail') }}</el-button></template>
       </el-table-column>
     </el-table>

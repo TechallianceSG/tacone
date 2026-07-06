@@ -12,11 +12,11 @@ import json
 import os
 import re
 import sys as _sys
-from http import HTTPStatus
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
+from urllib.request import Request, urlopen
 
 # ── Shared libraries (backend/shared/) ──
 _shared_path = Path(__file__).resolve().parents[2] / 'shared'
@@ -24,21 +24,52 @@ if str(_shared_path) not in _sys.path:
     _sys.path.insert(0, str(_shared_path))
 import db_utils as _db
 from auth_utils import validate_session, has_permission, is_system_admin
+from cors_middleware import add_cors_headers, handle_preflight
 
 MODULE_NAME = "tacai-employee-admin"
 DEFAULT_PORT = 8004
 REQUIRED_PERMISSION = "employee_management.access"
 
+# ── Cross-service data access with TTL caching ──
+# Calls masterdata's internal (no-auth, localhost-only) endpoints instead of
+# reading md_entities/md_departments/md_teams directly from the database.
+
+_CROSS_SERVICE_CACHE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
+_CROSS_SERVICE_CACHE_TTL = 60  # seconds
+
+
+def _cached_masterdata(endpoint: str) -> list[dict[str, Any]]:
+    """Call a masterdata internal API endpoint with TTL caching."""
+    import time as _time
+    now = _time.monotonic()
+    entry = _CROSS_SERVICE_CACHE.get(endpoint)
+    if entry is not None:
+        ts, data = entry
+        if now - ts < _CROSS_SERVICE_CACHE_TTL:
+            return data
+    try:
+        req = Request(
+            f"http://127.0.0.1:8007{endpoint}",
+            headers={"Accept": "application/json"},
+            method="GET",
+        )
+        with urlopen(req, timeout=3) as resp:
+            body = json.loads(resp.read().decode("utf-8"))
+        data = body.get("entities") or body.get("departments") or body.get("teams") or []
+    except Exception:
+        if entry is not None:
+            return entry[1]  # Graceful degradation: return stale cache
+        return []
+    _CROSS_SERVICE_CACHE[endpoint] = (now, data)
+    return data
+
 
 def _resolve_entity_labels(employees: list) -> list:
-    """Enrich employee records with entity labels from md_entities."""
-    try:
-        entities = _db.load_table("md_entities")
-    except Exception:
+    """Enrich employee records with entity labels from masterdata internal API."""
+    entities = _cached_masterdata("/api/internal/entities/active")
+    if not entities:
         return employees
-    entity_map = {}
-    for e in entities:
-        entity_map[e.get("entity_id", "")] = e
+    entity_map = {e.get("entity_id", ""): e for e in entities}
     for emp in employees:
         emp_data = emp.get("employment") or {}
         eid = emp_data.get("entity_id", "")
@@ -50,27 +81,20 @@ def _resolve_entity_labels(employees: list) -> list:
 
 
 def _resolve_org_labels(employees: list) -> list:
-    """Enrich employee records with department & team labels from masterdata."""
-    try:
-        departments = _db.load_table("md_departments")
-        teams = _db.load_table("md_teams")
-    except Exception:
+    """Enrich employee records with department & team labels from masterdata internal API."""
+    departments = _cached_masterdata("/api/internal/departments")
+    teams = _cached_masterdata("/api/internal/teams")
+    if not departments and not teams:
         return employees
-    dept_map = {}
-    for d in departments:
-        dept_map[d.get("department_id", "")] = d
-    team_map = {}
-    for t in teams:
-        team_map[t.get("team_id", "")] = t
+    dept_map = {d.get("department_id", ""): d for d in departments}
+    team_map = {t.get("team_id", ""): t for t in teams}
     for emp in employees:
         emp_data = emp.get("employment") or {}
-        # Resolve department
         did = emp_data.get("department_id", "")
         dept = dept_map.get(did, {})
         if dept:
             emp_data["department_code"] = dept.get("department_code", "")
             emp_data["department_name"] = dept.get("department_name_en", "") or dept.get("department_name_zh", "") or dept.get("department_name_ja", "")
-        # Resolve team
         tid = emp_data.get("team_id", "")
         team = team_map.get(tid, {})
         if team:
@@ -82,31 +106,17 @@ def _resolve_org_labels(employees: list) -> list:
 class EmployeeAdminHandler(BaseHTTPRequestHandler):
     server_version = "TACAIEmployeeAdmin/0.1"
 
-    _CORS_ORIGINS = {
-        "http://localhost:5173", "http://127.0.0.1:5173",
-        "http://localhost:4173", "http://127.0.0.1:4173",
-        "http://localhost:3000", "http://127.0.0.1:3000",
-    }
-
-    def add_cors(self) -> None:
-        origin = self.headers.get("Origin", "")
-        allowed = origin if origin in self._CORS_ORIGINS else "http://localhost:5173"
-        self.send_header("Access-Control-Allow-Origin", allowed)
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
-        self.send_header("Access-Control-Allow-Credentials", "true")
-
     def send_json(self, data: dict | list, status: int = 200) -> None:
         body = json.dumps(data, ensure_ascii=False, default=str).encode("utf-8")
         self.send_response(status)
-        self.add_cors()
+        add_cors_headers(self)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
 
     def send_error_json(self, message: str, status: int = 400) -> None:
-        self.send_json({"error": message}, status)
+        self.send_json({"success": False, "error": message}, status)
 
     def log_message(self, format: str, *args) -> None:  # noqa: A002
         return  # suppress default logging
@@ -118,7 +128,7 @@ class EmployeeAdminHandler(BaseHTTPRequestHandler):
         """Validate session and check permission. Returns user or sends 401/403."""
         user = self._current_user()
         if not user:
-            self.send_error_json("Unauthorized — invalid or expired session", 401)
+            self.send_error_json("Unauthorized", 401)
             return None
         if not has_permission(user, REQUIRED_PERMISSION) and not is_system_admin(user):
             self.send_error_json("Forbidden — insufficient permissions", 403)
@@ -128,9 +138,11 @@ class EmployeeAdminHandler(BaseHTTPRequestHandler):
     # ── API Routing ──
 
     def do_OPTIONS(self) -> None:  # noqa: N802
-        self.send_response(HTTPStatus.NO_CONTENT)
-        self.add_cors()
-        self.end_headers()
+        handle_preflight(self)
+
+    def _is_localhost(self) -> bool:
+        client = (self.client_address[0] if self.client_address else "")
+        return client in ("127.0.0.1", "::1", "localhost")
 
     def do_GET(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
@@ -140,6 +152,11 @@ class EmployeeAdminHandler(BaseHTTPRequestHandler):
         # Health check (no auth required)
         if path == "/health":
             self.send_json({"status": "ok", "module": MODULE_NAME})
+            return
+
+        # ── Internal API endpoints (no auth, localhost-only) ──
+        if self._is_localhost() and path.startswith("/api/internal/employees"):
+            self._handle_internal_employee_api(path, params)
             return
 
         # All employee routes require auth
@@ -159,6 +176,70 @@ class EmployeeAdminHandler(BaseHTTPRequestHandler):
             return
 
         self.send_error_json("Not Found", 404)
+
+    def _handle_internal_employee_api(self, path: str, params: dict) -> None:
+        """Handle internal API calls from other TACAI services (no auth).
+
+        Endpoints:
+          GET /api/internal/employees
+              ?employee_ids=ID1,ID2,...   — batch lookup (comma-separated)
+              ?employee_number=PREFIX     — search by employee number prefix
+              ?include_payroll=true       — include payroll JSONB sub-object
+              (no params)                 — return all employees
+
+          GET /api/internal/employees/{employee_id}
+              ?include_payroll=true       — include payroll JSONB sub-object
+        """
+        import re as _re
+
+        include_payroll = params.get("include_payroll", ["false"])[0].lower() == "true"
+
+        # GET /api/internal/employees?employee_ids=...&employee_number=...
+        if path == "/api/internal/employees":
+            ids_param = params.get("employee_ids", [""])[0]
+            enum = params.get("employee_number", [""])[0]
+            try:
+                rows = _db.load_table("emp_employees")
+            except Exception:
+                self.send_json({"success": False, "error": "Database unavailable"}, 500)
+                return
+
+            # Batch filter by IDs
+            if ids_param:
+                id_set = set(i.strip() for i in ids_param.split(",") if i.strip())
+                rows = [r for r in rows if str(r.get("employee_id", "")) in id_set]
+
+            # Filter by employee number prefix
+            if enum:
+                rows = [r for r in rows if str(r.get("employee_number", "")).startswith(enum)]
+
+            # Strip payroll field unless explicitly requested (reduces payload for most callers)
+            if not include_payroll:
+                for r in rows:
+                    r.pop("payroll", None)
+
+            self.send_json({"success": True, "employees": rows})
+            return
+
+        # GET /api/internal/employees/{employee_id}
+        m = _re.match(r"^/api/internal/employees/([A-Za-z0-9_-]+)$", path)
+        if m:
+            eid = m.group(1)
+            try:
+                rows = _db.load_table("emp_employees", where={"employee_id": eid})
+            except Exception:
+                self.send_json({"success": False, "error": "Database unavailable"}, 500)
+                return
+            if rows:
+                emp = rows[0]
+                if not include_payroll:
+                    emp.pop("payroll", None)
+                self.send_json({"success": True, "employee": emp})
+            else:
+                self.send_json({"success": False, "error": "Not found"}, 404)
+            return
+
+        self.send_json({"success": False, "error": "Internal endpoint not found"}, 404)
 
     def do_POST(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
@@ -525,7 +606,7 @@ def _get_entity_country(entity_id: str) -> str:
     global _entity_country_cache
     if _entity_country_cache is None:
         try:
-            entities = _db.load_table("md_entities")
+            entities = _cached_masterdata("/api/internal/entities/active")
             _entity_country_cache = {
                 e.get("entity_id", ""): (e.get("country") or "").upper()
                 for e in entities

@@ -43,7 +43,7 @@ onMounted(load)
       <el-table-column prop="active" :label="t('field.active')">
         <template #default="{ row }"><el-tag :type="row.active ? 'success' : 'info'" size="small">{{ row.active ? 'Active' : 'Inactive' }}</el-tag></template>
       </el-table-column>
-      <el-table-column :label="t('action.actions')" width="120">
+      <el-table-column :label="t('action.actions')" width="120" fixed="right">
         <template #default="{ row }"><el-button size="small" text @click="openDialog(row)">{{ t('action.edit') }}</el-button></template>
       </el-table-column>
     </el-table>

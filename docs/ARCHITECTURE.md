@@ -6,6 +6,10 @@
 > 当前端口、服务、路径以 [CLAUDE.md](../CLAUDE.md) 和 [DEVELOPMENT_STANDARDS.md](DEVELOPMENT_STANDARDS.md) 为准。
 >
 > **Shared Config:** [backend/shared/config.py](../backend/shared/config.py) — single source of truth for all port definitions.
+>
+> **📖 Specialized Docs:**
+> - [Session & Authentication Architecture](SESSION_AUTH_ARCHITECTURE.md) — auth flow, caching, circuit breaker, anti-patterns
+> - [Session Auth Root Cause Analysis](SESSION_AUTH_ROOT_CAUSE_ANALYSIS.md) — why the initial design had these flaws
 
 ---
 

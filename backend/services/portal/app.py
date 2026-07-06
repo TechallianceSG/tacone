@@ -29,6 +29,7 @@ try:
 except Exception:
     print("[portal] FATAL: db_utils is required. PostgreSQL must be available.", file=_sys.stderr)
     _sys.exit(1)
+from cors_middleware import add_cors_headers, handle_preflight
 
 BASE_DIR = Path(__file__).resolve().parents[0]
 DATABASE_DIR = BASE_DIR / "database"
@@ -309,13 +310,20 @@ def read_json(path: Path, default):
 
 
 def get_msg_center_unread_count(user_id: str) -> int:
-    """Read tacaimsg messages from PG and count unread messages for a user."""
+    """Count unread messages for a user via targeted DB query.
+
+    Uses parameterized WHERE clause to avoid loading all messages into memory.
+    TODO: Replace with GET /api/internal/messages/unread-count?user_id=...
+          once messaging service exposes an internal (no-auth) endpoint.
+    """
     try:
-        messages = _db.load_table(f"{MSG_PREFIX}_messages")
-        return sum(1 for m in messages
-                   if str(m.get("recipient_user_id", "")) == str(user_id)
-                   and m.get("status") == "unread")
+        rows = _db.load_table(
+            f"{MSG_PREFIX}_messages",
+            where={"recipient_user_id": str(user_id), "status": "unread"},
+        )
+        return len(rows)
     except Exception:
+        print("[tacai-portal] WARNING: Could not count unread messages", file=_sys.stderr)
         return 0
 
 
@@ -598,58 +606,6 @@ python3 backend/app.py --host 127.0.0.1 --port ${{AUTH_PORT:-3001}}</pre>
     return page_shell(translate(lang, "unavailable.title"), body, lang)
 
 
-def _resolve_user_roles_and_permissions(user_id: str) -> tuple[list[str], list[str]]:
-    """Resolve role_keys and permission_keys for a user from User_admin PG tables."""
-    role_keys: list[str] = []
-    permission_keys: list[str] = []
-
-    # Build role_id → role_key lookup
-    role_id_to_key: dict[str, str] = {}
-    try:
-        roles = _db.load_table(f"{UA_PREFIX}_roles")
-        for r in roles:
-            rid = str(r.get("role_id", "")).strip()
-            rkey = str(r.get("role_key", "")).strip()
-            if rid and rkey:
-                role_id_to_key[rid] = rkey
-    except Exception:
-        pass
-
-    # Read user-role mappings
-    try:
-        urm = _db.load_table(f"{UA_PREFIX}_user_role_mapping")
-        user_role_ids: set[str] = set()
-        for m in urm:
-            if str(m.get("user_id", "")) == user_id and m.get("active", True):
-                user_role_ids.add(str(m.get("role_id", "")).strip())
-        role_keys = [role_id_to_key[rid] for rid in user_role_ids if rid in role_id_to_key]
-    except Exception:
-        pass
-
-    # Read role-permission mappings and permission definitions
-    try:
-        rpm = _db.load_table(f"{UA_PREFIX}_role_permission_mapping")
-        permissions = _db.load_table(f"{UA_PREFIX}_permissions")
-        perm_id_to_key: dict[str, str] = {}
-        for p in permissions:
-            pid = str(p.get("permission_id", "")).strip()
-            pkey = str(p.get("permission_key", "")).strip()
-            if pid and pkey:
-                perm_id_to_key[pid] = pkey
-
-        # Get all permission_ids for the user's roles
-        user_role_ids = {rid for rid in role_id_to_key if role_id_to_key[rid] in role_keys}
-        for m in rpm:
-            if str(m.get("role_id", "")) in user_role_ids and m.get("active", True):
-                pkey = perm_id_to_key.get(str(m.get("permission_id", "")).strip(), "")
-                if pkey:
-                    permission_keys.append(pkey)
-    except Exception:
-        pass
-
-    return role_keys, permission_keys
-
-
 def validate_user_admin_session(session_id: str) -> dict | None:
     if not session_id:
         return None
@@ -669,22 +625,9 @@ def validate_user_admin_session(session_id: str) -> dict | None:
         user = data["user"]
         if isinstance(data.get("session"), dict):
             user["_session"] = data["session"]
-
-        # Enrich user with resolved roles and permissions from mapping files
-        # (User_admin may return empty roles/permissions on the user object itself,
-        #  because role assignments are stored in separate mapping tables.)
-        user_id = str(user.get("user_id", ""))
-        if user_id:
-            resolved_roles, resolved_perms = _resolve_user_roles_and_permissions(user_id)
-            if resolved_roles:
-                # Merge resolved roles with any existing ones
-                existing_roles = set(user.get("roles", []))
-                existing_roles.update(resolved_roles)
-                user["roles"] = list(existing_roles)
-            if resolved_perms:
-                existing_perms = set(user.get("permissions", []))
-                existing_perms.update(resolved_perms)
-                user["permissions"] = list(existing_perms)
+        # user_admin's user_context() already resolves roles and permissions
+        # via active_user_role_keys() and effective_permissions() — no need
+        # for portal to re-read ua_* tables from the database.
         return user
     return None
 
@@ -893,26 +836,10 @@ def _proxy_to_service(target_port: int, path: str, method: str = "GET",
 class PortalHandler(BaseHTTPRequestHandler):
     server_version = "TACAIPortal/0.1"
 
-    # === CORS support for Vue 3 SPA (Gateway pattern) ===
-    # Allow the Vite dev server (:5173) and Portal itself (:3000).
-    _CORS_ORIGINS = {
-        "http://localhost:5173", "http://127.0.0.1:5173",
-        "http://localhost:4173", "http://127.0.0.1:4173",
-        "http://localhost:3000", "http://127.0.0.1:3000",
-    }
-
-    def add_cors(self) -> None:
-        origin = self.headers.get("Origin", "")
-        allowed = origin if origin in self._CORS_ORIGINS else "http://localhost:5173"
-        self.send_header("Access-Control-Allow-Origin", allowed)
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
-        self.send_header("Access-Control-Allow-Credentials", "true")
+    # === CORS support via shared cors_middleware ===
 
     def do_OPTIONS(self) -> None:
-        self.send_response(HTTPStatus.NO_CONTENT)
-        self.add_cors()
-        self.end_headers()
+        handle_preflight(self)
 
     def csrf_origin_allowed(self) -> bool:
         source = self.headers.get("Origin") or self.headers.get("Referer")
@@ -956,7 +883,7 @@ class PortalHandler(BaseHTTPRequestHandler):
     def send_html(self, html_text: str, status: HTTPStatus = HTTPStatus.OK, lang: str = DEFAULT_LANGUAGE) -> None:
         payload = html_text.encode("utf-8")
         self.send_response(status)
-        self.add_cors()
+        add_cors_headers(self)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(payload)))
         self.send_header("Set-Cookie", f"{LANGUAGE_COOKIE}={normalize_lang(lang)}; SameSite=Lax; Path=/")
@@ -966,7 +893,7 @@ class PortalHandler(BaseHTTPRequestHandler):
     def send_json(self, data: dict, status: HTTPStatus = HTTPStatus.OK) -> None:
         payload = json.dumps(data, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
-        self.add_cors()
+        add_cors_headers(self)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(payload)))
         self.end_headers()
@@ -974,7 +901,7 @@ class PortalHandler(BaseHTTPRequestHandler):
 
     def redirect(self, location: str, lang: str = DEFAULT_LANGUAGE) -> None:
         self.send_response(HTTPStatus.SEE_OTHER)
-        self.add_cors()
+        add_cors_headers(self)
         self.send_header("Location", location)
         self.send_header("Set-Cookie", f"{LANGUAGE_COOKIE}={normalize_lang(lang)}; SameSite=Lax; Path=/")
         self.end_headers()
@@ -1025,7 +952,7 @@ class PortalHandler(BaseHTTPRequestHandler):
 
                 # Relay response
                 self.send_response(status)
-                self.add_cors()
+                add_cors_headers(self)
                 skip = {"connection", "keep-alive", "transfer-encoding",
                         "proxy-authenticate", "proxy-authorization", "te", "trailers"}
                 for key, val in resp_headers.items():
@@ -1177,6 +1104,13 @@ class PortalHandler(BaseHTTPRequestHandler):
 
         # ── All other POST requests → Vue 3 SPA (proxy to Vite dev) ──
         self._serve_or_proxy("POST")
+
+    def do_PUT(self) -> None:  # noqa: N802 - inherited API name
+        # ── API Gateway: forward to internal backend services ──
+        if self._proxy_gateway("PUT"):
+            return
+        # ── All other PUT requests → proxy to backend ──
+        self._serve_or_proxy("PUT")
 
     def do_DELETE(self) -> None:  # noqa: N802 - inherited API name
         # ── API Gateway: forward to internal backend services ──

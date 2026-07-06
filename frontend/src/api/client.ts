@@ -24,17 +24,50 @@ client.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   return config
 })
 
-// Response interceptor — handle auth failures
-// When a non-auth API call returns 401, the session has expired.
-// Dispatch a custom event so the router can handle navigation (SPA, no hard reload).
+// Response interceptor — handle auth failures with retry
+// When a non-auth API call returns 401, first try to re-validate the session.
+// Transient failures (user_admin restart, network glitch, session file I/O race)
+// are recovered silently. Only redirect to login if re-validation also fails.
+let _isRefreshing = false
+let _refreshPromise: Promise<boolean> | null = null
+
+async function _refreshSession(): Promise<boolean> {
+  try {
+    const resp = await client.get('/api/auth/session')
+    return resp.data?.valid === true
+  } catch {
+    return false
+  }
+}
+
 client.interceptors.response.use(
   (response) => response,
-  (error: AxiosError) => {
+  async (error: AxiosError) => {
     if (error.response?.status === 401) {
       const url = error.config?.url || ''
       const isAuthEndpoint = url.includes('/api/auth/')
-      // Only redirect on non-auth endpoints — auth endpoints return 401 for bad credentials
-      if (!isAuthEndpoint) {
+
+      if (!isAuthEndpoint && error.config) {
+        // Try to refresh the session before treating it as expired
+        if (!_isRefreshing) {
+          _isRefreshing = true
+          _refreshPromise = _refreshSession()
+        }
+
+        try {
+          const valid = await _refreshPromise
+          if (valid) {
+            // Session is still valid — retry the original request
+            return client(error.config)
+          }
+        } catch {
+          // Refresh itself failed — session is truly expired
+        } finally {
+          _isRefreshing = false
+          _refreshPromise = null
+        }
+
+        // Session truly expired — notify router
         window.dispatchEvent(new CustomEvent('tacai:session-expired'))
       }
     }

@@ -42,6 +42,7 @@ try:
 except Exception:
     print("[masterdata] FATAL: db_utils is required. PostgreSQL must be available.", file=_sys.stderr)
     _sys.exit(1)
+from cors_middleware import add_cors_headers, handle_preflight
 # ============================================
 
 ROOT_DIR = Path(__file__).resolve().parents[0]
@@ -2074,30 +2075,13 @@ class MasterDataHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(payload)
 
-    _CORS_ORIGINS = {
-        "http://localhost:5173", "http://127.0.0.1:5173",
-        "http://localhost:4173", "http://127.0.0.1:4173",
-        "http://localhost:3000", "http://127.0.0.1:3000",
-    }
-
-    def _add_cors(self) -> None:
-        origin = self.headers.get("Origin", "")
-        allowed = origin if origin in self._CORS_ORIGINS else "http://localhost:5173"
-        self.send_header("Access-Control-Allow-Origin", allowed)
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
-        self.send_header("Access-Control-Allow-Credentials", "true")
-        self.send_header("Access-Control-Max-Age", "86400")
-
     def do_OPTIONS(self) -> None:
-        self.send_response(204)
-        self._add_cors()
-        self.end_headers()
+        handle_preflight(self)
 
     def send_json(self, status: int, data: Any) -> None:
         payload = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
         self.send_response(status)
-        self._add_cors()
+        add_cors_headers(self)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(payload)))
         self.end_headers()
@@ -2207,6 +2191,47 @@ class MasterDataHandler(BaseHTTPRequestHandler):
 """
         self.send_html(404, t(messages, message_key), body, lang, messages, user)
 
+    def _is_localhost(self) -> bool:
+        """Check if the request comes from localhost (internal service call)."""
+        client = (self.client_address[0] if self.client_address else "")
+        return client in ("127.0.0.1", "::1", "localhost")
+
+    def _handle_internal_api(self, path: str, query: dict[str, list[str]]) -> None:
+        """Handle internal API calls from other TACAI services (no auth)."""
+        # ── GET /api/internal/entity/{entity_code}/active ──
+        # Lightweight check used by user_admin session validation.
+        if path.startswith("/api/internal/entity/") and path.endswith("/active"):
+            entity_code = path[len("/api/internal/entity/"):-len("/active")]
+            target = normalized_code(entity_code)
+            entity = None
+            for e in active_entities():
+                if normalized_code(e.get("entity_code", "")) == target:
+                    entity = e
+                    break
+            self.send_json(200, {"active": entity is not None, "entity": entity})
+            return
+
+        # ── GET /api/internal/entities/active ──
+        if path == "/api/internal/entities/active":
+            self.send_json(200, {"entities": active_entities()})
+            return
+
+        # ── GET /api/internal/departments?entity_id=... ──
+        if path == "/api/internal/departments":
+            eid = query.get("entity_id", [""])[0]
+            deps = load_departments()
+            if eid:
+                deps = [d for d in deps if str(d.get("entity_id", "")) == eid]
+            self.send_json(200, {"departments": deps})
+            return
+
+        # ── GET /api/internal/teams ──
+        if path == "/api/internal/teams":
+            self.send_json(200, {"teams": load_teams()})
+            return
+
+        self.send_json(404, {"error": "Internal endpoint not found"})
+
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
         query = parse_qs(parsed.query)
@@ -2225,6 +2250,13 @@ class MasterDataHandler(BaseHTTPRequestHandler):
 
         if path == "/api/master-data/system-parameters/outbound-email-onboarding":
             self.send_outbound_email_settings_api()
+            return
+
+        # ── Internal API endpoints (no auth, localhost-only) ──
+        # Used by other TACAI services to read master data without creating
+        # circular auth dependencies (masterdata → user_admin for session check).
+        if self._is_localhost() and path.startswith("/api/internal/"):
+            self._handle_internal_api(path, query)
             return
 
         user = self.require_user(lang, messages)

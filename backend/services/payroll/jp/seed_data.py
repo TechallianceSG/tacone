@@ -58,7 +58,7 @@ SOCIAL_INSURANCE = [
     ("health_insurance", "10", 4.725, 4.725, AF, "群馬 9.450%"),
     ("health_insurance", "11", 4.745, 4.745, AF, "埼玉 9.490%"),
     ("health_insurance", "12", 4.795, 4.795, AF, "千葉 9.590%"),
-    ("health_insurance", "13", 4.955, 4.955, AF, "東京 9.910%"),
+    ("health_insurance", "13", 4.925, 4.925, AF, "東京 9.850%"),
     ("health_insurance", "14", 5.065, 5.065, AF, "神奈川 10.130%"),
     ("health_insurance", "15", 4.505, 4.505, AF, "新潟 9.010%"),
     ("health_insurance", "16", 4.755, 4.755, AF, "富山 9.510%"),

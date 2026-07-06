@@ -802,7 +802,7 @@ created_at TIMESTAMPTZ,
 
 -- 14 cols, 168 rows, pk=user_id
 CREATE TABLE IF NOT EXISTS ua_user_sessions (
-session_id TEXT,
+session_id TEXT NOT NULL,
 user_id TEXT NOT NULL,
 login_time TIMESTAMPTZ,
 logout_time TIMESTAMPTZ,
@@ -816,10 +816,15 @@ entity_code TEXT,
 entity_name_en TEXT,
 entity_name_ja TEXT,
 entity_name_zh TEXT,
-    PRIMARY KEY (user_id)
+    PRIMARY KEY (session_id)
 );
+-- Indexes (created by database/migrations/003_fix_session_primary_key.sql):
+--   idx_ua_sessions_user_id ON (user_id)
+--   idx_ua_sessions_active ON (active)
+--   idx_ua_sessions_expires_at ON (expires_at)
+--   idx_ua_sessions_active_expires ON (active, expires_at)
 
--- 29 cols, 10 rows, pk=user_id
+-- 14 cols, pk=session_id
 CREATE TABLE IF NOT EXISTS ua_users (
 user_id TEXT NOT NULL,
 username TEXT,

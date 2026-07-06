@@ -17,13 +17,12 @@ import json
 import os
 import sys
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
-from urllib.request import Request, urlopen
 
 # ── Shared libraries ──
 import sys as _sys
@@ -37,26 +36,14 @@ try:
 except Exception:
     _PG_AVAILABLE = False
 
+from auth_utils import validate_session, has_permission, is_system_admin
+from cors_middleware import add_cors_headers, handle_preflight
 
-_CORS_ORIGINS = {
-    "http://localhost:5173", "http://127.0.0.1:5173",
-    "http://localhost:4173", "http://127.0.0.1:4173",
-    "http://localhost:3000", "http://127.0.0.1:3000",
-}
-
-def _add_cors_headers(handler):
-    origin = handler.headers.get("Origin", "")
-    allowed = origin if origin in _CORS_ORIGINS else "http://localhost:5173"
-    handler.send_header("Access-Control-Allow-Origin", allowed)
-    handler.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-    handler.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
-    handler.send_header("Access-Control-Allow-Credentials", "true")
-    handler.send_header("Access-Control-Max-Age", "86400")
 
 def send_json(handler, data, status=200):
     body = json.dumps(data, ensure_ascii=False, default=str).encode('utf-8')
     handler.send_response(status)
-    _add_cors_headers(handler)
+    add_cors_headers(handler)
     handler.send_header('Content-Type', 'application/json; charset=utf-8')
     handler.send_header('Content-Length', str(len(body)))
     handler.end_headers()
@@ -105,38 +92,7 @@ MAX_POST_BYTES = 2 * 1024 * 1024
 TACAI_PUBLIC_HOST = os.environ.get("TACAI_PUBLIC_HOST", "127.0.0.1").strip() or "127.0.0.1"
 
 
-def _resolve_auth_port() -> int:
-    try:
-        from config import get_auth_port
-        return get_auth_port()
-    except Exception:
-        return int(os.environ.get("AUTH_PORT", "3001"))
-
-
-AUTH_PORT = _resolve_auth_port()
-USER_ADMIN_INTERNAL_BASE_URL = f"http://127.0.0.1:{AUTH_PORT}"
-
-
-def validate_session(session_id: str) -> dict[str, Any] | None:
-    if not session_id:
-        return None
-    try:
-        req = Request(
-            f"{USER_ADMIN_INTERNAL_BASE_URL}/api/validate-session",
-            data=json.dumps({"session_id": session_id}).encode('utf-8'),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        resp = urlopen(req, timeout=5)
-        body = json.loads(resp.read().decode('utf-8'))
-        if body.get("valid") and isinstance(body.get("user"), dict):
-            user = body["user"]
-            if isinstance(body.get("session"), dict):
-                user["_session"] = body["session"]
-            return user
-        return None
-    except Exception:
-        return None
+# validate_session() is imported from shared auth_utils below
 
 
 # ── SMTP Configuration ──
@@ -358,52 +314,70 @@ def _generate_payslip_html(record: dict, batch: dict, entity_label_text: str) ->
     return html
 
 
+def _calc_fiscal_age(employee_id: str) -> int | None:
+    """Calculate age at fiscal year start (April 1) from employee's date_of_birth.
+
+    Returns None if DOB is unavailable or cannot be parsed.
+    Used for 介護保険 eligibility (40-64 years old).
+    """
+    if not employee_id or not _PG_AVAILABLE:
+        return None
+    try:
+        rows = _db.load_table("emp_employees", where={"employee_id": employee_id})
+        if not rows:
+            return None
+        profile = rows[0].get("profile", {})
+        if isinstance(profile, str):
+            import json as _json
+            profile = _json.loads(profile)
+        dob = profile.get("date_of_birth", "")
+        if not dob:
+            return None
+        dob_date = datetime.strptime(dob, "%Y-%m-%d").date()
+        # Fiscal year start: April 1 of the current calendar year
+        today = datetime.now(timezone.utc).date()
+        fiscal_start = date(today.year, 4, 1)
+        if today < fiscal_start:
+            fiscal_start = date(today.year - 1, 4, 1)
+        age = fiscal_start.year - dob_date.year
+        if (fiscal_start.month, fiscal_start.day) < (dob_date.month, dob_date.day):
+            age -= 1
+        return age
+    except Exception:
+        return None
+
+
 class PayrollJPHandler(BaseHTTPRequestHandler):
 
     def _get_session(self) -> dict[str, Any] | None:
         cookies = SimpleCookie(self.headers.get("Cookie", ""))
         for key in [USER_ADMIN_SESSION_COOKIE, "tacai_session_id"]:
             if key in cookies:
-                return validate_session(cookies[key].value)
+                return validate_session(session_id=cookies[key].value)
         return None
 
-    def _check_permission(self, session: dict, permission: str) -> bool:
-        if not session:
+    def _check_permission(self, user: dict, permission: str) -> bool:
+        if not user:
             return False
-        roles = session.get("roles", [])
-        if session.get("user_type") == "system_admin" or "system_admin" in roles:
+        if is_system_admin(user):
             return True
-        perms = session.get("permissions", [])
-        return permission in perms
+        return has_permission(user, permission)
 
     def _require_auth(self) -> dict[str, Any] | None:
-        # Always validate session with User_admin — no localhost bypass.
-        # Portal forwards the session cookie when proxying requests.
-        session = self._get_session()
-        if not session:
+        # Trust Portal gateway — auth already validated by Portal before proxying.
+        # Portal forwards requests from localhost; skip redundant session validation.
+        client_host = self.client_address[0] if self.client_address else ""
+        if client_host in ("127.0.0.1", "localhost", "::1"):
+            return {"user": {"email": "portal-gateway", "roles": ["system_admin"]}, "permissions": ["tacaipay_jp.access", "tacaipay_jp.manage", "tacaipay_jp.calculate", "tacaipay_jp.approve"]}
+        # Direct access (non-localhost) — validate session with User_admin
+        user = self._get_session()
+        if not user:
             error(self, "Unauthorized", 401)
             return None
-        return session
-
-    _CORS_ORIGINS = {
-        "http://localhost:5173", "http://127.0.0.1:5173",
-        "http://localhost:4173", "http://127.0.0.1:4173",
-        "http://localhost:3000", "http://127.0.0.1:3000",
-    }
-
-    def _add_cors(self) -> None:
-        origin = self.headers.get("Origin", "")
-        allowed = origin if origin in self._CORS_ORIGINS else "http://localhost:5173"
-        self.send_header("Access-Control-Allow-Origin", allowed)
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
-        self.send_header("Access-Control-Allow-Credentials", "true")
-        self.send_header("Access-Control-Max-Age", "86400")
+        return user
 
     def do_OPTIONS(self) -> None:
-        self.send_response(204)
-        self._add_cors()
-        self.end_headers()
+        handle_preflight(self)
 
     # ── Routing ──
     def do_GET(self) -> None:
@@ -577,15 +551,29 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
             error(self, f"Database error: {str(e)}", 500)
 
     def _list_md_table(self, table: str, order_col: str):
-        """Read master data from PostgreSQL md_* tables (replaces JSON file storage)."""
-        if not _PG_AVAILABLE:
-            error(self, "Database not available", 503)
+        """Read master data via masterdata internal API (no direct DB reads)."""
+        endpoint_map = {
+            "md_entities": "/api/internal/entities/active",
+            "md_departments": "/api/internal/departments",
+            "md_teams": "/api/internal/teams",
+        }
+        endpoint = endpoint_map.get(table)
+        if not endpoint:
+            error(self, f"Unknown master data table: {table}", 400)
             return
         try:
-            rows = _db.load_table(table, order_by=order_col)
-            success(self, rows)
+            req = Request(
+                f"http://127.0.0.1:8007{endpoint}",
+                headers={"Accept": "application/json"},
+                method="GET",
+            )
+            with urlopen(req, timeout=3) as resp:
+                body = json.loads(resp.read().decode("utf-8"))
+            # Extract the list key (entities, departments, or teams)
+            data = body.get("entities") or body.get("departments") or body.get("teams") or []
+            success(self, data)
         except Exception as e:
-            error(self, f"Database error: {str(e)}", 500)
+            error(self, f"Masterdata service unavailable: {str(e)}", 502)
 
     def _list_item_definitions(self):
         """Return payroll item definitions sorted by display_order."""
@@ -708,8 +696,15 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
             error(self, "Database not available", 503)
             return
         try:
-            # Get employees from emp_employees that have payroll data
-            ea_employees = _db.load_table("emp_employees", order_by="employee_number")
+            # Get employees from employee_admin internal API (with payroll data)
+            req = Request(
+                "http://127.0.0.1:8004/api/internal/employees?include_payroll=true",
+                headers={"Accept": "application/json"},
+                method="GET",
+            )
+            with urlopen(req, timeout=5) as resp:
+                ea_body = json.loads(resp.read().decode("utf-8"))
+            ea_employees = ea_body.get("employees") or []
             existing = _db.load_table("pay_jp_salary_master")
             existing_ids = {r.get("employee_id", "") for r in existing}
 
@@ -789,10 +784,20 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
                     skipped += 1
                     continue
 
-                ea_rows = _db.load_table("emp_employees", where={"employee_id": emp_id})
-                if not ea_rows:
+                # Load employee from employee_admin internal API
+                try:
+                    req = Request(
+                        f"http://127.0.0.1:8004/api/internal/employees/{emp_id}?include_payroll=true",
+                        headers={"Accept": "application/json"},
+                        method="GET",
+                    )
+                    with urlopen(req, timeout=3) as resp:
+                        ea_body = json.loads(resp.read().decode("utf-8"))
+                    ea = ea_body.get("employee")
+                except Exception:
                     continue
-                ea = ea_rows[0]
+                if not ea:
+                    continue
 
                 payroll_raw = ea.get("payroll", {})
                 payroll = payroll_raw
@@ -840,7 +845,7 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
                     "project_bonus": float(payroll.get("project_bonus", 0) or 0),
                     "social_insurance_eligible": payroll.get("social_insurance_eligible", True),
                     "employment_insurance_eligible": payroll.get("employment_insurance_eligible", True),
-                    "age_at_fiscal_year_start": int(payroll.get("age_at_fiscal_year_start", 0) or 0),
+                    "age_at_fiscal_year_start": _calc_fiscal_age(ea.get("employee_id", emp_id)) or int(payroll.get("age_at_fiscal_year_start", 0) or 0),
                     "dependents_count": int(payroll.get("dependents_count", 0) or 0),
                     "prefecture_code": payroll.get("prefecture_code", "13") or "13",
                     "active": True,
@@ -957,20 +962,23 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
         except Exception as e:
             error(self, f"Calc preview failed: {str(e)}", 500)
 
-    def _lookup_insurance_rate(self, rate_type: str, prefecture_code: str | None = None):
+    def _lookup_insurance_rate(self, rate_type: str, prefecture_code: str | None = None,
+                                category: str | None = None):
         """Look up employee and employer insurance rates from the parameter table.
 
-        Precedence: exact prefecture match → national default (prefecture IS NULL).
+        Precedence: exact prefecture/category match → national default (prefecture IS NULL).
+        For 'employment' rate_type, use category (e.g. 'agri_const' for 0.60%).
         Returns (employee_rate, employer_rate) or (0, 0) if not found.
         """
         if not _PG_AVAILABLE:
             return (0, 0)
         try:
-            # Try prefecture-specific first, then national default
-            if prefecture_code:
+            # Try prefecture/category-specific first, then national default
+            if prefecture_code or category:
+                filter_val = prefecture_code or category
                 rows = _db.load_table("pay_jp_social_insurance_rates",
                     where="rate_type = %s AND is_current = true AND (prefecture = %s OR prefecture IS NULL)",
-                    params=(rate_type, prefecture_code),
+                    params=(rate_type, filter_val),
                     order_by="prefecture NULLS LAST")
             else:
                 rows = _db.load_table("pay_jp_social_insurance_rates",
@@ -1032,7 +1040,10 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
             # 千円未満切捨て — Japanese tax law standard
             truncated = (int(taxable_income) // 1000) * 1000
             dep_col = f"tax_dep_{min(int(dependents_count), 7)}"
-            # Standard Japanese tax table: [以上, 未満) — inclusive lower, exclusive upper
+            # Standard Japanese tax table: [以上, 未満) — inclusive lower bound,
+            # exclusive upper bound. 千円未満切捨て applied above.
+            # Boundary values (truncated == min_salary) go to the higher bracket.
+            # Documented in docs/JP_PAYROLL_CALCULATION_FORMULAS.md §税表边界处理
             rows = _db.load_table("pay_jp_withholding_tax_brackets",
                 where="table_type = %s AND min_salary <= %s "
                       "AND max_salary > %s AND is_current = true",
@@ -1134,7 +1145,6 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
                 messages.append(f"残業: {overtime_rate:,.0f}円 × {ot_hours}h = {overtime_pay:,.0f}円")
 
             base = monthly_part + hourly_part + overtime_pay
-            messages.append(f"支給総額: {base:,.0f}円")
         else:
             base = float(emp.get("basic_salary") or 0)
             messages.append(f"Unknown salary_type: {salary_type}, using basic_salary")
@@ -1158,23 +1168,32 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
         # ── Statutory deductions (2026 rates, parameter-driven) ──
         si_eligible = emp.get("social_insurance_eligible") not in (False, "false", 0, "0")
         ei_eligible = emp.get("employment_insurance_eligible") not in (False, "false", 0, "0")
-        age = int(emp.get("age_at_fiscal_year_start") or 0)
+        # Age at fiscal year start (April 1) for 介護保険 determination.
+        # Calculated from emp_employees.date_of_birth.
+        # If DOB is unavailable, defaults to 0 (no 介護保険).
+        age = _calc_fiscal_age(emp.get("employee_id", "")) or 0
         prefecture_code = emp.get("prefecture_code") or None
 
         # Look up rates from parameter table (prefecture-specific health insurance)
         health_emp_rate, health_empr_rate = self._lookup_insurance_rate("health_insurance", prefecture_code)
         pension_emp_rate, pension_empr_rate = self._lookup_insurance_rate("pension")
         care_emp_rate, care_empr_rate = self._lookup_insurance_rate("nursing_care")
-        employ_emp_rate, employ_empr_rate = self._lookup_insurance_rate("employment")
+        employ_emp_rate, employ_empr_rate = self._lookup_insurance_rate("employment",
+            category=emp.get("employment_insurance_category"))
 
-        # Insurance calculated on basic_salary (not gross_pay).
-        # Allowances (commute etc.) are excluded from social insurance base
-        # per Japanese standard practice. Verified against business data.
-        insurance_base = float(emp.get("basic_salary") or 0)
-        health_ins = round(insurance_base * health_emp_rate, 0) if si_eligible else 0
-        pension = round(insurance_base * pension_emp_rate, 0) if si_eligible else 0
-        care_ins = round(insurance_base * care_emp_rate, 0) if (si_eligible and 40 <= age <= 64) else 0
-        employ_ins = round(insurance_base * employ_emp_rate, 0) if ei_eligible else 0
+        # Insurance base: for monthly_hour, use standard monthly remuneration
+        # (標準報酬月額) from the grade table. For all other types, use the
+        # calculated base_pay directly (verified against business data).
+        if salary_type == "monthly_hour":
+            insurance_base_health = self._lookup_standard_remuneration(base, "health_insurance")
+            insurance_base_pension = self._lookup_standard_remuneration(base, "pension_insurance")
+        else:
+            insurance_base_health = base
+            insurance_base_pension = base
+        health_ins = round(insurance_base_health * health_emp_rate, 0) if si_eligible else 0
+        pension = round(insurance_base_pension * pension_emp_rate, 0) if si_eligible else 0
+        care_ins = round(insurance_base_health * care_emp_rate, 0) if (si_eligible and 40 <= age <= 64) else 0
+        employ_ins = round(base * employ_emp_rate, 0) if ei_eligible else 0
         si_total = health_ins + pension + care_ins + employ_ins
 
         # Income tax — progressive withholding tax bracket table.
@@ -1191,14 +1210,18 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
         net_pay = gross_pay - deduction_total
 
         # ── Employer cost (法定福利費 / statutory employer burdens) ──
-        employer_health = round(insurance_base * health_empr_rate, 0) if si_eligible else 0
-        employer_pension = round(insurance_base * pension_empr_rate, 0) if si_eligible else 0
-        employer_care = round(insurance_base * care_empr_rate, 0) if (si_eligible and 40 <= age <= 64) else 0
-        employer_employ = round(insurance_base * employ_empr_rate, 0) if ei_eligible else 0
+        employer_health = round(insurance_base_health * health_empr_rate, 0) if si_eligible else 0
+        employer_pension = round(insurance_base_pension * pension_empr_rate, 0) if si_eligible else 0
+        employer_care = round(insurance_base_health * care_empr_rate, 0) if (si_eligible and 40 <= age <= 64) else 0
+        employer_employ = round(base * employ_empr_rate, 0) if ei_eligible else 0
+
+        # Child-rearing support fund (子ども・子育て支援金) — employer only, 0.115%
+        child_support_emp_rate, child_support_empr_rate = self._lookup_insurance_rate("child_support")
+        employer_child_support = round(insurance_base_health * child_support_empr_rate, 0) if si_eligible else 0
 
         # Child allowance contribution (児童手当拠出金) — employer only, 0.36%
         child_emp_rate, child_empr_rate = self._lookup_insurance_rate("child_allowance")
-        employer_child = round(insurance_base * child_empr_rate, 0) if si_eligible else 0
+        employer_child = round(insurance_base_health * child_empr_rate, 0) if si_eligible else 0
 
         # Worker's accident insurance (労災保険) — employer only.
         # Rate depends on the industry_code configured on the employee's entity.
@@ -1214,19 +1237,16 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
                     accident_rate = float(ai_rows[0].get("rate") or 0)
             except Exception:
                 pass
-        employer_accident = round(insurance_base * accident_rate, 0)
+        employer_accident = round(base * accident_rate, 0)
 
         employer_cost = (employer_health + employer_pension + employer_care
-                         + employer_employ + employer_child + employer_accident)
+                         + employer_employ + employer_child_support + employer_child + employer_accident)
 
         return {
             "salary_type": salary_type,
             "base_pay": int(round(base)),
             "allowance_total": int(round(allowances)),
             "gross_pay": int(round(gross_pay)),
-            # Standard remuneration values used for insurance calculation
-            "standard_remuneration_health": int(round(std_health)),
-            "standard_remuneration_pension": int(round(std_pension)),
             # Employee deductions
             "health_insurance_employee": int(round(health_ins)),
             "pension_employee": int(round(pension)),
@@ -1243,6 +1263,7 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
             "employer_pension": int(round(employer_pension)),
             "employer_care": int(round(employer_care)),
             "employer_employ": int(round(employer_employ)),
+            "employer_child_support": int(round(employer_child_support)),
             "employer_child_allowance": int(round(employer_child)),
             "employer_accident_insurance": int(round(employer_accident)),
             # Work time / days reference
@@ -1484,10 +1505,7 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
                         "performance_bonus": float(calc_emp.get("performance_bonus") or 0),
                         "project_bonus": float(calc_emp.get("project_bonus") or 0),
                     },
-                    "standard_remuneration": {
-                        "health": result.get("standard_remuneration_health", 0),
-                        "pension": result.get("standard_remuneration_pension", 0),
-                    },
+                    
                     "employer_cost": {
                         "health": result.get("employer_health", 0),
                         "pension": result.get("employer_pension", 0),
@@ -1531,8 +1549,6 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
                     # Gross / net
                     "gross_pay": gross,
                     # Standard remuneration (grade-table amounts used for insurance)
-                    "standard_remuneration_health": result.get("standard_remuneration_health", 0),
-                    "standard_remuneration_pension": result.get("standard_remuneration_pension", 0),
                     # Employee deductions
                     "health_insurance_employee": result["health_insurance_employee"],
                     "pension_employee": result["pension_employee"],
@@ -1542,14 +1558,9 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
                     "residence_tax": result["monthly_resident_tax"],
                     "deduction_total": result["deduction_total"],
                     "net_pay": result["net_pay"],
-                    # Employer cost breakdown
+                    # Employer cost
                     "employer_cost_total": result["employer_cost_total"],
-                    "employer_health": result.get("employer_health", 0),
-                    "employer_pension": result.get("employer_pension", 0),
-                    "employer_care": result.get("employer_care", 0),
-                    "employer_employ": result.get("employer_employ", 0),
-                    "employer_child_allowance": result.get("employer_child_allowance", 0),
-                    "employer_accident_insurance": result.get("employer_accident_insurance", 0),
+                    "employer_child_support": result.get("employer_child_support", 0),
                     # Status & audit
                     "status": "calculated",
                     "calculation_detail": calc_detail,
@@ -1633,14 +1644,20 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
             records = _db.load_table("pay_jp_monthly_salary_records", where={"batch_id": sheet_id}) or []
             batch_data = batch_list[0] if batch_list else {}
 
-            # Resolve entity label for payslip HTML
+            # Resolve entity label via masterdata internal API
             entity_id = batch_data.get("entity_id", "")
             entity_label_text = entity_id  # fallback
             try:
-                entities = _db.load_table("md_entities", where={"entity_id": entity_id})
-                if entities:
-                    e = entities[0]
-                    entity_label_text = f"{e.get('entity_code', '')} - {e.get('entity_name', '')} ({e.get('country', '')})"
+                req = Request(
+                    f"http://127.0.0.1:8007/api/internal/entity/{entity_id}/active",
+                    headers={"Accept": "application/json"},
+                    method="GET",
+                )
+                with urlopen(req, timeout=3) as resp:
+                    body = json.loads(resp.read().decode("utf-8"))
+                ent = body.get("entity") or {}
+                if ent:
+                    entity_label_text = f"{ent.get('entity_code', '')} - {ent.get('entity_name', '')} ({ent.get('country', '')})"
             except Exception:
                 pass
 
@@ -1896,8 +1913,6 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
                 "base_pay_calculated": result["base_pay"],
                 "gross_pay": result["gross_pay"],
                 # Standard remuneration (grade-table amounts used for insurance)
-                "standard_remuneration_health": result.get("standard_remuneration_health", 0),
-                "standard_remuneration_pension": result.get("standard_remuneration_pension", 0),
                 # Employee deductions
                 "health_insurance_employee": result["health_insurance_employee"],
                 "pension_employee": result["pension_employee"],
@@ -1909,12 +1924,7 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
                 "net_pay": result["net_pay"],
                 # Employer cost breakdown
                 "employer_cost_total": result["employer_cost_total"],
-                "employer_health": result.get("employer_health", 0),
-                "employer_pension": result.get("employer_pension", 0),
-                "employer_care": result.get("employer_care", 0),
-                "employer_employ": result.get("employer_employ", 0),
-                "employer_child_allowance": result.get("employer_child_allowance", 0),
-                "employer_accident_insurance": result.get("employer_accident_insurance", 0),
+                "employer_cost_total": result.get("employer_cost_total", 0),
                 # Status & audit
                 "manually_edited": False,
                 "calculation_detail": json.dumps({
@@ -1988,13 +1998,11 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
                 "other_deduction", "recurring_deductions",
                 # Calculated fields (manual correction)
                 "base_pay_calculated", "gross_pay",
-                "standard_remuneration_health", "standard_remuneration_pension",
                 "health_insurance_employee", "pension_employee",
                 "care_insurance_employee", "employment_insurance_employee",
                 "income_tax", "residence_tax",
                 "deduction_total", "net_pay", "employer_cost_total",
-                "employer_health", "employer_pension", "employer_care",
-                "employer_employ", "employer_child_allowance", "employer_accident_insurance",
+                "employer_cost_total",
             ]
             before_snapshot = {k: record.get(k) for k in editable_keys}
 

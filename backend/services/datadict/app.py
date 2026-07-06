@@ -14,7 +14,6 @@ import os
 import re
 import sys as _sys
 from datetime import datetime, timezone
-from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -25,6 +24,7 @@ if str(_shared_path) not in _sys.path:
     _sys.path.insert(0, str(_shared_path))
 import db_utils as _db
 from auth_utils import validate_session, has_permission, is_system_admin
+from cors_middleware import add_cors_headers, handle_preflight
 
 MODULE_NAME = "tacai-datadict"
 DEFAULT_PORT = 8005
@@ -36,31 +36,17 @@ REQUIRED_PERMISSION = "datadict.access"
 class DataDictHandler(BaseHTTPRequestHandler):
     server_version = "TACAIDataDict/0.2"
 
-    _CORS_ORIGINS = {
-        "http://localhost:5173", "http://127.0.0.1:5173",
-        "http://localhost:4173", "http://127.0.0.1:4173",
-        "http://localhost:3000", "http://127.0.0.1:3000",
-    }
-
-    def add_cors(self) -> None:
-        origin = self.headers.get("Origin", "")
-        allowed = origin if origin in self._CORS_ORIGINS else "http://localhost:5173"
-        self.send_header("Access-Control-Allow-Origin", allowed)
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
-        self.send_header("Access-Control-Allow-Credentials", "true")
-
     def send_json(self, data: dict | list, status: int = 200) -> None:
         body = json.dumps(data, ensure_ascii=False, default=str).encode("utf-8")
         self.send_response(status)
-        self.add_cors()
+        add_cors_headers(self)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
 
     def send_error_json(self, message: str, status: int = 400) -> None:
-        self.send_json({"error": message}, status)
+        self.send_json({"success": False, "error": message}, status)
 
     def log_message(self, format: str, *args) -> None:  # noqa: A002
         return  # suppress default logging
@@ -71,7 +57,7 @@ class DataDictHandler(BaseHTTPRequestHandler):
     def _require_user(self) -> dict | None:
         user = self._current_user()
         if not user:
-            self.send_error_json("Unauthorized — invalid or expired session", 401)
+            self.send_error_json("Unauthorized", 401)
             return None
         if not has_permission(user, REQUIRED_PERMISSION) and not is_system_admin(user):
             self.send_error_json("Forbidden — insufficient permissions", 403)
@@ -81,9 +67,7 @@ class DataDictHandler(BaseHTTPRequestHandler):
     # ── HTTP routing ──
 
     def do_OPTIONS(self) -> None:  # noqa: N802
-        self.send_response(HTTPStatus.NO_CONTENT)
-        self.add_cors()
-        self.end_headers()
+        handle_preflight(self)
 
     def do_GET(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)

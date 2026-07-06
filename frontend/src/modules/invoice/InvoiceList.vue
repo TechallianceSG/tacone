@@ -73,7 +73,7 @@ onMounted(load)
           <el-tag size="small" :type="(INVOICE_STATUS_CONFIG[row.status]?.type || 'warning') as any">{{ row.status }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column :label="t('action.actions')" width="260">
+      <el-table-column :label="t('action.actions')" width="260" fixed="right">
         <template #default="{ row }">
           <el-button size="small" text @click="viewDetail(row.invoice_id)">{{ t('action.detail') }}</el-button>
           <el-button v-if="row.status === 'draft'" size="small" text type="warning" @click="submitInvoice(row.invoice_id)">{{ t('invoice.submit') }}</el-button>

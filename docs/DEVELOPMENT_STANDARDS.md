@@ -446,17 +446,74 @@ inv_invoices          — Invoice 发票表
 | `updated_at` | TIMESTAMP DEFAULT NOW() | 更新时间 |
 | `deleted_at` | TIMESTAMP NULL | 软删除标记 |
 
-### 3.3 迁移文件
+### 3.3 Python ↔ PostgreSQL 类型映射
+
+`db_utils._serialize_for_db()` 使用 psycopg2 原生类型适配器，禁止无差别 `str()` 转换。
+
+**写路径（Python → PostgreSQL）：**
+
+| Python 类型 | PostgreSQL 列类型 | 适配方式 |
+|-------------|-------------------|---------|
+| `None` | NULLABLE 列 | 直接传递 |
+| `bool` | BOOLEAN | psycopg2 原生适配 |
+| `int` | INTEGER / BIGINT / SMALLINT | psycopg2 原生适配 |
+| `float` | DOUBLE PRECISION / REAL | psycopg2 原生适配 |
+| `Decimal` | NUMERIC / DECIMAL | psycopg2 原生适配（精度无损） |
+| `datetime` / `date` | TIMESTAMPTZ / DATE | psycopg2 原生适配 |
+| `str` | TEXT / VARCHAR | 直接传递 |
+| `dict` / `list` | JSONB | `json.dumps()` 后传递 |
+
+**读路径（PostgreSQL → Python）：**
+
+| PostgreSQL 列类型 | Python 类型 | 说明 |
+|-------------------|-------------|------|
+| INTEGER / BIGINT / SMALLINT | `int` | psycopg2 自动转换 |
+| NUMERIC / DECIMAL | `Decimal` | 精度无损 |
+| DOUBLE PRECISION / REAL | `float` | psycopg2 自动转换 |
+| BOOLEAN | `bool` | psycopg2 自动转换 |
+| TEXT / VARCHAR | `str` | psycopg2 自动转换 |
+| TIMESTAMPTZ / DATE | `datetime` / `date` | psycopg2 自动转换 |
+| JSONB | `dict` / `list` | `load_table()` 通过 `information_schema` 自动检测并 `json.loads()` |
+
+**禁止事项：**
+
+- ❌ 数字存为字符串（`"amount": "1000"` 而非 `1000`）
+- ❌ 布尔值存为字符串（`"active": "true"` 而非 `True`）
+- ❌ f-string 拼接 SQL（SQL 注入风险，使用 `where={...}` 参数化）
+- ❌ `SELECT *` 全表后 Python 遍历过滤（使用 `where={...}` 精准查询）
+- ❌ `load_table` 后对 JSONB 字段再次 `json.loads()`（`db_utils` 已自动解析）
+
+**Handler 层类型规范化（推荐模式）：**
+
+```python
+def _normalize_invoice(body: dict) -> dict:
+    """Normalize input types before passing to db_utils."""
+    return {
+        "invoice_no": str(body.get("invoice_no", "")),
+        "amount": float(body.get("amount", 0) or 0),
+        "tax_rate": float(body.get("tax_rate", 0) or 0),
+        "issue_date": body.get("issue_date", ""),  # ISO 8601 string or datetime
+        "is_void": bool(body.get("is_void", False)),
+        "items": body.get("items", []),            # list → JSONB
+        "metadata": body.get("metadata", {}),      # dict → JSONB
+    }
+```
+
+### 3.4 迁移文件
 
 迁移脚本放在 `database/migrations/`，按序号命名。每个迁移应包含该模块的**完整建表语句**（合并增量变更），避免冗余：
 
 ```
-001_payroll_jp_schema.sql      — 日本薪资全部表
-002_data_dictionary.sql        — 数据字典表 + 种子数据
+001_payroll_jp_schema.sql          — 日本薪资全部表
+002_data_dictionary.sql            — 数据字典表 + 种子数据
+003_data_dictionary_seed_extended.sql — 数据字典扩展种子
+004_fix_session_primary_key.sql    — Session 表主键修正 + 索引
+005_add_performance_indexes.sql    — 全局性能索引
 ```
 
 **规则：**
 - 新模块 = 新增一个迁移文件（下一个序号）
+- 迁移序号全局唯一，不可重复
 - 迁移文件是可重复执行的（使用 `CREATE TABLE IF NOT EXISTS` / `ON CONFLICT DO NOTHING`）
 - 不再保留增量 ALTER TABLE 迁移（如 007_xxx, 008_xxx），应合并到主建表脚本中
 - 迁移文件放在 `.gitignore` 中（`database/`），不作为源代码跟踪

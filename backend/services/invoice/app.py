@@ -22,7 +22,6 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
-from urllib.request import Request, urlopen
 
 # ── Shared libraries ──
 import sys as _sys
@@ -36,26 +35,14 @@ try:
 except Exception:
     _PG_AVAILABLE = False
 
+from auth_utils import validate_session, has_permission, is_system_admin
+from cors_middleware import add_cors_headers, handle_preflight
 
-_CORS_ORIGINS = {
-    "http://localhost:5173", "http://127.0.0.1:5173",
-    "http://localhost:4173", "http://127.0.0.1:4173",
-    "http://localhost:3000", "http://127.0.0.1:3000",
-}
-
-def _add_cors_headers(handler):
-    origin = handler.headers.get("Origin", "")
-    allowed = origin if origin in _CORS_ORIGINS else "http://localhost:5173"
-    handler.send_header("Access-Control-Allow-Origin", allowed)
-    handler.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-    handler.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
-    handler.send_header("Access-Control-Allow-Credentials", "true")
-    handler.send_header("Access-Control-Max-Age", "86400")
 
 def send_json(handler, data, status=200):
     body = json.dumps(data, ensure_ascii=False, default=str).encode('utf-8')
     handler.send_response(status)
-    _add_cors_headers(handler)
+    add_cors_headers(handler)
     handler.send_header('Content-Type', 'application/json; charset=utf-8')
     handler.send_header('Content-Length', str(len(body)))
     handler.end_headers()
@@ -102,35 +89,7 @@ MAX_POST_BYTES = 2 * 1024 * 1024
 TACAI_PUBLIC_HOST = os.environ.get("TACAI_PUBLIC_HOST", "127.0.0.1").strip() or "127.0.0.1"
 
 
-def _resolve_auth_port() -> int:
-    try:
-        from config import get_auth_port
-        return get_auth_port()
-    except Exception:
-        return int(os.environ.get("AUTH_PORT", "3001"))
-
-
-AUTH_PORT = _resolve_auth_port()
-USER_ADMIN_INTERNAL_BASE_URL = f"http://127.0.0.1:{AUTH_PORT}"
-
-
-def validate_session(session_id: str) -> dict[str, Any] | None:
-    if not session_id:
-        return None
-    try:
-        req = Request(
-            f"{USER_ADMIN_INTERNAL_BASE_URL}/api/validate-session",
-            data=json.dumps({"session_id": session_id}).encode('utf-8'),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        resp = urlopen(req, timeout=5)
-        body = json.loads(resp.read().decode('utf-8'))
-        if body.get("success") and body.get("data", {}).get("valid"):
-            return body["data"]
-        return None
-    except Exception:
-        return None
+# validate_session() is imported from shared auth_utils below
 
 
 def generate_invoice_number(prefix: str = "INV") -> str:
@@ -146,30 +105,25 @@ class InvoiceHandler(BaseHTTPRequestHandler):
         cookies = SimpleCookie(self.headers.get("Cookie", ""))
         for key in [USER_ADMIN_SESSION_COOKIE, "tacai_session_id"]:
             if key in cookies:
-                return validate_session(cookies[key].value)
+                return validate_session(session_id=cookies[key].value)
         return None
 
-    def _check_permission(self, session: dict, permission: str) -> bool:
-        if not session:
+    def _check_permission(self, user: dict, permission: str) -> bool:
+        if not user:
             return False
-        user = session.get("user", {})
-        roles = user.get("roles", [])
-        if user.get("user_type") == "system_admin" or "system_admin" in roles:
+        if is_system_admin(user):
             return True
-        perms = session.get("permissions", []) or user.get("permissions", [])
-        return permission in perms
+        return has_permission(user, permission)
 
     def _require_auth(self) -> dict[str, Any] | None:
-        session = self._get_session()
-        if not session:
+        user = self._get_session()
+        if not user:
             error(self, "Unauthorized", 401)
             return None
-        return session
+        return user
 
     def do_OPTIONS(self) -> None:
-        self.send_response(204)
-        _add_cors_headers(self)
-        self.end_headers()
+        handle_preflight(self)
 
     # ── Routing ──
     def do_GET(self) -> None:
@@ -314,7 +268,7 @@ class InvoiceHandler(BaseHTTPRequestHandler):
             project_id = body.get("project_id") or f"PRJ-{uuid.uuid4().hex[:12].upper()}"
             body["project_id"] = project_id
             existing = _db.load_table("inv_customer_projects", where={"project_id": project_id})
-            user_email = session.get("user", {}).get("email", "system")
+            user_email = session.get("email", "system")
 
             if existing:
                 body["updated_at"] = datetime.now(timezone.utc).isoformat()
@@ -435,7 +389,7 @@ class InvoiceHandler(BaseHTTPRequestHandler):
                 "cc_recipients": project.get("cc_recipients", "[]"),
                 "notes": pending.get("notes", ""),
                 "created_at": datetime.now(timezone.utc).isoformat(),
-                "created_by": session.get("user", {}).get("email", "system"),
+                "created_by": session.get("email", "system"),
                 "updated_at": datetime.now(timezone.utc).isoformat(),
             }
             _db.insert_record("inv_invoices", invoice)
@@ -460,7 +414,7 @@ class InvoiceHandler(BaseHTTPRequestHandler):
             _db.update_record("inv_pending_invoices", "pending_id", pending_id, {
                 "status": "reminded",
                 "reminder_sent_at": datetime.now(timezone.utc).isoformat(),
-                "reminder_sent_by": session.get("user", {}).get("email", "system"),
+                "reminder_sent_by": session.get("email", "system"),
                 "updated_at": datetime.now(timezone.utc).isoformat(),
             })
             # TODO: integrate with messaging service to send actual notification
@@ -529,7 +483,7 @@ class InvoiceHandler(BaseHTTPRequestHandler):
                 "cc_recipients": body.get("cc_recipients", "[]"),
                 "notes": body.get("notes", ""),
                 "created_at": datetime.now(timezone.utc).isoformat(),
-                "created_by": session.get("user", {}).get("email", "system"),
+                "created_by": session.get("email", "system"),
                 "updated_at": datetime.now(timezone.utc).isoformat(),
             }
             _db.insert_record("inv_invoices", invoice)
@@ -573,7 +527,7 @@ class InvoiceHandler(BaseHTTPRequestHandler):
                 return
 
             body["updated_at"] = datetime.now(timezone.utc).isoformat()
-            body["updated_by"] = session.get("user", {}).get("email", "system")
+            body["updated_by"] = session.get("email", "system")
             _db.update_record("inv_invoices", "invoice_id", invoice_id, body)
             success(self, {"invoice_id": invoice_id})
         except Exception as e:
@@ -591,7 +545,7 @@ class InvoiceHandler(BaseHTTPRequestHandler):
             _db.update_record("inv_invoices", "invoice_id", invoice_id, {
                 "status": "pending_approval",
                 "updated_at": datetime.now(timezone.utc).isoformat(),
-                "updated_by": session.get("user", {}).get("email", "system"),
+                "updated_by": session.get("email", "system"),
             })
 
             # Create approval record
@@ -599,7 +553,7 @@ class InvoiceHandler(BaseHTTPRequestHandler):
                 "approval_id": f"APR-{uuid.uuid4().hex[:12].upper()}",
                 "invoice_id": invoice_id,
                 "approver_user_id": "",
-                "approver_name": session.get("user", {}).get("email", "system"),
+                "approver_name": session.get("email", "system"),
                 "action": "submitted",
                 "comment": body.get("comment", ""),
                 "acted_at": datetime.now(timezone.utc).isoformat(),
@@ -627,8 +581,8 @@ class InvoiceHandler(BaseHTTPRequestHandler):
             _db.insert_record("inv_approval_records", {
                 "approval_id": f"APR-{uuid.uuid4().hex[:12].upper()}",
                 "invoice_id": invoice_id,
-                "approver_user_id": session.get("user", {}).get("user_id", ""),
-                "approver_name": session.get("user", {}).get("email", "system"),
+                "approver_user_id": session.get("user_id", ""),
+                "approver_name": session.get("email", "system"),
                 "action": "approved",
                 "comment": body.get("comment", ""),
                 "acted_at": datetime.now(timezone.utc).isoformat(),
@@ -653,8 +607,8 @@ class InvoiceHandler(BaseHTTPRequestHandler):
             _db.insert_record("inv_approval_records", {
                 "approval_id": f"APR-{uuid.uuid4().hex[:12].upper()}",
                 "invoice_id": invoice_id,
-                "approver_user_id": session.get("user", {}).get("user_id", ""),
-                "approver_name": session.get("user", {}).get("email", "system"),
+                "approver_user_id": session.get("user_id", ""),
+                "approver_name": session.get("email", "system"),
                 "action": "rejected",
                 "comment": body.get("comment", ""),
                 "acted_at": datetime.now(timezone.utc).isoformat(),
@@ -746,7 +700,7 @@ class InvoiceHandler(BaseHTTPRequestHandler):
                 "notes": body.get("notes", ""),
                 "status": "confirmed",
                 "created_at": datetime.now(timezone.utc).isoformat(),
-                "created_by": session.get("user", {}).get("email", "system"),
+                "created_by": session.get("email", "system"),
                 "updated_at": datetime.now(timezone.utc).isoformat(),
             }
             _db.insert_record("inv_payments", payment)

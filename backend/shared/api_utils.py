@@ -115,15 +115,25 @@ def server_error(handler, message: str = "Internal server error") -> None:
 
 # ── Request parsing helpers ───────────────────────────────────
 
-def parse_json_body(handler) -> dict | None:
-    """Parse JSON request body. Returns None on failure."""
+def parse_json_body(handler, max_bytes: int | None = None) -> dict | None:
+    """Parse JSON request body. Returns None on failure.
+
+    Args:
+        handler: The HTTP request handler instance.
+        max_bytes: Maximum allowed body size in bytes (default: 2MB).
+                   Set to 0 for no limit (import endpoints, etc.).
+    """
+    if max_bytes is None:
+        max_bytes = 2 * 1024 * 1024  # 2MB default
     try:
         content_length = int(handler.headers.get("Content-Length", "0"))
         if content_length == 0:
             return {}
+        if max_bytes > 0 and content_length > max_bytes:
+            return None  # Rejected — body too large
         raw = handler.rfile.read(content_length)
         return json.loads(raw)
-    except (json.JSONDecodeError, ValueError):
+    except (json.JSONDecodeError, ValueError, OSError):
         return None
 
 

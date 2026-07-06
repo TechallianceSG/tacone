@@ -236,18 +236,6 @@ const editFieldGroups = [
       { key: 'gross_pay', label: 'field.gross_pay', min: 0, precision: 0 },
       { key: 'deduction_total', label: 'field.deduction_total', min: 0, precision: 0 },
       { key: 'net_pay', label: 'field.net_pay', min: 0, precision: 0 },
-      { key: 'employer_cost_total', label: 'field.employer_cost_total', min: 0, precision: 0 },
-    ]
-  },
-  {
-    title: 'payroll.jp.section_employer_cost',
-    fields: [
-      { key: 'employer_health', label: 'field.employer_health', min: 0, precision: 0 },
-      { key: 'employer_pension', label: 'field.employer_pension', min: 0, precision: 0 },
-      { key: 'employer_care', label: 'field.employer_care', min: 0, precision: 0 },
-      { key: 'employer_employ', label: 'field.employer_employ', min: 0, precision: 0 },
-      { key: 'employer_child_allowance', label: 'field.employer_child_allowance', min: 0, precision: 0 },
-      { key: 'employer_accident_insurance', label: 'field.employer_accident_insurance', min: 0, precision: 0 },
     ]
   },
 ]
@@ -358,10 +346,13 @@ onMounted(load)
           <template #default="{row}">{{ row.absence_days || 0 }}</template>
         </el-table-column>
         <el-table-column :label="t('field.actual_work_days')" width="65" align="center">
-          <template #default="{row}">{{ row.actual_work_days || '-' }}</template>
+          <template #default="{row}">{{ row.salary_type === 'monthly_hour' ? '-' : (row.actual_work_days || '-') }}</template>
         </el-table-column>
-        <el-table-column :label="t('field.actual_work_hours')" width="65" align="center">
-          <template #default="{row}">{{ row.actual_work_hours || '-' }}</template>
+        <el-table-column :label="t('field.standard_work_hours')" width="70" align="center">
+          <template #default="{row}">{{ row.salary_type === 'monthly_hour' ? (row.standard_monthly_hours || '-') : '-' }}</template>
+        </el-table-column>
+        <el-table-column :label="t('field.actual_work_hours')" width="70" align="center">
+          <template #default="{row}">{{ row.salary_type === 'monthly_hour' ? (row.actual_work_hours || '-') : '-' }}</template>
         </el-table-column>
         <!-- Earnings -->
         <el-table-column :label="t('field.base_pay')" width="90" align="right">
@@ -374,11 +365,17 @@ onMounted(load)
           <template #default="{row}"><strong>{{ fmt(row.gross_pay) }}</strong></template>
         </el-table-column>
         <!-- Deductions -->
-        <el-table-column :label="t('field.health_insurance')" width="90" align="right">
-          <template #default="{row}">{{ fmt(row.health_insurance_employee) }}</template>
+        <el-table-column :label="t('field.health_insurance')" width="100" align="right">
+          <template #default="{row}">{{ fmt((Number(row.health_insurance_employee)||0) + (Number(row.care_insurance_employee)||0)) }}</template>
+        </el-table-column>
+        <el-table-column :label="t('field.child_support')" width="90" align="right">
+          <template #default="{row}">{{ fmt(row.employer_child_support) }}</template>
         </el-table-column>
         <el-table-column :label="t('field.pension')" width="90" align="right">
           <template #default="{row}">{{ fmt(row.pension_employee) }}</template>
+        </el-table-column>
+        <el-table-column :label="t('field.employment_insurance')" width="80" align="right">
+          <template #default="{row}">{{ fmt(row.employment_insurance_employee) }}</template>
         </el-table-column>
         <el-table-column :label="t('field.income_tax')" width="80" align="right">
           <template #default="{row}">{{ fmt(row.income_tax) }}</template>
@@ -394,9 +391,6 @@ onMounted(load)
           <template #default="{row}"><strong style="color:var(--el-color-primary)">{{ fmt(row.net_pay) }}</strong></template>
         </el-table-column>
         <!-- Employer Cost -->
-        <el-table-column :label="t('field.employer_cost_total')" width="110" align="right" fixed="right">
-          <template #default="{row}"><span style="color:var(--el-color-warning)">{{ fmt(row.employer_cost_total) }}</span></template>
-        </el-table-column>
         <!-- Actions -->
         <el-table-column :label="t('field.actions')" width="140" fixed="right" v-if="canEditRecords() || canRecalculateSingle()">
           <template #default="{row}">

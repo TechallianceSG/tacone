@@ -41,6 +41,7 @@ try:
     _PG_AVAILABLE = _db._is_available() if _db.DB_ENABLED else False
 except Exception:
     _PG_AVAILABLE = False
+from cors_middleware import add_cors_headers, handle_preflight
 # ============================================
 
 # ---------------------------------------------------------------------------
@@ -722,18 +723,51 @@ def validate_user_admin_session(session_id: str) -> dict[str, Any] | None:
 
 
 # ---------------------------------------------------------------------------
-# Cross-module read-only data access
+# Cross-module data access via internal APIs (no direct DB reads)
 # ---------------------------------------------------------------------------
 def read_users() -> list[dict[str, Any]]:
-    return _db.load_table(f"{UA_PREFIX}_users")
+    """Load users via user_admin internal API."""
+    try:
+        req = Request(
+            "http://127.0.0.1:3001/api/internal/users",
+            headers={"Accept": "application/json"},
+            method="GET",
+        )
+        with urlopen(req, timeout=3) as resp:
+            body = json.loads(resp.read().decode("utf-8"))
+        return body.get("users") or []
+    except Exception:
+        return []
 
 
 def read_entities() -> list[dict[str, Any]]:
-    return _db.load_table(f"{MD_PREFIX}_entities")
+    """Load entities via masterdata internal API."""
+    try:
+        req = Request(
+            "http://127.0.0.1:8007/api/internal/entities/active",
+            headers={"Accept": "application/json"},
+            method="GET",
+        )
+        with urlopen(req, timeout=3) as resp:
+            body = json.loads(resp.read().decode("utf-8"))
+        return body.get("entities") or []
+    except Exception:
+        return []
 
 
 def read_departments() -> list[dict[str, Any]]:
-    return _db.load_table(f"{MD_PREFIX}_departments")
+    """Load departments via masterdata internal API."""
+    try:
+        req = Request(
+            "http://127.0.0.1:8007/api/internal/departments",
+            headers={"Accept": "application/json"},
+            method="GET",
+        )
+        with urlopen(req, timeout=3) as resp:
+            body = json.loads(resp.read().decode("utf-8"))
+        return body.get("departments") or []
+    except Exception:
+        return []
 
 
 def resolve_user_name(user_id: str) -> str:
@@ -761,8 +795,18 @@ def find_users_by_role(role_key: str, entity_id: str = "") -> list[dict[str, Any
 
 
 def find_supervisor(user_id: str) -> dict[str, Any] | None:
-    """Find supervisor from employee master data."""
-    employees = _db.load_table(f"{EMP_PREFIX}_employees")
+    """Find supervisor from employee_admin internal API."""
+    try:
+        req = Request(
+            "http://127.0.0.1:8004/api/internal/employees",
+            headers={"Accept": "application/json"},
+            method="GET",
+        )
+        with urlopen(req, timeout=3) as resp:
+            body = json.loads(resp.read().decode("utf-8"))
+        employees = body.get("employees") or []
+    except Exception:
+        return None
     for emp in employees:
         linked = str(emp.get("linked_user_id") or emp.get("user_id") or "")
         if linked == user_id:
@@ -1712,30 +1756,13 @@ class TacaiMsgHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(payload)
 
-    _CORS_ORIGINS = {
-        "http://localhost:5173", "http://127.0.0.1:5173",
-        "http://localhost:4173", "http://127.0.0.1:4173",
-        "http://localhost:3000", "http://127.0.0.1:3000",
-    }
-
-    def _add_cors(self) -> None:
-        origin = self.headers.get("Origin", "")
-        allowed = origin if origin in self._CORS_ORIGINS else "http://localhost:5173"
-        self.send_header("Access-Control-Allow-Origin", allowed)
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
-        self.send_header("Access-Control-Allow-Credentials", "true")
-        self.send_header("Access-Control-Max-Age", "86400")
-
     def do_OPTIONS(self) -> None:
-        self.send_response(204)
-        self._add_cors()
-        self.end_headers()
+        handle_preflight(self)
 
     def _send_json(self, data: Any, status: int = 200) -> None:
         payload = json.dumps(data, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
-        self._add_cors()
+        add_cors_headers(self)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(len(payload)))

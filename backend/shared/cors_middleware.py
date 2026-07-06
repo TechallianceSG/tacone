@@ -45,7 +45,7 @@ if _TACAI_PUBLIC_HOST and _TACAI_PUBLIC_HOST not in {"127.0.0.1", "localhost"}:
 
 
 def add_cors_headers(handler) -> None:
-    """Add CORS headers to the current response.
+    """Add CORS and security headers to the current response.
     Call this AFTER send_response() but BEFORE end_headers().
     """
     origin = handler.headers.get("Origin", "")
@@ -58,6 +58,12 @@ def add_cors_headers(handler) -> None:
     handler.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
     handler.send_header("Access-Control-Allow-Credentials", "true")
     handler.send_header("Access-Control-Max-Age", "86400")
+
+    # ── Security headers (OWASP recommended baseline) ──
+    handler.send_header("X-Content-Type-Options", "nosniff")
+    handler.send_header("X-Frame-Options", "DENY")
+    handler.send_header("Referrer-Policy", "strict-origin-when-cross-origin")
+    handler.send_header("X-Permitted-Cross-Domain-Policies", "none")
 
 
 def handle_preflight(handler) -> None:

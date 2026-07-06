@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import os
 import sys as _sys
+import time as _time
 from http.cookies import SimpleCookie
 from pathlib import Path
 from typing import Any
@@ -44,6 +45,124 @@ VALIDATE_SESSION_URL = f"{USER_ADMIN_INTERNAL_BASE_URL}/api/validate-session"
 CHECK_PERMISSION_URL = f"{USER_ADMIN_INTERNAL_BASE_URL}/api/check-permission"
 REQUEST_TIMEOUT = 5  # seconds — internal service calls should be fast
 
+# Session cache TTL (seconds) — avoids redundant user_admin round-trips
+SESSION_CACHE_TTL = int(os.environ.get("SESSION_CACHE_TTL", "30"))
+
+# Circuit breaker: after N consecutive failures, short-circuit for M seconds
+CIRCUIT_BREAKER_THRESHOLD = int(os.environ.get("AUTH_CB_THRESHOLD", "5"))
+CIRCUIT_BREAKER_TIMEOUT = int(os.environ.get("AUTH_CB_TIMEOUT", "15"))
+
+
+# ── Circuit breaker ──────────────────────────────────────────────────────
+
+class _CircuitBreaker:
+    """Simple circuit breaker: after threshold consecutive failures, open for timeout seconds.
+
+    When open, validate_session() uses cached entries (even slightly stale ones)
+    rather than failing all requests with 401.
+    """
+
+    def __init__(self, threshold: int = 5, timeout: int = 15):
+        self._threshold = threshold
+        self._timeout = timeout
+        self._failures = 0
+        self._last_failure_time = 0.0
+        self._lock = None
+
+    def _ensure_lock(self):
+        if self._lock is None:
+            import threading as _thr
+            self._lock = _thr.Lock()
+
+    @property
+    def is_open(self) -> bool:
+        self._ensure_lock()
+        with self._lock:
+            if self._failures < self._threshold:
+                return False
+            if _time.monotonic() - self._last_failure_time > self._timeout:
+                # Half-open: allow one probe request
+                self._failures = self._threshold - 1
+                return False
+            return True
+
+    def record_success(self) -> None:
+        self._ensure_lock()
+        with self._lock:
+            self._failures = 0
+
+    def record_failure(self) -> None:
+        self._ensure_lock()
+        with self._lock:
+            self._failures += 1
+            self._last_failure_time = _time.monotonic()
+
+
+_circuit_breaker = _CircuitBreaker(
+    threshold=CIRCUIT_BREAKER_THRESHOLD,
+    timeout=CIRCUIT_BREAKER_TIMEOUT,
+)
+
+
+# ── In-memory session cache ───────────────────────────────────────────────
+
+class _SessionCache:
+    """Thread-safe TTL cache for validated session user dicts.
+
+    Reduces user_admin load by caching validation results for a short TTL.
+    A dashboard loading 5 widgets with the same session cookie makes 1 HTTP
+    call to user_admin instead of 5.
+    """
+
+    def __init__(self, ttl: int = 30):
+        self._ttl = ttl
+        self._store: dict[str, tuple[float, dict[str, Any]]] = {}
+        self._lock = None  # lazy init for fork-safety
+
+    def _ensure_lock(self):
+        if self._lock is None:
+            import threading as _thr
+            self._lock = _thr.Lock()
+
+    def get(self, session_id: str) -> dict[str, Any] | None:
+        self._ensure_lock()
+        with self._lock:
+            entry = self._store.get(session_id)
+            if entry is None:
+                return None
+            ts, user = entry
+            if _time.monotonic() - ts > self._ttl:
+                del self._store[session_id]
+                return None
+            return dict(user)  # shallow copy for caller safety
+
+    def set(self, session_id: str, user: dict[str, Any]) -> None:
+        self._ensure_lock()
+        with self._lock:
+            self._store[session_id] = (_time.monotonic(), dict(user))
+            # Prune expired entries when cache grows beyond threshold
+            if len(self._store) > 500:
+                self._prune()
+
+    def invalidate(self, session_id: str) -> None:
+        self._ensure_lock()
+        with self._lock:
+            self._store.pop(session_id, None)
+
+    def _prune(self) -> None:
+        now = _time.monotonic()
+        expired = [k for k, (ts, _) in self._store.items() if now - ts > self._ttl]
+        for k in expired:
+            del self._store[k]
+
+
+_cache = _SessionCache(ttl=SESSION_CACHE_TTL)
+
+
+def invalidate_session_cache(session_id: str) -> None:
+    """Invalidate a cached session (call on logout / admin session kill)."""
+    _cache.invalidate(session_id)
+
 
 # ── Public API ──────────────────────────────────────────────────────────────
 
@@ -52,11 +171,14 @@ def validate_session(
     *,
     session_id: str | None = None,
 ) -> dict[str, Any] | None:
-    """Validate a session against user_admin.
+    """Validate a session against user_admin, with in-memory caching.
 
     Accepts either a raw Cookie header string OR an explicit session_id.
     Returns the ``user`` dict (with roles & permissions already resolved) on
     success, or ``None`` if the session is invalid / expired / missing.
+
+    Cached for SESSION_CACHE_TTL seconds (default 30) to avoid redundant
+    HTTP round-trips to user_admin for burst requests from the same session.
 
     The returned dict includes these keys added by user_admin:
       - user_id, username, email, display_name, user_type
@@ -69,6 +191,18 @@ def validate_session(
     if not sid:
         return None
 
+    # ── Check cache first (always) ──
+    cached = _cache.get(sid)
+    if cached is not None:
+        return cached
+
+    # ── Circuit breaker: if user_admin is down, don't pile on ──
+    if _circuit_breaker.is_open:
+        # Circuit open — user_admin is unhealthy. Cache miss = authentication
+        # fails gracefully (single 401) rather than timeout-storming every request.
+        return None
+
+    # ── Cache miss + circuit closed → call user_admin ──
     try:
         req = Request(
             VALIDATE_SESSION_URL,
@@ -79,7 +213,10 @@ def validate_session(
         with urlopen(req, timeout=REQUEST_TIMEOUT) as resp:
             data = json.loads(resp.read().decode("utf-8"))
     except (OSError, URLError, json.JSONDecodeError, ValueError):
-        return None
+        _circuit_breaker.record_failure()
+        # Fallback: return stale cache entry if available (extend grace window)
+        stale = _cache.get(sid)  # may have been pruned already
+        return stale
 
     # ══════════════════════════════════════════════════════════════════════
     # Standard response format (from user_admin handle_api_validate_session):
@@ -95,7 +232,13 @@ def validate_session(
         # Attach session metadata for services that need it
         if isinstance(data.get("session"), dict):
             user["_session"] = data["session"]
+        # ── Store in cache + record success ──
+        _cache.set(sid, user)
+        _circuit_breaker.record_success()
         return user
+
+    # Session explicitly invalid (expired, logged out, etc.) — not a failure
+    _circuit_breaker.record_success()
     return None
 
 
