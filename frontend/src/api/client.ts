@@ -203,6 +203,14 @@ export const payrollJpApi = {
   getBatchAuditLogs: (batchId: string) => client.get(`/api/payroll/jp/batches/${batchId}/audit-logs`),
   auditLogs: (params?: Record<string, any>) => client.get('/api/payroll/jp/audit-logs', { params }),
   getSmtpStatus: () => client.get('/api/payroll/jp/smtp-status'),
+  // Email Settings
+  emailSettings: (params?: Record<string, any>) => client.get('/api/payroll/jp/email-settings', { params }),
+  saveEmailSettings: (data: Record<string, any>) => client.post('/api/payroll/jp/email-settings', data),
+  testEmailSettings: (data: Record<string, any>) => client.post('/api/payroll/jp/email-settings/test', data),
+  previewEmailTemplate: (data: Record<string, any>) => client.post('/api/payroll/jp/email-settings/preview', data),
+  // Batch Send (standalone, for payslip list page)
+  sendPayslipsSelected: (data: { record_ids: string[] }) => client.post('/api/payroll/jp/payslips/send-selected', data),
+  sendPayslipsAll: (data: Record<string, any>) => client.post('/api/payroll/jp/payslips/send-all', data),
 }
 
 // ── Data Dictionary API (2-level: categories + entries) ──

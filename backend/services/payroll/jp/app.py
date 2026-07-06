@@ -72,6 +72,86 @@ MAX_POST_BYTES = 2 * 1024 * 1024
 
 TACAI_PUBLIC_HOST = os.environ.get("TACAI_PUBLIC_HOST", "127.0.0.1").strip() or "127.0.0.1"
 
+# ── Display constants (labels are bilingual JP/EN; i18n keys are preferred for frontend) ──
+DEFAULT_PAYSLIP_SUBJECT = "給与明細 / Payslip — {payroll_month} — {employee_name}"
+
+SALARY_TYPE_LABELS = {
+    "monthly": "月給 / Monthly",
+    "hourly": "時給 / Hourly",
+    "daily": "日給 / Daily",
+    "monthly_fixed_ot": "月給＋固定残業 / Monthly + Fixed OT",
+    "monthly_hour": "月給時給ハイブリッド / Monthly-Hour Hybrid",
+}
+
+# Record field → item definition code mapping (future: add record_field column to item_definitions)
+FIELD_TO_CODE = {
+    "base_pay_calculated":        "base_pay",
+    "hourly_pay_calculated":      "hourly_pay",
+    "daily_pay_calculated":       "daily_pay",
+    "overtime_pay_calc":          "overtime",
+    "commute_allowance":          "transportation",
+    "housing_allowance":          "housing_allowance",
+    "family_allowance":           "family_allowance",
+    "position_allowance":         "position_allowance",
+    "fixed_allowance":            "fixed_allowance",
+    "transport_allowance":        "transport_allowance",
+    "phone_allowance":            "phone_allowance",
+    "performance_bonus":          "bonus",
+    "project_bonus":              "bonus",
+    "health_insurance_employee":  "health_insurance",
+    "pension_employee":           "pension",
+    "care_insurance_employee":    "care_insurance",
+    "employment_insurance_employee": "employment_insurance",
+    "income_tax":                 "income_tax",
+    "monthly_resident_tax":       "resident_tax",
+    "residence_tax":              "resident_tax",
+    "recurring_deductions":       "recurring_deductions",
+    "absence_days":               "absence",
+    "employer_health":            "health_insurance",
+    "employer_pension":           "pension",
+    "employer_care":              "care_insurance",
+    "employer_employ":            "employment_insurance",
+    "employer_child_allowance":   "employer_child_allowance",
+    "employer_child_support":     "employer_child_support",
+    "employer_accident_insurance":"employer_accident_insurance",
+}
+
+# Payslip item display definitions: (record_field, fallback_label_jp_en)
+PAYSLIP_EARNING_KEYS = [
+    ("base_pay_calculated", "基本給 / Base Pay"),
+    ("overtime_pay_calc", "時間外手当 / Overtime"),
+    ("commute_allowance", "通勤手当 / Commute Allowance"),
+    ("housing_allowance", "住宅手当 / Housing Allowance"),
+    ("family_allowance", "家族手当 / Family Allowance"),
+    ("position_allowance", "役職手当 / Position Allowance"),
+    ("fixed_allowance", "固定手当 / Fixed Allowance"),
+    ("transport_allowance", "交通費 / Transport"),
+    ("phone_allowance", "電話手当 / Phone Allowance"),
+    ("performance_bonus", "業績賞与 / Performance Bonus"),
+    ("project_bonus", "PJ賞与 / Project Bonus"),
+]
+
+PAYSLIP_DEDUCTION_KEYS = [
+    ("health_insurance_employee", "健康保険 / Health Insurance"),
+    ("pension_employee", "厚生年金 / Pension"),
+    ("care_insurance_employee", "介護保険 / Nursing Care"),
+    ("employment_insurance_employee", "雇用保険 / Employment Insurance"),
+    ("income_tax", "所得税 / Income Tax"),
+    ("monthly_resident_tax", "住民税 / Resident Tax"),
+    ("recurring_deductions", "その他控除 / Other Deductions"),
+    ("absence_days", "欠勤控除 / Absence Deduction"),
+]
+
+PAYSLIP_EMPLOYER_KEYS = [
+    ("employer_health", "健康保険 / Health Insurance (Employer)"),
+    ("employer_pension", "厚生年金 / Pension (Employer)"),
+    ("employer_care", "介護保険 / Nursing Care (Employer)"),
+    ("employer_employ", "雇用保険 / Employment Insurance (Employer)"),
+    ("employer_child_allowance", "児童手当拠出金 / Child Allowance Contribution"),
+    ("employer_child_support", "子育て拠出金 / Child Support"),
+    ("employer_accident_insurance", "労災保険 / Accident Insurance"),
+]
+
 
 # validate_session() is imported from shared auth_utils below
 
@@ -91,27 +171,80 @@ def is_smtp_configured() -> bool:
     return bool(SMTP_HOST and SMTP_PORT and SMTP_USER and SMTP_PASSWORD and SMTP_FROM)
 
 
-def _send_email(to_email: str, subject: str, html_body: str, attachments: list | None = None) -> tuple[bool, str]:
+def _send_email(to_email: str, subject: str, html_body: str, attachments: list | None = None,
+                 cc_emails: list | None = None, from_override: tuple | None = None,
+                 smtp_override: dict | None = None) -> tuple[bool, str]:
     """Send email via SMTP. Returns (success, error_message).
 
     Uses smtplib + email.mime from Python standard library.
-    If SMTP is not configured, returns (False, 'SMTP not configured').
+    If SMTP is not configured and no smtp_override is provided,
+    returns (False, 'SMTP not configured').
+
+    Args:
+        to_email: Primary recipient
+        subject: Email subject line
+        html_body: HTML body content
+        attachments: Optional list of dicts with 'content' (bytes) and 'filename' (str)
+        cc_emails: Optional list of CC recipient email addresses
+        from_override: Optional (from_name, from_email) tuple to override SMTP_FROM defaults
+        smtp_override: Optional dict with host/port/user/password/use_tls to override env vars
     """
-    if not is_smtp_configured():
-        return (False, "SMTP not configured")
+    # Resolve SMTP connection settings
+    if smtp_override and smtp_override.get("host"):
+        host = smtp_override["host"]
+        port = int(smtp_override.get("port", 587))
+        user = smtp_override.get("user", "")
+        password = smtp_override.get("password", "")
+        use_tls = smtp_override.get("use_tls", True)
+        from_email_addr = smtp_override.get("from_email", user) or user
+        from_name_val = smtp_override.get("from_name", "") or from_email_addr
+    else:
+        if not is_smtp_configured():
+            return (False, "SMTP not configured")
+        host = SMTP_HOST
+        port = SMTP_PORT
+        user = SMTP_USER
+        password = SMTP_PASSWORD
+        use_tls = SMTP_USE_TLS
+        from_email_addr = SMTP_FROM
+        from_name_val = SMTP_FROM_NAME
 
     import smtplib
+    from email.header import Header
     from email.mime.multipart import MIMEMultipart
     from email.mime.text import MIMEText
     from email.mime.base import MIMEBase
     from email import encoders
 
+    # Sanitize inputs — replace non-breaking spaces (common copy-paste artifact)
+    def _sanitize(s: str) -> str:
+        return s.replace('\xa0', ' ').replace(' ', ' ') if s else s
+
+    user = _sanitize(user)
+    password = _sanitize(password)
+    to_email = _sanitize(to_email)
+
+    # Resolve sender (from_override takes highest priority)
+    if from_override:
+        from_name, from_email = from_override
+    elif smtp_override and smtp_override.get("host"):
+        from_name, from_email = from_name_val, from_email_addr
+    else:
+        from_name, from_email = from_name_val, from_email_addr
+
     try:
         msg = MIMEMultipart("mixed")
-        msg["Subject"] = subject
-        msg["From"] = f"{SMTP_FROM_NAME} <{SMTP_FROM}>"
+        # Encode non-ASCII headers (e.g. Japanese subject, sender name)
+        msg["Subject"] = Header(subject, "utf-8")
+        msg["From"] = Header(f"{from_name} <{from_email}>", "utf-8")
         msg["To"] = to_email
-        msg["Date"] = datetime.now().strftime("%a, %d %b %Y %H:%M:%S +0900")
+        msg["Date"] = Header(datetime.now().strftime("%a, %d %b %Y %H:%M:%S +0900"), "utf-8")
+
+        # CC recipients
+        all_recipients = [to_email]
+        if cc_emails:
+            msg["Cc"] = ", ".join(cc_emails)
+            all_recipients.extend(cc_emails)
 
         # Attach HTML body
         html_part = MIMEText(html_body, "html", "utf-8")
@@ -127,14 +260,14 @@ def _send_email(to_email: str, subject: str, html_body: str, attachments: list |
                 msg.attach(part)
 
         # Connect and send
-        if SMTP_USE_TLS:
-            server = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15)
+        if use_tls:
+            server = smtplib.SMTP(host, port, timeout=15)
             server.starttls()
         else:
-            server = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15)
+            server = smtplib.SMTP(host, port, timeout=15)
 
-        server.login(SMTP_USER, SMTP_PASSWORD)
-        server.sendmail(SMTP_FROM, [to_email], msg.as_string())
+        server.login(user, password)
+        server.sendmail(from_email, all_recipients, msg.as_string())
         server.quit()
 
         return (True, "")
@@ -167,54 +300,251 @@ def _write_audit_log(handler, action: str, table_name: str, record_id: str,
         print(f"[{MODULE_NAME}] Audit log write failed: {e}", file=_sys.stderr)
 
 
-def _generate_payslip_html(record: dict, batch: dict, entity_label_text: str) -> str:
+# ── Email Settings Helpers ──
+
+def _load_email_settings(country_code: str = "JP") -> dict:
+    """Load email settings for a country. Returns empty dict if not configured."""
+    if not _PG_AVAILABLE:
+        return {}
+    try:
+        rows = _db.load_table("pay_jp_email_settings", where={"country_code": country_code})
+        return rows[0] if rows else {}
+    except Exception:
+        return {}
+
+
+def _resolve_email_subject(settings: dict, payslip: dict, default_subject: str) -> str:
+    """Resolve email subject from template settings or use the default."""
+    template = (settings.get("email_subject_template") or "").strip()
+    if not template or "{{default_subject}}" in template:
+        return default_subject
+    subject = template
+    subject = subject.replace("{{employee_name}}", str(payslip.get("employee_name", "")))
+    subject = subject.replace("{{payroll_month}}", str(payslip.get("payroll_month", "")))
+    subject = subject.replace("{{entity_name}}", str(payslip.get("entity_label", payslip.get("entity_id", ""))))
+    return subject
+
+
+def _resolve_email_body(settings: dict, payslip_html: str) -> str:
+    """Wrap payslip HTML in the custom body template if configured.
+
+    If the template contains {{payslip_html}}, the payslip is inserted there.
+    Otherwise, the payslip HTML is appended after the template.
+    """
+    template = (settings.get("email_body_template") or "").strip()
+    if not template:
+        return payslip_html
+    if "{{payslip_html}}" in template:
+        return template.replace("{{payslip_html}}", payslip_html)
+    # Template without placeholder — append payslip at the end
+    return template + "\n" + payslip_html
+
+
+def _resolve_email_sender(settings: dict) -> tuple | None:
+    """Resolve sender override from settings. Returns None if not configured."""
+    sender_name = (settings.get("sender_name") or "").strip()
+    sender_email = (settings.get("sender_email") or "").strip()
+    if sender_email:
+        return (sender_name or SMTP_FROM_NAME, sender_email)
+    return None
+
+
+def _resolve_email_cc(settings: dict) -> list[str]:
+    """Resolve CC list from settings. Returns empty list if not configured."""
+    cc = settings.get("cc_recipients") or []
+    if isinstance(cc, str):
+        try:
+            cc = json.loads(cc)
+        except Exception:
+            cc = []
+    return [e.strip() for e in cc if isinstance(e, str) and e.strip()]
+
+
+def _resolve_email_smtp(settings: dict) -> dict | None:
+    """Resolve SMTP override from settings. Returns None if not configured."""
+    host = (settings.get("smtp_host") or "").strip()
+    if not host:
+        return None
+    return {
+        "host": host,
+        "port": settings.get("smtp_port", 587),
+        "user": (settings.get("smtp_user") or "").strip(),
+        "password": (settings.get("smtp_password") or "").strip(),
+        "use_tls": settings.get("smtp_use_tls", True),
+    }
+
+
+def _generate_sample_payslip(entity_label_text: str = "",
+                             visibility_overrides: dict | None = None) -> tuple[str, str, str, str]:
+    """Generate a sample payslip HTML using _generate_payslip_html() so the preview
+    matches real payslips exactly (respecting current visibility settings).
+
+    Args:
+        entity_label_text: Entity label for the header
+        visibility_overrides: Optional {item_code: bool} for real-time preview
+    """
+    emp_name = "山田 太郎"
+    payroll_month = "2026-07"
+    entity_name = entity_label_text or "TAKK - Tech Alliance株式会社 (Japan)"
+
+    # Build a sample record with realistic data — mirrors real calculation output
+    sample_record = {
+        "employee_name": emp_name,
+        "employee_number": "EMP-0001",
+        "payroll_month": payroll_month,
+        "salary_type": "monthly",
+        "department_label": "Engineering",
+        "entity_id": "ENT-0002",
+        # Earnings
+        "base_pay_calculated": 350000,
+        "overtime_pay_calc": 25000,
+        "commute_allowance": 15000,
+        "housing_allowance": 20000,
+        "position_allowance": 30000,
+        "fixed_allowance": 0,
+        "transport_allowance": 0,
+        "phone_allowance": 5000,
+        "performance_bonus": 0,
+        "project_bonus": 0,
+        # Totals
+        "gross_pay": 445000,
+        "deduction_total": 98755,
+        "net_pay": 346245,
+        "employer_cost_total": 52680,
+        # Deductions
+        "health_insurance_employee": 20750,
+        "pension_employee": 32055,
+        "care_insurance_employee": 0,
+        "employment_insurance_employee": 2670,
+        "income_tax": 15800,
+        "monthly_resident_tax": 12500,
+        "recurring_deductions": 0,
+        "absence_days": 0,
+        # Employer cost
+        "employer_health": 20750,
+        "employer_pension": 32055,
+        "employer_care": 0,
+        "employer_employ": 3120,
+        "employer_child_allowance": 0,
+        "employer_child_support": 0,
+        "employer_accident_insurance": 0,
+    }
+
+    html = _generate_payslip_html(sample_record, {}, entity_name,
+                                   visibility_overrides=visibility_overrides)
+    return html, emp_name, payroll_month, entity_name
+
+
+def _dummy_payslip_data() -> tuple[str, str, str, str]:
+    """Legacy — kept for backward compat. Use _generate_sample_payslip() instead."""
+    return _generate_sample_payslip()
+
+
+def _generate_payslip_html(record: dict, batch: dict, entity_label_text: str,
+                           visibility_overrides: dict | None = None) -> str:
     """Generate a self-contained HTML payslip from a monthly salary record.
 
     Used for both preview and email sending. Returns a complete HTML document
     with embedded CSS suitable for email clients.
+
+    Respects pay_jp_payroll_item_definitions.payslip_visible — items marked
+    as not visible are excluded from the payslip regardless of their value.
+
+    Args:
+        record: Payslip record dict with salary fields
+        batch: Batch dict (may be empty {})
+        entity_label_text: Human-readable entity label for the header
+        visibility_overrides: Optional dict {item_code: bool} from email settings.
+            When provided, these overrides are applied on top of item definition
+            defaults and DB settings. Used for real-time preview before save.
     """
     fmt = lambda v: f"¥{int(v or 0):,}"  # noqa: E731
 
     emp_name = record.get("employee_name", "")
     emp_num = record.get("employee_number", "")
     payroll_month = record.get("payroll_month", "") or batch.get("payroll_month", "")
-    salary_type = record.get("salary_type", "monthly")
+    salary_type_raw = record.get("salary_type", "monthly")
     department_label = record.get("department_label", "")
+    salary_type = SALARY_TYPE_LABELS.get(salary_type_raw, salary_type_raw)
+
+    # ── Load item definitions to check payslip_visible ──
+    hidden_codes: set = set()
+    item_labels: dict[str, str] = {}
+    if _PG_AVAILABLE:
+        try:
+            all_items = _db.load_table("pay_jp_payroll_item_definitions") or []
+            for it in all_items:
+                code = (it.get("code") or "").strip()
+                if not code:
+                    continue
+                labels = it.get("labels", {}) or {}
+                if isinstance(labels, str):
+                    import json as _json
+                    try:
+                        labels = _json.loads(labels)
+                    except Exception:
+                        labels = {}
+                ja_label = (labels.get("ja") or labels.get("en") or code).strip()
+                item_labels[code] = ja_label
+                # Default: hide if payslip_visible is explicitly False
+                if it.get("payslip_visible") is False:
+                    hidden_codes.add(code)
+
+            # ── Check email settings for custom visibility overrides ──
+            email_settings = _load_email_settings("JP")
+            visible_items = email_settings.get("payslip_visible_items")
+            if visible_items is not None:
+                # User has custom visibility settings — override defaults
+                if isinstance(visible_items, str):
+                    import json as _json
+                    try:
+                        visible_items = _json.loads(visible_items)
+                    except Exception:
+                        visible_items = None
+                if isinstance(visible_items, dict):
+                    for code, is_visible in visible_items.items():
+                        if is_visible:
+                            hidden_codes.discard(code)
+                        else:
+                            hidden_codes.add(code)
+
+            # ── Apply caller-provided visibility overrides (for real-time preview) ──
+            if visibility_overrides:
+                for code, is_visible in visibility_overrides.items():
+                    if is_visible:
+                        hidden_codes.discard(code)
+                    else:
+                        hidden_codes.add(code)
+        except Exception as _e:
+            print(f"[{MODULE_NAME}] _generate_payslip_html: visibility loading failed: {_e}", file=_sys.stderr)
+
+    def _is_visible(field_name: str) -> bool:
+        """Check if a record field should be shown on payslip."""
+        code = FIELD_TO_CODE.get(field_name, field_name)
+        return code not in hidden_codes
+
+    def _get_label(field_name: str, fallback: str) -> str:
+        """Get display label from item definitions, fallback to hardcoded."""
+        code = FIELD_TO_CODE.get(field_name, field_name)
+        return item_labels.get(code, fallback)
 
     # Earnings items
     earnings = []
-    earning_keys = [
-        ("base_pay_calculated", "基本給 / Base Pay"),
-        ("commute_allowance", "通勤手当 / Commute Allowance"),
-        ("housing_allowance", "住宅手当 / Housing Allowance"),
-        ("family_allowance", "家族手当 / Family Allowance"),
-        ("position_allowance", "役職手当 / Position Allowance"),
-        ("fixed_allowance", "固定手当 / Fixed Allowance"),
-        ("transport_allowance", "交通費 / Transport"),
-        ("phone_allowance", "電話手当 / Phone Allowance"),
-        ("performance_bonus", "業績賞与 / Performance Bonus"),
-        ("project_bonus", "PJ賞与 / Project Bonus"),
-    ]
-    for key, label in earning_keys:
+    for key, label in PAYSLIP_EARNING_KEYS:
+        if not _is_visible(key):
+            continue
         val = float(record.get(key) or 0)
         if val > 0:
-            earnings.append((label, val))
+            earnings.append((_get_label(key, label), val))
 
     # Deduction items
     deductions = []
-    deduction_keys = [
-        ("health_insurance_employee", "健康保険 / Health Insurance"),
-        ("pension_employee", "厚生年金 / Pension"),
-        ("care_insurance_employee", "介護保険 / Nursing Care"),
-        ("employment_insurance_employee", "雇用保険 / Employment Insurance"),
-        ("income_tax", "所得税 / Income Tax"),
-        ("monthly_resident_tax", "住民税 / Resident Tax"),
-        ("recurring_deductions", "その他控除 / Other Deductions"),
-    ]
-    for key, label in deduction_keys:
+    for key, label in PAYSLIP_DEDUCTION_KEYS:
+        if not _is_visible(key):
+            continue
         val = float(record.get(key, record.get(key.replace("_employee", ""), 0)) or 0)
         if val > 0:
-            deductions.append((label, val))
+            deductions.append((_get_label(key, label), val))
 
     gross = float(record.get("gross_pay") or 0)
     deduct_total = float(record.get("deduction_total") or 0)
@@ -230,30 +560,43 @@ def _generate_payslip_html(record: dict, batch: dict, entity_label_text: str) ->
 
     # Employer cost breakdown
     employer_items = []
-    employer_keys = [
-        ("employer_health", "健康保険 / Health Insurance (Employer)"),
-        ("employer_pension", "厚生年金 / Pension (Employer)"),
-        ("employer_care", "介護保険 / Nursing Care (Employer)"),
-        ("employer_employ", "雇用保険 / Employment Insurance (Employer)"),
-        ("employer_child_allowance", "児童手当拠出金 / Child Allowance Contribution"),
-        ("employer_accident_insurance", "労災保険 / Accident Insurance"),
-    ]
-    for key, label in employer_keys:
+    for key, label in PAYSLIP_EMPLOYER_KEYS:
+        if not _is_visible(key):
+            continue
         val = float(record.get(key) or 0)
         if val > 0:
-            employer_items.append((label, val))
+            employer_items.append((_get_label(key, label), val))
 
     html = f"""<!DOCTYPE html>
 <html lang="ja">
-<head><meta charset="utf-8"><title>給与明細 / Payslip — {payroll_month}</title></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>給与明細 / Payslip — {payroll_month}</title>
+<style>
+  @media print {{
+    body {{ -webkit-print-color-adjust: exact; print-color-adjust: exact; }}
+    .no-print {{ display: none !important; }}
+    .payslip-container {{ box-shadow: none !important; border: 1px solid #ccc !important; }}
+  }}
+  @media (max-width: 600px) {{
+    .info-grid {{ grid-template-columns: 1fr !important; }}
+    .payslip-container {{ max-width: 100% !important; }}
+    .header-bar {{ padding: 14px 16px !important; }}
+    .content-area {{ padding: 12px 16px !important; }}
+  }}
+</style></head>
 <body style="margin:0;padding:0;font-family:'Helvetica Neue',Arial,'Hiragino Sans','Noto Sans JP',sans-serif;font-size:14px;color:#1a1a2e;line-height:1.5;">
-<div style="max-width:700px;margin:0 auto;background:#fff;">
-  <div style="background:linear-gradient(135deg,#0f2b46,#1a4a7a);color:#fff;padding:20px 28px;">
-    <h2 style="margin:0 0 4px;font-size:20px;font-weight:800;">📄 給与明細 / Payslip</h2>
-    <p style="margin:0;opacity:.85;font-size:13px;">{entity_label_text}</p>
+<div class="payslip-container" style="max-width:700px;margin:0 auto;background:#fff;box-shadow:0 2px 12px rgba(0,0,0,0.08);border-radius:8px;overflow:hidden;">
+  <div class="header-bar" style="background:linear-gradient(135deg,#0f2b46,#1a4a7a);color:#fff;padding:20px 28px;">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+      <div>
+        <h2 style="margin:0 0 4px;font-size:20px;font-weight:800;">📄 給与明細 / Payslip</h2>
+        <p style="margin:0;opacity:.85;font-size:13px;">{entity_label_text}</p>
+      </div>
+      <button class="no-print" onclick="window.print()" style="background:rgba(255,255,255,0.2);color:#fff;border:1px solid rgba(255,255,255,0.4);border-radius:6px;padding:6px 14px;cursor:pointer;font-size:12px;font-weight:600;">🖨️ Print</button>
+    </div>
   </div>
-  <div style="padding:20px 28px;border:1px solid #e5e7eb;border-top:none;">
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 20px;margin-bottom:16px;padding:12px 16px;background:#f9fafb;border-radius:8px;">
+  <div class="content-area" style="padding:20px 28px;">
+    <div class="info-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:4px 20px;margin-bottom:16px;padding:12px 16px;background:#f9fafb;border-radius:8px;">
       <div><span style="color:#6b7280;font-size:11px;text-transform:uppercase;">支給月 / Payroll Month</span><br><strong>{payroll_month}</strong></div>
       <div><span style="color:#6b7280;font-size:11px;text-transform:uppercase;">社員名 / Employee</span><br><strong>{emp_name}</strong></div>
       <div><span style="color:#6b7280;font-size:11px;text-transform:uppercase;">社員番号 / Employee No.</span><br><strong>{emp_num}</strong></div>
@@ -272,16 +615,16 @@ def _generate_payslip_html(record: dict, batch: dict, entity_label_text: str) ->
       {_build_rows(deductions, deduct_total, '控除合計 / Total Deductions')}
     </table>
 
-    <table style="width:100%;border-collapse:collapse;margin:14px 0;">
-      <tr style="font-weight:800;font-size:17px;color:#059669;">
-        <td style="padding:12px;background:#ecfdf5;border-radius:8px;">💵 差引支給額 / Net Pay</td>
-        <td style="padding:12px;text-align:right;background:#ecfdf5;border-radius:8px;">{fmt(net)}</td>
-      </tr>
-    </table>
-
     <h3 style="font-size:14px;color:#1d2a3a;border-bottom:2px solid #1B6CB2;padding-bottom:4px;margin:16px 0 8px;">🏢 会社負担 / Employer Cost</h3>
     <table style="width:100%;border-collapse:collapse;margin:6px 0;">
       {_build_rows(employer_items, employer_cost, '会社負担総額 / Total Employer Cost')}
+    </table>
+
+    <table style="width:100%;border-collapse:collapse;margin:16px 0;">
+      <tr style="font-weight:800;font-size:18px;color:#059669;">
+        <td style="padding:14px;background:#ecfdf5;border-radius:8px;">💵 差引支給額 / Net Pay</td>
+        <td style="padding:14px;text-align:right;background:#ecfdf5;border-radius:8px;">{fmt(net)}</td>
+      </tr>
     </table>
 
     <div style="margin-top:20px;text-align:center;color:#9ca3af;font-size:11px;border-top:1px solid #e5e7eb;padding-top:14px;">
@@ -397,6 +740,8 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
             self._list_payslips()
         elif path == "/api/payroll/jp/audit-logs":
             self._list("pay_jp_audit_logs")
+        elif path == "/api/payroll/jp/email-settings":
+            self._get_email_settings()
         else:
             # ── Batch-level audit logs ──
             if path.startswith("/api/payroll/jp/batches/") and path.endswith("/audit-logs"):
@@ -410,7 +755,12 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
                 return
             # ── SMTP health check ──
             if path == "/api/payroll/jp/smtp-status":
-                send_json(self, {"smtp_configured": is_smtp_configured()})
+                # Check both env vars and DB override
+                smtp_ok = is_smtp_configured()
+                if not smtp_ok and _PG_AVAILABLE:
+                    settings = _load_email_settings("JP")
+                    smtp_ok = bool((settings.get("smtp_host") or "").strip())
+                send_json(self, {"smtp_configured": smtp_ok})
                 return
             # Detail by ID (check calc-preview first)
             for prefix in ["/api/payroll/jp/employees/"]:
@@ -485,6 +835,16 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
         elif path.startswith("/api/payroll/jp/payslips/") and path.endswith("/email"):
             payslip_id = path.split("/")[-2]
             self._email_payslip(session, payslip_id)
+        elif path == "/api/payroll/jp/email-settings":
+            self._save_email_settings(session, body)
+        elif path == "/api/payroll/jp/email-settings/test":
+            self._test_email_settings(session, body)
+        elif path == "/api/payroll/jp/email-settings/preview":
+            self._preview_email_template(session, body)
+        elif path == "/api/payroll/jp/payslips/send-selected":
+            self._send_selected_payslips_standalone(session, body)
+        elif path == "/api/payroll/jp/payslips/send-all":
+            self._send_all_payslips_filtered(session, body)
         else:
             error(self, "Not Found", 404)
 
@@ -2073,9 +2433,370 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
         except Exception as e:
             error(self, f"Get audit logs failed: {str(e)}", 500)
 
+    # ── Email Settings CRUD ──
+    def _get_email_settings(self):
+        """Get email settings for a country (default JP)."""
+        if not _PG_AVAILABLE:
+            error(self, "Database not available", 503)
+            return
+        try:
+            country_code = get_query_param(self, "country_code", "JP")
+            settings = _load_email_settings(country_code)
+            # Redact password — only return whether it's set
+            if settings:
+                settings["smtp_password_set"] = bool(settings.get("smtp_password"))
+                settings.pop("smtp_password", None)
+            else:
+                settings = {"country_code": country_code, "smtp_password_set": False}
+            success(self, settings)
+        except Exception as e:
+            error(self, f"Get email settings failed: {str(e)}", 500)
+
+    def _save_email_settings(self, session, body):
+        """Create or update email settings for a country."""
+        if not _PG_AVAILABLE:
+            error(self, "Database not available", 503)
+            return
+        if not self._check_permission(session, "tacaipay_jp.manage"):
+            error(self, "Forbidden", 403)
+            return
+        try:
+            user_name = session.get("email", "system")
+            country_code = (body or {}).get("country_code", "JP")
+            now_iso = datetime.now(timezone.utc).isoformat()
+
+            # Build settings record
+            # Handle payslip_visible_items — user's custom visibility overrides
+            visible_items = (body or {}).get("payslip_visible_items", None)
+            if visible_items is not None:
+                visible_items = json.dumps(visible_items, ensure_ascii=False)
+
+            record = {
+                "country_code": country_code,
+                "sender_name": (body or {}).get("sender_name", ""),
+                "sender_email": (body or {}).get("sender_email", ""),
+                "cc_recipients": json.dumps((body or {}).get("cc_recipients", []), ensure_ascii=False),
+                "email_subject_template": (body or {}).get("email_subject_template", ""),
+                "email_body_template": (body or {}).get("email_body_template", ""),
+                "payslip_visible_items": visible_items,
+                "smtp_host": (body or {}).get("smtp_host", ""),
+                "smtp_port": (body or {}).get("smtp_port", 587),
+                "smtp_user": (body or {}).get("smtp_user", ""),
+                "smtp_use_tls": (body or {}).get("smtp_use_tls", True),
+                "updated_at": now_iso,
+                "updated_by": user_name,
+            }
+
+            # Handle password: if empty and password_set flag is true, keep existing
+            existing = _load_email_settings(country_code)
+            new_password = (body or {}).get("smtp_password", "")
+            if new_password:
+                record["smtp_password"] = new_password
+            elif (body or {}).get("smtp_password_set") and existing.get("smtp_password"):
+                record["smtp_password"] = existing["smtp_password"]
+
+            # Upsert
+            if existing:
+                _db.update_record("pay_jp_email_settings", "country_code", country_code, record)
+            else:
+                record["created_at"] = now_iso
+                _db.insert_record("pay_jp_email_settings", record)
+
+            _write_audit_log(self, "EMAIL_SETTINGS_SAVED", "pay_jp_email_settings", country_code,
+                             user_name, after_value={"country_code": country_code})
+
+            # Return without password
+            result = dict(record)
+            result["smtp_password_set"] = bool(record.get("smtp_password"))
+            result.pop("smtp_password", None)
+            success(self, result)
+        except Exception as e:
+            error(self, f"Save email settings failed: {str(e)}", 500)
+
+    def _test_email_settings(self, session, body):
+        """Send a test email using the configured settings."""
+        if not _PG_AVAILABLE:
+            error(self, "Database not available", 503)
+            return
+        if not self._check_permission(session, "tacaipay_jp.manage"):
+            error(self, "Forbidden", 403)
+            return
+        try:
+            user_name = session.get("email", "system")
+            test_to = (body or {}).get("test_to", "").strip()
+            if not test_to:
+                error(self, "test_to is required", 400)
+                return
+
+            country_code = (body or {}).get("country_code", "JP")
+            settings = _load_email_settings(country_code)
+
+            # Build test email
+            subject = f"[TEST] TACAI Payroll JP — Email Settings Test"
+            html_body = f"""<!DOCTYPE html>
+<html><body style="font-family:sans-serif;padding:20px;">
+  <h2>✅ メール設定テスト / Email Settings Test</h2>
+  <p>これは TACAI Payroll JP からのテストメールです。</p>
+  <p>This is a test email from TACAI Payroll JP.</p>
+  <hr>
+  <table style="border-collapse:collapse;font-size:13px;">
+    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;">送信者 / Sender</td><td>{settings.get('sender_name', 'System Default')} &lt;{settings.get('sender_email', SMTP_FROM)}&gt;</td></tr>
+    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;">国 / Country</td><td>{country_code}</td></tr>
+    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;">送信日時 / Sent</td><td>{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</td></tr>
+  </table>
+  <p style="color:#059669;font-weight:600;">SMTP 設定は正常に動作しています / SMTP configuration is working correctly.</p>
+</body></html>"""
+
+            from_override = _resolve_email_sender(settings)
+            cc_list = _resolve_email_cc(settings)
+
+            success_flag, error_msg = _send_email(
+                test_to, subject, html_body,
+                cc_emails=cc_list if cc_list else None,
+                from_override=from_override,
+                smtp_override=_resolve_email_smtp(settings),
+            )
+
+            if success_flag:
+                _write_audit_log(self, "EMAIL_SETTINGS_TEST", "pay_jp_email_settings", country_code,
+                                 user_name, after_value={"test_to": test_to, "status": "success"})
+                success(self, {"message": "Test email sent successfully", "test_to": test_to})
+            else:
+                _write_audit_log(self, "EMAIL_SETTINGS_TEST_FAILED", "pay_jp_email_settings", country_code,
+                                 user_name, after_value={"test_to": test_to, "status": "failed", "error": error_msg})
+                error(self, f"Test email failed: {error_msg}", 500)
+        except Exception as e:
+            error(self, f"Test email settings failed: {str(e)}", 500)
+
+    def _preview_email_template(self, session, body):
+        """Preview how an email will look with the current template settings applied.
+
+        Uses _generate_payslip_html() with sample data so the preview matches
+        what real payslips look like (respecting payslip_visible settings).
+        Accepts optional payslip_visible_items for real-time preview before save.
+        """
+        if not self._check_permission(session, "tacaipay_jp.manage"):
+            error(self, "Forbidden", 403)
+            return
+        try:
+            body = body or {}
+            subject_template = body.get("email_subject_template", "").strip()
+            body_template = body.get("email_body_template", "").strip()
+            payslip_id = body.get("payslip_id", "").strip()
+            visibility_overrides = body.get("payslip_visible_items", None)
+
+            entity_label_text = "TAKK - Tech Alliance株式会社 (Japan)"
+
+            # Get payslip data — use real payslip if specified, otherwise generate sample
+            if payslip_id and _PG_AVAILABLE:
+                ps_list = _db.load_table("pay_jp_payslips", where={"record_id": payslip_id})
+                if ps_list:
+                    ps = ps_list[0]
+                    payslip_html = _generate_payslip_html(ps, {}, entity_label_text,
+                                                          visibility_overrides=visibility_overrides)
+                    employee_name = ps.get("employee_name", "山田 太郎")
+                    payroll_month = ps.get("payroll_month", "2026-07")
+                    entity_name = entity_label_text
+                else:
+                    payslip_html, employee_name, payroll_month, entity_name = _generate_sample_payslip(
+                        entity_label_text, visibility_overrides)
+            else:
+                payslip_html, employee_name, payroll_month, entity_name = _generate_sample_payslip(
+                    entity_label_text, visibility_overrides)
+
+            # Build a pseudo settings dict for the resolver functions
+            settings = {
+                "email_subject_template": subject_template,
+                "email_body_template": body_template,
+            }
+
+            # Resolve subject
+            default_subject = DEFAULT_PAYSLIP_SUBJECT.format(payroll_month=payroll_month, employee_name=employee_name)
+            subject = _resolve_email_subject(settings, {
+                "employee_name": employee_name,
+                "payroll_month": payroll_month,
+                "entity_label": entity_name,
+            }, default_subject)
+
+            # Resolve body
+            html_body = _resolve_email_body(settings, payslip_html)
+
+            success(self, {
+                "subject": subject,
+                "html": html_body,
+                "employee_name": employee_name,
+                "payroll_month": payroll_month,
+                "entity_name": entity_name,
+                "is_sample": not payslip_id,
+            })
+        except Exception as e:
+            error(self, f"Preview template failed: {str(e)}", 500)
+
+    # ── Standalone Batch Send Endpoints (for payslip list page) ──
+    def _send_selected_payslips_standalone(self, session, body):
+        """Send selected payslips by record_id list (no batch context required)."""
+        if not _PG_AVAILABLE:
+            error(self, "Database not available", 503)
+            return
+        if not self._check_permission(session, "tacaipay_jp.approve"):
+            error(self, "Forbidden", 403)
+            return
+        try:
+            record_ids = (body or {}).get("record_ids", [])
+            if not record_ids:
+                error(self, "No record_ids provided", 400)
+                return
+
+            user_name = session.get("email", "system")
+            settings = _load_email_settings("JP")
+            sent_count = 0
+            failed_count = 0
+            results = []
+            now_iso = datetime.now(timezone.utc).isoformat()
+
+            for ps_id in record_ids:
+                ps_list = _db.load_table("pay_jp_payslips", where={"record_id": ps_id})
+                if not ps_list:
+                    results.append({"record_id": ps_id, "status": "failed", "error": "Not found"})
+                    failed_count += 1
+                    continue
+                ps = ps_list[0]
+                to_email = ps.get("email_to", "")
+                if not to_email:
+                    failed_count += 1
+                    results.append({"record_id": ps_id, "employee_name": ps.get("employee_name", ""),
+                                    "status": "failed", "error": "No email address"})
+                    continue
+
+                # Resolve subject
+                default_subject = DEFAULT_PAYSLIP_SUBJECT.format(payroll_month=ps.get('payroll_month', ''), employee_name=ps.get('employee_name', ''))
+                subject = _resolve_email_subject(settings, ps, default_subject)
+
+                # Resolve body
+                html_body = _resolve_email_body(settings, ps.get("html_content", ""))
+
+                # Resolve sender & CC
+                from_override = _resolve_email_sender(settings)
+                cc_list = _resolve_email_cc(settings)
+
+                success_flag, error_msg = _send_email(
+                    to_email, subject, html_body,
+                    cc_emails=cc_list if cc_list else None,
+                    from_override=from_override,
+                    smtp_override=_resolve_email_smtp(settings),
+                )
+
+                if success_flag:
+                    _db.update_record("pay_jp_payslips", "record_id", ps_id, {
+                        "email_status": "sent", "sent_at": now_iso, "sent_by": user_name,
+                        "email_error": None, "updated_at": now_iso,
+                    })
+                    sent_count += 1
+                    results.append({"record_id": ps_id, "employee_name": ps.get("employee_name", ""), "status": "sent"})
+                else:
+                    _db.update_record("pay_jp_payslips", "record_id", ps_id, {
+                        "email_status": "failed", "email_error": error_msg, "updated_at": now_iso,
+                    })
+                    failed_count += 1
+                    results.append({"record_id": ps_id, "employee_name": ps.get("employee_name", ""),
+                                    "status": "failed", "error": error_msg})
+
+            _write_audit_log(self, "EMAIL_LIST_SELECTED_SENT", "pay_jp_payslips", "batch",
+                             user_name, after_value={"sent": sent_count, "failed": failed_count})
+
+            success(self, {"sent": sent_count, "failed": failed_count, "total": len(record_ids), "results": results})
+        except Exception as e:
+            error(self, f"Send selected payslips failed: {str(e)}", 500)
+
+    def _send_all_payslips_filtered(self, session, body):
+        """Send all unsent payslips matching the given filters."""
+        if not _PG_AVAILABLE:
+            error(self, "Database not available", 503)
+            return
+        if not self._check_permission(session, "tacaipay_jp.approve"):
+            error(self, "Forbidden", 403)
+            return
+        try:
+            user_name = session.get("email", "system")
+            settings = _load_email_settings("JP")
+
+            # Build filter conditions matching _list_payslips logic
+            payroll_month = (body or {}).get("payroll_month", "").strip()
+            search = (body or {}).get("search", "").strip()
+
+            # Query all unsent payslips with optional filters
+            where_parts = ["(email_status = 'not_sent' OR email_status IS NULL)"]
+            params = []
+
+            if payroll_month:
+                where_parts.append("payroll_month = %s")
+                params.append(payroll_month)
+            if search:
+                where_parts.append("(employee_name ILIKE %s OR employee_number ILIKE %s)")
+                params.append(f"%{search}%")
+                params.append(f"%{search}%")
+
+            where_clause = " AND ".join(where_parts)
+            all_ps = _db.load_table("pay_jp_payslips", where=where_clause, params=tuple(params)) if params else \
+                     _db.load_table("pay_jp_payslips", where=where_clause)
+
+            all_ps = all_ps or []
+            if not all_ps:
+                success(self, {"sent": 0, "failed": 0, "total": 0, "message": "No unsent payslips found", "results": []})
+                return
+
+            sent_count = 0
+            failed_count = 0
+            results = []
+            now_iso = datetime.now(timezone.utc).isoformat()
+
+            for ps in all_ps:
+                ps_id = ps.get("record_id", "")
+                to_email = ps.get("email_to", "")
+                if not to_email:
+                    failed_count += 1
+                    results.append({"record_id": ps_id, "employee_name": ps.get("employee_name", ""),
+                                    "status": "failed", "error": "No email address"})
+                    continue
+
+                default_subject = DEFAULT_PAYSLIP_SUBJECT.format(payroll_month=ps.get('payroll_month', ''), employee_name=ps.get('employee_name', ''))
+                subject = _resolve_email_subject(settings, ps, default_subject)
+                html_body = _resolve_email_body(settings, ps.get("html_content", ""))
+                from_override = _resolve_email_sender(settings)
+                cc_list = _resolve_email_cc(settings)
+
+                success_flag, error_msg = _send_email(
+                    to_email, subject, html_body,
+                    cc_emails=cc_list if cc_list else None,
+                    from_override=from_override,
+                    smtp_override=_resolve_email_smtp(settings),
+                )
+
+                if success_flag:
+                    _db.update_record("pay_jp_payslips", "record_id", ps_id, {
+                        "email_status": "sent", "sent_at": now_iso, "sent_by": user_name,
+                        "email_error": None, "updated_at": now_iso,
+                    })
+                    sent_count += 1
+                    results.append({"record_id": ps_id, "employee_name": ps.get("employee_name", ""), "status": "sent"})
+                else:
+                    _db.update_record("pay_jp_payslips", "record_id", ps_id, {
+                        "email_status": "failed", "email_error": error_msg, "updated_at": now_iso,
+                    })
+                    failed_count += 1
+                    results.append({"record_id": ps_id, "employee_name": ps.get("employee_name", ""),
+                                    "status": "failed", "error": error_msg})
+
+            _write_audit_log(self, "EMAIL_LIST_ALL_SENT", "pay_jp_payslips", "filtered",
+                             user_name, after_value={"sent": sent_count, "failed": failed_count})
+
+            success(self, {"sent": sent_count, "failed": failed_count, "total": len(all_ps), "results": results})
+        except Exception as e:
+            error(self, f"Send all payslips failed: {str(e)}", 500)
+
     # ── New: Get Payslip HTML ──
     def _get_payslip_html(self, payslip_id):
-        """Return the stored HTML content for a payslip (preview)."""
+        """Return payslip HTML — regenerates dynamically to reflect current template settings."""
         if not _PG_AVAILABLE:
             error(self, "Database not available", 503)
             return
@@ -2085,17 +2806,55 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
                 error(self, "Payslip not found", 404)
                 return
             ps = ps_list[0]
-            html = ps.get("html_content", "")
-            if not html:
-                error(self, "No HTML content available for this payslip", 404)
-                return
+
+            # Load the salary record for detailed item values.
+            # Payslip record_id is PS-JP-* (payslip PK). The salary record uses JPR-* IDs.
+            # Relationship: payslip.sheet_id = record.batch_id AND payslip.employee_id = record.employee_id
+            record_data = {}
+            sheet_id = ps.get("sheet_id", "")
+            employee_id = ps.get("employee_id", "")
+            if sheet_id and employee_id:
+                rec_list = _db.load_table("pay_jp_monthly_salary_records",
+                    where="batch_id = %s AND employee_id = %s",
+                    params=(sheet_id, employee_id))
+                if rec_list:
+                    record_data = rec_list[0]
+
+            # Merge: record fields provide detail items, payslip provides identity + totals
+            merged = dict(record_data)
+            for k in ("employee_name", "employee_number", "payroll_month", "gross_pay", "net_pay",
+                       "entity_id", "department_label", "salary_type"):
+                if k not in merged or not merged.get(k):
+                    merged[k] = ps.get(k, "")
+
+            # Resolve entity label via masterdata internal API
+            entity_id = merged.get("entity_id", "")
+            entity_label = entity_id  # fallback
+            if entity_id:
+                try:
+                    req = Request(
+                        internal_url("masterdata", f"/api/internal/entity/{entity_id}/active"),
+                        headers={"Accept": "application/json"},
+                        method="GET",
+                    )
+                    with urlopen(req, timeout=3) as resp:
+                        body = json.loads(resp.read().decode("utf-8"))
+                    ent = body.get("entity") or {}
+                    if ent:
+                        entity_label = f"{ent.get('entity_code', '')} - {ent.get('entity_name', '')} ({ent.get('country', '')})"
+                except Exception:
+                    pass
+
+            # Regenerate HTML dynamically using current template + visibility settings
+            html = _generate_payslip_html(merged, {}, entity_label)
+
             success(self, {"record_id": payslip_id, "html": html})
         except Exception as e:
             error(self, f"Get payslip HTML failed: {str(e)}", 500)
 
     # ── New: Send single payslip email ──
     def _send_single_payslip(self, session, payslip_id):
-        """Send a single payslip by email."""
+        """Send a single payslip by email (uses email settings for sender/CC/template)."""
         if not _PG_AVAILABLE:
             error(self, "Database not available", 503)
             return
@@ -2115,10 +2874,27 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
                 error(self, "Employee email not set", 400)
                 return
 
-            html = ps.get("html_content", "") or _generate_payslip_html(ps, {}, ps.get("entity_id", ""))
-            subject = f"給与明細 / Payslip — {ps.get('payroll_month', '')} — {ps.get('employee_name', '')}"
+            # Load email settings
+            settings = _load_email_settings("JP")
 
-            success_flag, error_msg = _send_email(to_email, subject, html)
+            # Resolve subject
+            default_subject = DEFAULT_PAYSLIP_SUBJECT.format(payroll_month=ps.get('payroll_month', ''), employee_name=ps.get('employee_name', ''))
+            subject = _resolve_email_subject(settings, ps, default_subject)
+
+            # Resolve body
+            html = ps.get("html_content", "") or _generate_payslip_html(ps, {}, ps.get("entity_id", ""))
+            html = _resolve_email_body(settings, html)
+
+            # Resolve sender & CC
+            from_override = _resolve_email_sender(settings)
+            cc_list = _resolve_email_cc(settings)
+
+            success_flag, error_msg = _send_email(
+                to_email, subject, html,
+                cc_emails=cc_list if cc_list else None,
+                from_override=from_override,
+                smtp_override=_resolve_email_smtp(settings),
+            )
             now_iso = datetime.now(timezone.utc).isoformat()
 
             if success_flag:
@@ -2142,9 +2918,9 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
         except Exception as e:
             error(self, f"Send payslip failed: {str(e)}", 500)
 
-    # ── New: Send all payslips for a batch ──
+    # ── Send all payslips for a batch ──
     def _send_all_payslips(self, session, batch_id):
-        """Send all unsent payslips for a batch."""
+        """Send all unsent payslips for a batch (uses email settings)."""
         if not _PG_AVAILABLE:
             error(self, "Database not available", 503)
             return
@@ -2153,6 +2929,7 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
             return
         try:
             user_name = session.get("email", "system")
+            settings = _load_email_settings("JP")
             all_ps = _db.load_table("pay_jp_payslips",
                 where="batch_id = %s AND (email_status = 'not_sent' OR email_status IS NULL)",
                 params=(batch_id,)) or []
@@ -2173,9 +2950,18 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
                     results.append({"record_id": ps_id, "employee_name": ps.get("employee_name", ""), "status": "failed", "error": "No email address"})
                     continue
 
-                html = ps.get("html_content", "")
-                subject = f"給与明細 / Payslip — {ps.get('payroll_month', '')} — {ps.get('employee_name', '')}"
-                success_flag, error_msg = _send_email(to_email, subject, html)
+                default_subject = DEFAULT_PAYSLIP_SUBJECT.format(payroll_month=ps.get('payroll_month', ''), employee_name=ps.get('employee_name', ''))
+                subject = _resolve_email_subject(settings, ps, default_subject)
+                html = _resolve_email_body(settings, ps.get("html_content", ""))
+                from_override = _resolve_email_sender(settings)
+                cc_list = _resolve_email_cc(settings)
+
+                success_flag, error_msg = _send_email(
+                    to_email, subject, html,
+                    cc_emails=cc_list if cc_list else None,
+                    from_override=from_override,
+                    smtp_override=_resolve_email_smtp(settings),
+                )
 
                 if success_flag:
                     _db.update_record("pay_jp_payslips", "record_id", ps_id, {
@@ -2197,9 +2983,9 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
         except Exception as e:
             error(self, f"Send all payslips failed: {str(e)}", 500)
 
-    # ── New: Send selected payslips ──
+    # ── Send selected payslips ──
     def _send_selected_payslips(self, session, batch_id, body):
-        """Send selected payslips by record_id list."""
+        """Send selected payslips by record_id list (uses email settings)."""
         if not _PG_AVAILABLE:
             error(self, "Database not available", 503)
             return
@@ -2213,6 +2999,7 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
                 return
 
             user_name = session.get("email", "system")
+            settings = _load_email_settings("JP")
             sent_count = 0
             failed_count = 0
             results = []
@@ -2231,9 +3018,18 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
                     results.append({"record_id": ps_id, "employee_name": ps.get("employee_name", ""), "status": "failed", "error": "No email address"})
                     continue
 
-                html = ps.get("html_content", "")
-                subject = f"給与明細 / Payslip — {ps.get('payroll_month', '')} — {ps.get('employee_name', '')}"
-                success_flag, error_msg = _send_email(to_email, subject, html)
+                default_subject = DEFAULT_PAYSLIP_SUBJECT.format(payroll_month=ps.get('payroll_month', ''), employee_name=ps.get('employee_name', ''))
+                subject = _resolve_email_subject(settings, ps, default_subject)
+                html = _resolve_email_body(settings, ps.get("html_content", ""))
+                from_override = _resolve_email_sender(settings)
+                cc_list = _resolve_email_cc(settings)
+
+                success_flag, error_msg = _send_email(
+                    to_email, subject, html,
+                    cc_emails=cc_list if cc_list else None,
+                    from_override=from_override,
+                    smtp_override=_resolve_email_smtp(settings),
+                )
 
                 if success_flag:
                     _db.update_record("pay_jp_payslips", "record_id", ps_id, {

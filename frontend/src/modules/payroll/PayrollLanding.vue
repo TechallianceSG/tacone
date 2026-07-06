@@ -11,6 +11,7 @@ const modules = [
   { key: 'employees', label: 'payroll.jp.employees', desc: 'payroll.jp.employees_desc', icon: '👥', color: '#0f766e' },
   { key: 'batches', label: 'payroll.jp.batches', desc: 'payroll.jp.batches_desc', icon: '📅', color: '#e65100' },
   { key: 'payslips', label: 'payroll.jp.payslips', desc: 'payroll.jp.payslips_desc', icon: '📄', color: '#7c3aed' },
+  { key: 'email-settings', label: 'payroll.jp.email_settings', desc: 'payroll.jp.email_settings_desc', icon: '📧', color: '#0891b2' },
 ]
 
 function navigate(module: string) {

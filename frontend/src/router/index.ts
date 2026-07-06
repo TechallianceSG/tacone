@@ -141,6 +141,12 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/modules/payroll/jp/JpPayslips.vue'),
         meta: { requiresAuth: true, permission: 'tacaipay_jp.view', titleKey: 'payroll.jp.payslips', parent: 'JpPayrollLanding' },
       },
+      {
+        path: 'payroll/jp/email-settings',
+        name: 'JpEmailSettings',
+        component: () => import('@/modules/payroll/jp/JpEmailSettings.vue'),
+        meta: { requiresAuth: true, permission: 'tacaipay_jp.manage', titleKey: 'payroll.jp.email_settings', parent: 'JpPayrollLanding' },
+      },
       // ── Invoice Management ──
       {
         path: 'invoice',
