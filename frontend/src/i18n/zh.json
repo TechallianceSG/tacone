@@ -1590,6 +1590,7 @@
   "payroll.jp.warnings_count": "警告数",
   "payroll.jp.work_config_section": "工作时间设置",
   "payroll.jp.working_days_hint": "当月法定工作日数，用于缺勤扣款计算：扣款 = (基本给 ÷ 当月工作日) × 缺勤天数",
+  "payroll.jp.search_employee_placeholder": "搜索员工编号或姓名",
   "payroll.landing.description": "选择国家/地区以管理工资计算",
   "payroll.sg.batch_detail": "批次详情",
   "payroll.sg.batch_detail_desc": "查看计算后的工资批次信息",

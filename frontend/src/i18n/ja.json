@@ -1590,6 +1590,7 @@
   "payroll.jp.warnings_count": "警告",
   "payroll.jp.work_config_section": "勤務時間設定",
   "payroll.jp.working_days_hint": "当月の法定労働日数。欠勤控除計算に使用：控除額 = (基本給 ÷ 当月労働日数) × 欠勤日数",
+  "payroll.jp.search_employee_placeholder": "社員番号または氏名で検索",
   "payroll.landing.description": "国を選択して給与計算を管理",
   "payroll.sg.batch_detail": "バッチ詳細",
   "payroll.sg.batch_detail_desc": "計算済み給与バッチ情報の確認",

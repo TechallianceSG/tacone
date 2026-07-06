@@ -151,15 +151,14 @@ def _write_audit_log(handler, action: str, table_name: str, record_id: str,
     if not _PG_AVAILABLE:
         return
     try:
-        import json as _json
         log_entry = {
             "module": "pay_jp",
             "record_id": str(record_id),
             "action": str(action),
             "user_name": str(user_name),
             "table_name": str(table_name),
-            "before_value": _json.dumps(before_value, ensure_ascii=False, default=str) if before_value is not None else None,
-            "after_value": _json.dumps(after_value, ensure_ascii=False, default=str) if after_value is not None else None,
+            "before_value": json.dumps(before_value, ensure_ascii=False, default=str) if before_value is not None else None,
+            "after_value": json.dumps(after_value, ensure_ascii=False, default=str) if after_value is not None else None,
             "ip_address": handler.client_address[0] if hasattr(handler, 'client_address') else "",
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
@@ -315,9 +314,6 @@ def _calc_fiscal_age(employee_id: str) -> int | None:
         if not emp:
             return None
         profile = emp.get("profile", {})
-        if isinstance(profile, str):
-            import json as _json
-            profile = _json.loads(profile)
         dob = profile.get("date_of_birth", "")
         if not dob:
             return None
@@ -398,7 +394,7 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
         elif path == "/api/payroll/jp/batches":
             self._list("pay_jp_payroll_batches")
         elif path == "/api/payroll/jp/payslips":
-            self._list("pay_jp_payslips")
+            self._list_payslips()
         elif path == "/api/payroll/jp/audit-logs":
             self._list("pay_jp_audit_logs")
         else:
@@ -561,6 +557,28 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
             paginated(self, data, 1, len(data), len(data))
         except Exception as e:
             error(self, f"Masterdata service unavailable: {str(e)}", 502)
+
+    def _list_payslips(self):
+        """List payslips with optional month and search filters."""
+        if not _PG_AVAILABLE:
+            error(self, "Database not available", 503)
+            return
+        try:
+            month = get_query_param(self, "payroll_month", "").strip()
+            search = get_query_param(self, "search", "").strip()
+            conditions = []
+            params = []
+            if month:
+                conditions.append("payroll_month = %s")
+                params.append(month)
+            if search:
+                conditions.append("(employee_number ILIKE %s OR employee_name ILIKE %s)")
+                params.extend([f"%{search}%", f"%{search}%"])
+            where = " AND ".join(conditions) if conditions else None
+            rows = _db.load_table("pay_jp_payslips", where=where, params=tuple(params) if params else None, order_by="created_at DESC")
+            paginated(self, rows, 1, len(rows), len(rows))
+        except Exception as e:
+            error(self, f"Database error: {str(e)}", 500)
 
     def _list_item_definitions(self):
         """Return payroll item definitions sorted by display_order."""

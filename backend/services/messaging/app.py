@@ -1815,6 +1815,29 @@ class TacaiMsgHandler(BaseHTTPRequestHandler):
 
     # ---- Route dispatchers ----
 
+    def _is_localhost(self) -> bool:
+        client = (self.client_address[0] if self.client_address else "")
+        return client in ("127.0.0.1", "::1", "localhost")
+
+    def _handle_internal_api(self, path: str, query: dict[str, list[str]]) -> None:
+        """Handle internal API calls from other TACAI services (no auth)."""
+        # GET /api/internal/messages/unread-count?user_id=...
+        if path == "/api/internal/messages/unread-count":
+            uid = query.get("user_id", [""])[0]
+            if not uid:
+                self._send_json({"success": False, "error": "user_id required"}, 400)
+                return
+            try:
+                rows = _db.load_table("msg_messages")
+                count = sum(1 for m in rows
+                          if str(m.get("recipient_user_id", "")) == uid
+                          and m.get("status") == "unread")
+            except Exception:
+                count = 0
+            self._send_json({"success": True, "data": {"unread_count": count}})
+            return
+        self._send_json({"success": False, "error": "Internal endpoint not found"}, 404)
+
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
         path = parsed.path
@@ -1825,6 +1848,10 @@ class TacaiMsgHandler(BaseHTTPRequestHandler):
             # Health
             if path == "/health":
                 self._send_text("OK")
+                return
+            # ── Internal API endpoints (no auth, localhost-only) ──
+            if self._is_localhost() and path.startswith("/api/internal/"):
+                self._handle_internal_api(path, query)
                 return
             # Static CSS
             if path == "/static/app.css":

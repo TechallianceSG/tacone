@@ -205,19 +205,13 @@ function teamDisp(e: Employee) { return e.employment?.team_name || e.employment?
 
 const countLabel = computed(() => filtered.value ? t('employee.showing_filtered', { shown: total.value, total: totalAll.value }) : t('employee.total_count', { count: total.value }))
 
-onMounted(async () => {
-  // Show loading immediately — don't wait for dropdowns to finish
-  loading.value = true
-  try {
-    // Load data dictionary options + masterdata dropdowns in parallel
-    await Promise.all([
-      loadOptions([CAT.STATUS, CAT.EMPLOYMENT_TYPE, CAT.BUSINESS_LINE, CAT.LANGUAGE_LEVEL, CAT.COUNTRY_CODE]),
-      loadFilterOptions(),
-    ])
-  } finally {
-    // Data is ready, load the employee list (loadEmployees sets its own error state)
-    loadEmployees()
-  }
+onMounted(() => {
+  // Load everything in parallel — employee list is NOT blocked by dropdown/DD loading.
+  // Filters have no default selections, so the list can render immediately with raw IDs
+  // while dropdown options populate asynchronously.
+  loadEmployees()
+  loadOptions([CAT.STATUS, CAT.EMPLOYMENT_TYPE, CAT.BUSINESS_LINE, CAT.LANGUAGE_LEVEL, CAT.COUNTRY_CODE])
+  loadFilterOptions()
 })
 </script>
 

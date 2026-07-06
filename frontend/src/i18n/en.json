@@ -1590,6 +1590,7 @@
   "payroll.jp.warnings_count": "Warnings",
   "payroll.jp.work_config_section": "Work Time Settings",
   "payroll.jp.working_days_hint": "Statutory working days in this month. Used for absence deduction: Deduction = (Base ÷ Working Days) × Absence Days",
+  "payroll.jp.search_employee_placeholder": "Search by employee number or name",
   "payroll.landing.description": "Select country to manage payroll calculations",
   "payroll.sg.batch_detail": "Batch Detail",
   "payroll.sg.batch_detail_desc": "View calculated payroll batch information",

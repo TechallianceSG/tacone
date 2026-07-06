@@ -5,3 +5,7 @@ declare module '*.vue' {
   const component: DefineComponent<{}, {}, any>
   export default component
 }
+
+declare module 'element-plus/dist/locale/zh-cn.mjs'
+declare module 'element-plus/dist/locale/ja.mjs'
+declare module 'element-plus/dist/locale/en.mjs'

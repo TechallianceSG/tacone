@@ -49,7 +49,7 @@ TACAI_INTERNAL_HOST = os.environ.get("TACAI_INTERNAL_HOST", "127.0.0.1").strip()
 LOCAL_ALLOWED_HOSTS = {"127.0.0.1", "localhost", TACAI_PUBLIC_HOST, TACAI_INTERNAL_HOST}
 # ── Shared port/host config (single source of truth) ──
 try:
-    from config import ALLOWED_PORTS as LOCAL_ALLOWED_PORTS
+    from config import ALLOWED_PORTS as LOCAL_ALLOWED_PORTS, internal_url
 except ImportError:
     LOCAL_ALLOWED_PORTS = {3000, 4000, 5000, 6000}
 
@@ -310,20 +310,17 @@ def read_json(path: Path, default):
 
 
 def get_msg_center_unread_count(user_id: str) -> int:
-    """Count unread messages for a user via targeted DB query.
-
-    Uses parameterized WHERE clause to avoid loading all messages into memory.
-    TODO: Replace with GET /api/internal/messages/unread-count?user_id=...
-          once messaging service exposes an internal (no-auth) endpoint.
-    """
+    """Count unread messages via messaging internal API."""
     try:
-        rows = _db.load_table(
-            f"{MSG_PREFIX}_messages",
-            where={"recipient_user_id": str(user_id), "status": "unread"},
+        req = Request(
+            internal_url("tacaimsg", f"/api/internal/messages/unread-count?user_id={user_id}"),
+            headers={"Accept": "application/json"},
+            method="GET",
         )
-        return len(rows)
+        with urlopen(req, timeout=3) as resp:
+            body = json.loads(resp.read().decode("utf-8"))
+        return (body.get("data") or {}).get("unread_count", 0)
     except Exception:
-        print("[tacai-portal] WARNING: Could not count unread messages", file=_sys.stderr)
         return 0
 
 

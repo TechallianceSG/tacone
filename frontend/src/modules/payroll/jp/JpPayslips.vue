@@ -8,7 +8,7 @@ const { t } = useI18n()
 const loading = ref(false)
 const payslips = ref<any[]>([])
 const sendingIds = ref<Set<string>>(new Set())
-const filterMonth = ref('')
+const filterMonth = ref(new Date().toISOString().slice(0, 7))  // default to current month
 const filterSearch = ref('')
 
 const page = ref(1)
@@ -30,30 +30,23 @@ const paged = computed(() => {
 function handlePageChange(p: number) { page.value = p }
 function handleSizeChange(s: number) { pageSize.value = s; page.value = 1 }
 
-function applyFilters() {
-  let r = payslips.value
-  if (filterMonth.value) r = r.filter((p: any) => p.payroll_month === filterMonth.value)
-  if (filterSearch.value) {
-    const q = filterSearch.value.toLowerCase()
-    r = r.filter((p: any) => (p.employee_name || '').toLowerCase().includes(q) || (p.employee_number || '').toLowerCase().includes(q))
-  }
-  filtered.value = r
-  page.value = 1
-}
+function applyFilters() { load() }
 
 function clearFilters() {
-  filterMonth.value = ''
+  filterMonth.value = new Date().toISOString().slice(0, 7)
   filterSearch.value = ''
-  filtered.value = [...payslips.value]
-  page.value = 1
+  load()
 }
 
 async function load() {
   loading.value = true
   try {
-    const res = await payrollJpApi.payslips()
-    payslips.value = res.data.data || []
-    filtered.value = [...payslips.value]
+    const params: Record<string, any> = {}
+    if (filterMonth.value) params.payroll_month = filterMonth.value
+    if (filterSearch.value) params.search = filterSearch.value
+    const res = await payrollJpApi.payslips(params)
+    filtered.value = res.data.data || []
+    payslips.value = filtered.value
   } catch (e: any) { ElMessage.error(e.message) }
   finally { loading.value = false }
 }
@@ -96,8 +89,8 @@ onMounted(load)
       </div>
     </div>
     <div class="fiori-filters">
-      <el-input v-model="filterSearch" :placeholder="t('action.search')" clearable style="width:200px" @keyup.enter="applyFilters" />
-      <el-date-picker v-model="filterMonth" type="month" value-format="YYYY-MM" :placeholder="t('field.payroll_month')" clearable style="width:170px" />
+      <el-input v-model="filterSearch" :placeholder="t('payroll.jp.search_employee_placeholder')" clearable style="width:240px" @keyup.enter="applyFilters" />
+      <el-date-picker v-model="filterMonth" type="month" format="YYYY-MM" value-format="YYYY-MM" :placeholder="t('field.payroll_month')" style="width:160px" />
       <el-button type="primary" @click="applyFilters">{{ t('action.filter') }}</el-button>
       <el-button @click="clearFilters">{{ t('action.clear') }}</el-button>
     </div>
