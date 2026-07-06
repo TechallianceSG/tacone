@@ -104,18 +104,22 @@ def _put_conn(conn):
 
 
 def _is_available():
-    """Check if PostgreSQL is available."""
+    """Check if PostgreSQL is available (with one retry for transient blips)."""
     if not DB_ENABLED:
         return False
-    try:
-        conn = _get_conn()
-        cur = conn.cursor()
-        cur.execute("SELECT 1")
-        cur.close()
-        _put_conn(conn)
-        return True
-    except Exception:
-        return False
+    for attempt in (1, 2):
+        try:
+            conn = _get_conn()
+            cur = conn.cursor()
+            cur.execute("SELECT 1")
+            cur.close()
+            _put_conn(conn)
+            return True
+        except Exception:
+            if attempt == 1:
+                import time as _time
+                _time.sleep(0.1)  # Brief pause before retry
+    return False
 
 
 def _ensure_pg():

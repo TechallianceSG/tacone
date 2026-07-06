@@ -73,7 +73,7 @@ onMounted(async () => {
     loading.value = true
     try {
       const { data } = await employeeApi.get(employeeId.value)
-      const emp = data?.employee
+      const emp = data?.data
       if (emp) {
         // Map API response back to form structure
         const p = emp.profile || {}
@@ -131,14 +131,14 @@ async function handleSubmit() {
     const payload: Record<string, any> = flatten(form.value)
     if (isEdit.value) {
       const { data } = await (employeeApi as any).update(employeeId.value, payload)
-      if (data?.employee) {
+      if (data?.data) {
         router.push(`/employees/${employeeId.value}`)
       } else {
         errors.value = data?.errors || ['Failed to update employee']
       }
     } else {
       const { data } = await (employeeApi as any).create(payload)
-      if (data?.success || data?.employee) {
+      if (data?.success || data?.data) {
         router.push('/employees')
       } else {
         errors.value = data?.errors || ['Failed to create employee']

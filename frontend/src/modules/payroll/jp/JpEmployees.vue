@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { payrollJpApi } from '@/api/client'
+import { payrollJpApi, masterdataApi, employeeApi } from '@/api/client'
 import { useDictOptions } from '@/composables/useDictOptions'
 import { ElMessage } from 'element-plus'
 import { prefectures, prefectureLabel } from '@/constants/prefectures'
@@ -88,16 +88,16 @@ const filteredRecords = computed(() => {
 const pagedRecords = computed(() => { const s = (page.value - 1) * pageSize.value; return filteredRecords.value.slice(s, s + pageSize.value) })
 const departmentOptions = computed(() => [...new Set(allRecords.value.map((r: any) => r.department_label).filter(Boolean))])
 
-async function load() { loading.value = true; try { const res = await payrollJpApi.employees(); allRecords.value = res.data.data?.items || res.data.data || [] } catch (e: any) { ElMessage.error(e.message) } finally { loading.value = false } }
-async function loadItemDefs() { try { const res = await payrollJpApi.itemDefinitions(); itemDefs.value = res.data.data?.items || res.data.data || [] } catch (_) {} }
-async function loadDropdowns() { try { const [dr, tr] = await Promise.all([fetch('/api/masterdata/departments').then(r => r.json()), fetch('/api/masterdata/teams').then(r => r.json())]); departments.value = dr.data || []; teams.value = tr.data || [] } catch (_) {} }
+async function load() { loading.value = true; try { const res = await payrollJpApi.employees(); allRecords.value = res.data.data || [] } catch (e: any) { ElMessage.error(e.message) } finally { loading.value = false } }
+async function loadItemDefs() { try { const res = await payrollJpApi.itemDefinitions(); itemDefs.value = res.data.data || [] } catch (_) {} }
+async function loadDropdowns() { try { const [dr, tr] = await Promise.all([masterdataApi.departments(), masterdataApi.teams()]); departments.value = dr.data.data || dr.data.departments || []; teams.value = tr.data.data || tr.data.teams || [] } catch (_) {} }
 function entityLabelById(id: string) { const f = ddOptions(CAT.LEGAL_ENTITY).value.find((o: any) => o.value === id); return f ? f.label : id }
 function salaryTypeLabel(st: string): string { const f = salaryTypes.find(s => s.value === st); return f ? t(f.label) : st }
 
 function openDetail(row: any) { drawerRecord.value = row; drawerForm.value = { ...row }; drawerVisible.value = true }
 async function saveDrawer() { drawerSaving.value = true; try { await payrollJpApi.saveEmployee(drawerForm.value); drawerVisible.value = false; ElMessage.success(t('action.saved')); await load() } catch (e: any) { ElMessage.error(e.message) } finally { drawerSaving.value = false } }
 
-async function openImport() { importDialog.value = true; selectedImportIds.value = []; importFilterEntity.value = ''; importFilterDept.value = ''; importSearch.value = ''; try { const res = await payrollJpApi.importableEmployees(); importableEmployees.value = res.data.data?.items || res.data.data || [] } catch { try { const res = await fetch('/api/employees').then(r => r.json()); importableEmployees.value = (res.data?.items || res.data || []).filter((e: any) => e.country_code === 'JP' || !e.country_code) } catch { importableEmployees.value = [] } } }
+async function openImport() { importDialog.value = true; selectedImportIds.value = []; importFilterEntity.value = ''; importFilterDept.value = ''; importSearch.value = ''; try { const res = await payrollJpApi.importableEmployees(); importableEmployees.value = res.data.data || [] } catch { try { const res = await employeeApi.list(); importableEmployees.value = (res.data.data || res.data.employees || []).filter((e: any) => e.country_code === 'JP' || !e.country_code) } catch { importableEmployees.value = [] } } }
 const filteredImportable = computed(() => { let result = importableEmployees.value; if (importFilterEntity.value) result = result.filter((e: any) => e.entity_id === importFilterEntity.value); if (importFilterDept.value) result = result.filter((e: any) => (e.department_name || e.department || '') === importFilterDept.value); if (importSearch.value) { const q = importSearch.value.toLowerCase(); result = result.filter((e: any) => (e.employee_number || e.employee_no || '').toLowerCase().includes(q) || (e.employee_name || '').toLowerCase().includes(q)) } return result })
 async function importSelected() { if (!selectedImportIds.value.length) return; importing.value = true; try { await payrollJpApi.importEmployees({ employee_ids: selectedImportIds.value }); importDialog.value = false; ElMessage.success(t('payroll.jp.import_success', { count: selectedImportIds.value.length })); await load() } catch (e: any) { ElMessage.error(e.message) } finally { importing.value = false } }
 

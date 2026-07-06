@@ -25,6 +25,7 @@ if str(_shared_path) not in _sys.path:
 import db_utils as _db
 from auth_utils import validate_session, has_permission, is_system_admin
 from cors_middleware import add_cors_headers, handle_preflight
+from api_utils import send_json, success, error, paginated
 
 MODULE_NAME = "tacai-employee-admin"
 DEFAULT_PORT = 8004
@@ -106,17 +107,8 @@ def _resolve_org_labels(employees: list) -> list:
 class EmployeeAdminHandler(BaseHTTPRequestHandler):
     server_version = "TACAIEmployeeAdmin/0.1"
 
-    def send_json(self, data: dict | list, status: int = 200) -> None:
-        body = json.dumps(data, ensure_ascii=False, default=str).encode("utf-8")
-        self.send_response(status)
-        add_cors_headers(self)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
-    def send_error_json(self, message: str, status: int = 400) -> None:
-        self.send_json({"success": False, "error": message}, status)
+    # Response helpers from api_utils (standard format)
+    # send_json, success, error, paginated are imported as module-level functions
 
     def log_message(self, format: str, *args) -> None:  # noqa: A002
         return  # suppress default logging
@@ -128,10 +120,10 @@ class EmployeeAdminHandler(BaseHTTPRequestHandler):
         """Validate session and check permission. Returns user or sends 401/403."""
         user = self._current_user()
         if not user:
-            self.send_error_json("Unauthorized", 401)
+            error(self, "Unauthorized", 401)
             return None
         if not has_permission(user, REQUIRED_PERMISSION) and not is_system_admin(user):
-            self.send_error_json("Forbidden — insufficient permissions", 403)
+            error(self, "Forbidden — insufficient permissions", 403)
             return None
         return user
 
@@ -151,7 +143,7 @@ class EmployeeAdminHandler(BaseHTTPRequestHandler):
 
         # Health check (no auth required)
         if path == "/health":
-            self.send_json({"status": "ok", "module": MODULE_NAME})
+            send_json(self, {"success": True, "status": "ok", "module": MODULE_NAME})
             return
 
         # ── Internal API endpoints (no auth, localhost-only) ──
@@ -175,7 +167,7 @@ class EmployeeAdminHandler(BaseHTTPRequestHandler):
             self._handle_get_one(m.group(1))
             return
 
-        self.send_error_json("Not Found", 404)
+        error(self, "Not Found", 404)
 
     def _handle_internal_employee_api(self, path: str, params: dict) -> None:
         """Handle internal API calls from other TACAI services (no auth).
@@ -201,7 +193,7 @@ class EmployeeAdminHandler(BaseHTTPRequestHandler):
             try:
                 rows = _db.load_table("emp_employees")
             except Exception:
-                self.send_json({"success": False, "error": "Database unavailable"}, 500)
+                error(self, "Database unavailable", 500)
                 return
 
             # Batch filter by IDs
@@ -218,7 +210,7 @@ class EmployeeAdminHandler(BaseHTTPRequestHandler):
                 for r in rows:
                     r.pop("payroll", None)
 
-            self.send_json({"success": True, "employees": rows})
+            success(self, {"employees": rows})
             return
 
         # GET /api/internal/employees/{employee_id}
@@ -228,18 +220,18 @@ class EmployeeAdminHandler(BaseHTTPRequestHandler):
             try:
                 rows = _db.load_table("emp_employees", where={"employee_id": eid})
             except Exception:
-                self.send_json({"success": False, "error": "Database unavailable"}, 500)
+                error(self, "Database unavailable", 500)
                 return
             if rows:
                 emp = rows[0]
                 if not include_payroll:
                     emp.pop("payroll", None)
-                self.send_json({"success": True, "employee": emp})
+                success(self, {"employee": emp})
             else:
-                self.send_json({"success": False, "error": "Not found"}, 404)
+                error(self, "Not found", 404)
             return
 
-        self.send_json({"success": False, "error": "Internal endpoint not found"}, 404)
+        error(self, "Internal endpoint not found", 404)
 
     def do_POST(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
@@ -255,7 +247,7 @@ class EmployeeAdminHandler(BaseHTTPRequestHandler):
         try:
             body = json.loads(body_raw) if body_raw else {}
         except json.JSONDecodeError:
-            self.send_error_json("Invalid JSON", 400)
+            error(self, "Invalid JSON", 400)
             return
 
         # POST /api/employees — create
@@ -269,7 +261,7 @@ class EmployeeAdminHandler(BaseHTTPRequestHandler):
             self._handle_update(m.group(1), body)
             return
 
-        self.send_error_json("Not Found", 404)
+        error(self, "Not Found", 404)
 
     def do_DELETE(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
@@ -286,7 +278,7 @@ class EmployeeAdminHandler(BaseHTTPRequestHandler):
             self._handle_delete(m.group(1))
             return
 
-        self.send_error_json("Not Found", 404)
+        error(self, "Not Found", 404)
 
     # ── Handlers ──
 
@@ -294,7 +286,7 @@ class EmployeeAdminHandler(BaseHTTPRequestHandler):
         try:
             all_rows = _db.load_table("emp_employees")
         except Exception as e:
-            self.send_error_json(f"Database error: {e}", 500)
+            error(self, f"Database error: {e}", 500)
             return
 
         # Exclude soft-deleted
@@ -415,30 +407,23 @@ class EmployeeAdminHandler(BaseHTTPRequestHandler):
         paged = _resolve_entity_labels(paged)
         paged = _resolve_org_labels(paged)
 
-        self.send_json({
-            "employees": paged,
-            "total": total_filtered,
-            "total_all": total_all,
-            "filtered": is_filtered,
-            "page": page,
-            "page_size": page_size,
-        })
+        paginated(self, paged, page, page_size, total_filtered, total_all, is_filtered)
 
     def _handle_get_one(self, employee_id: str) -> None:
         try:
             all_rows = _db.load_table("emp_employees")
         except Exception as e:
-            self.send_error_json(f"Database error: {e}", 500)
+            error(self, f"Database error: {e}", 500)
             return
 
         for emp in all_rows:
             if emp.get("employee_id") == employee_id:
                 enriched = _resolve_entity_labels([emp])
                 enriched = _resolve_org_labels(enriched)
-                self.send_json({"employee": enriched[0]})
+                success(self, enriched[0])
                 return
 
-        self.send_error_json("Employee not found", 404)
+        error(self, "Employee not found", 404)
 
     @staticmethod
     def _unflatten_body(body: dict) -> dict:
@@ -470,7 +455,7 @@ class EmployeeAdminHandler(BaseHTTPRequestHandler):
         try:
             all_rows = _db.load_table("emp_employees")
         except Exception as e:
-            self.send_error_json(f"Database error: {e}", 500)
+            error(self, f"Database error: {e}", 500)
             return
 
         # Generate employee_id
@@ -509,7 +494,7 @@ class EmployeeAdminHandler(BaseHTTPRequestHandler):
         _db.insert_record("emp_employees", new_emp)
         enriched = _resolve_entity_labels([new_emp])
         enriched = _resolve_org_labels(enriched)
-        self.send_json({"employee": enriched[0]}, 201)
+        success(self, enriched[0], 201)
 
     def _handle_update(self, employee_id: str, body: dict) -> None:
         """Update an existing employee record (partial update)."""
@@ -517,7 +502,7 @@ class EmployeeAdminHandler(BaseHTTPRequestHandler):
         try:
             all_rows = _db.load_table("emp_employees")
         except Exception as e:
-            self.send_error_json(f"Database error: {e}", 500)
+            error(self, f"Database error: {e}", 500)
             return
 
         target = None
@@ -527,11 +512,11 @@ class EmployeeAdminHandler(BaseHTTPRequestHandler):
                 break
 
         if target is None:
-            self.send_error_json("Employee not found", 404)
+            error(self, "Employee not found", 404)
             return
 
         if (target.get("metadata") or {}).get("deleted", False):
-            self.send_error_json("Cannot update a deleted employee", 409)
+            error(self, "Cannot update a deleted employee", 409)
             return
 
         now = __import__('datetime').datetime.now(__import__('datetime').timezone.utc).isoformat()
@@ -555,19 +540,19 @@ class EmployeeAdminHandler(BaseHTTPRequestHandler):
         try:
             _db.update_record("emp_employees", "employee_id", employee_id, target)
         except Exception as e:
-            self.send_error_json(f"Failed to update: {e}", 500)
+            error(self, f"Failed to update: {e}", 500)
             return
 
         enriched = _resolve_entity_labels([target])
         enriched = _resolve_org_labels(enriched)
-        self.send_json({"employee": enriched[0]})
+        success(self, enriched[0])
 
     def _handle_delete(self, employee_id: str) -> None:
         """Soft-delete an employee by setting metadata.deleted=true."""
         try:
             all_rows = _db.load_table("emp_employees")
         except Exception as e:
-            self.send_error_json(f"Database error: {e}", 500)
+            error(self, f"Database error: {e}", 500)
             return
 
         target = None
@@ -577,11 +562,11 @@ class EmployeeAdminHandler(BaseHTTPRequestHandler):
                 break
 
         if target is None:
-            self.send_error_json("Employee not found", 404)
+            error(self, "Employee not found", 404)
             return
 
         if (target.get("metadata") or {}).get("deleted", False):
-            self.send_error_json("Employee already deleted", 409)
+            error(self, "Employee already deleted", 409)
             return
 
         now = __import__('datetime').datetime.now(__import__('datetime').timezone.utc).isoformat()
@@ -592,10 +577,10 @@ class EmployeeAdminHandler(BaseHTTPRequestHandler):
         try:
             _db.update_record("emp_employees", "employee_id", employee_id, {"metadata": metadata})
         except Exception as e:
-            self.send_error_json(f"Failed to delete: {e}", 500)
+            error(self, f"Failed to delete: {e}", 500)
             return
 
-        self.send_json({"success": True, "message": f"Employee {employee_id} deleted"})
+        success(self, {"message": f"Employee {employee_id} deleted"})
 
 
 # ── Module-level cache for entity country lookup ──

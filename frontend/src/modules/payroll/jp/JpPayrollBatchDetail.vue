@@ -94,7 +94,7 @@ async function calculate() {
   try {
     const id = route.params.id as string
     const res = await payrollJpApi.calculateBatch(id)
-    const data = res.data?.data || res.data || {}
+    const data = res.data.data || {}
     if (data.warning) { ElMessage.warning(data.warning) }
     else { ElMessage.success(isRecalc ? t('payroll.jp.recalculated') : t('payroll.jp.calculated')) }
     await load()
@@ -122,7 +122,7 @@ async function confirmSheet() {
   confirmLoading.value = true
   try {
     const res = await payrollJpApi.confirmSheet(route.params.id as string)
-    const data = res.data?.data || res.data || {}
+    const data = res.data.data || {}
     ElMessage.success(t('payroll.jp.confirmed') + (data.payslips_generated ? ` (${data.payslips_generated} payslips)` : ''))
     await load()
   } catch (e: any) { ElMessage.error(e.message) }
@@ -168,7 +168,7 @@ async function openAuditLogs() {
   auditLoading.value = true
   try {
     const res = await payrollJpApi.getBatchAuditLogs(route.params.id as string)
-    auditLogs.value = res.data?.data?.items || res.data?.data || []
+    auditLogs.value = res.data.data || []
   } catch (e: any) { ElMessage.error(e.message) }
   finally { auditLoading.value = false }
 }

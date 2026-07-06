@@ -12,7 +12,7 @@ const total = ref(0)
 
 async function load() {
   loading.value = true
-  try { const res = await invoiceApi.pending(); pending.value = res.data.data?.items || []; total.value = pending.value.length } finally { loading.value = false }
+  try { const res = await invoiceApi.pending(); pending.value = res.data.data || []; total.value = pending.value.length } finally { loading.value = false }
 }
 
 async function scanPending() {

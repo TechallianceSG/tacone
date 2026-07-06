@@ -24,6 +24,7 @@ if str(_shared_path) not in _sys.path:
     _sys.path.insert(0, str(_shared_path))
 import db_utils as _db
 from auth_utils import validate_session, has_permission, is_system_admin
+from api_utils import send_json, success, error, paginated
 from cors_middleware import add_cors_headers, handle_preflight
 
 MODULE_NAME = "tacai-datadict"
@@ -36,17 +37,7 @@ REQUIRED_PERMISSION = "datadict.access"
 class DataDictHandler(BaseHTTPRequestHandler):
     server_version = "TACAIDataDict/0.2"
 
-    def send_json(self, data: dict | list, status: int = 200) -> None:
-        body = json.dumps(data, ensure_ascii=False, default=str).encode("utf-8")
-        self.send_response(status)
-        add_cors_headers(self)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
-    def send_error_json(self, message: str, status: int = 400) -> None:
-        self.send_json({"success": False, "error": message}, status)
+    # Standard response helpers provided by api_utils (send_json, success, error, paginated)
 
     def log_message(self, format: str, *args) -> None:  # noqa: A002
         return  # suppress default logging
@@ -57,10 +48,10 @@ class DataDictHandler(BaseHTTPRequestHandler):
     def _require_user(self) -> dict | None:
         user = self._current_user()
         if not user:
-            self.send_error_json("Unauthorized", 401)
+            error(self, "Unauthorized", 401)
             return None
         if not has_permission(user, REQUIRED_PERMISSION) and not is_system_admin(user):
-            self.send_error_json("Forbidden — insufficient permissions", 403)
+            error(self, "Forbidden — insufficient permissions", 403)
             return None
         return user
 
@@ -75,7 +66,7 @@ class DataDictHandler(BaseHTTPRequestHandler):
         params = parse_qs(parsed.query, keep_blank_values=True)
 
         if path == "/health":
-            self.send_json({"status": "ok", "module": MODULE_NAME})
+            send_json(self, {"status": "ok", "module": MODULE_NAME})
             return
 
         user = self._require_user()
@@ -102,7 +93,7 @@ class DataDictHandler(BaseHTTPRequestHandler):
             self._handle_entries_list(params)
             return
 
-        self.send_error_json("Not Found", 404)
+        error(self, "Not Found", 404)
 
     def do_POST(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
@@ -117,7 +108,7 @@ class DataDictHandler(BaseHTTPRequestHandler):
         try:
             body = json.loads(body_raw) if body_raw else {}
         except json.JSONDecodeError:
-            self.send_error_json("Invalid JSON", 400)
+            error(self, "Invalid JSON", 400)
             return
 
         # ── Category routes ──
@@ -140,7 +131,7 @@ class DataDictHandler(BaseHTTPRequestHandler):
             self._handle_entry_create(body)
             return
 
-        self.send_error_json("Not Found", 404)
+        error(self, "Not Found", 404)
 
     def do_DELETE(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
@@ -162,7 +153,7 @@ class DataDictHandler(BaseHTTPRequestHandler):
             self._handle_entry_delete(int(m_ent_one.group(1)))
             return
 
-        self.send_error_json("Not Found", 404)
+        error(self, "Not Found", 404)
 
     # ═══════════════════════════════════════════════════════════
     #  Category Handlers
@@ -183,7 +174,7 @@ class DataDictHandler(BaseHTTPRequestHandler):
         try:
             all_cats = _db.load_table(CATEGORY_TABLE, order_by="display_order")
         except Exception as e:
-            self.send_error_json(f"Database error: {e}", 500)
+            error(self, f"Database error: {e}", 500)
             return
 
         all_entries = self._load_all_entries()
@@ -191,7 +182,7 @@ class DataDictHandler(BaseHTTPRequestHandler):
         for cat in all_cats:
             cat["entry_count"] = self._get_entry_count(cat["id"], all_entries)
 
-        self.send_json({
+        send_json(self, {
             "categories": all_cats,
         })
 
@@ -200,22 +191,22 @@ class DataDictHandler(BaseHTTPRequestHandler):
         try:
             all_cats = _db.load_table(CATEGORY_TABLE)
         except Exception as e:
-            self.send_error_json(f"Database error: {e}", 500)
+            error(self, f"Database error: {e}", 500)
             return
 
         for cat in all_cats:
             if cat.get("id") == cat_id:
                 all_entries = self._load_all_entries()
                 cat["entry_count"] = self._get_entry_count(cat_id, all_entries)
-                self.send_json({"category": cat})
+                success(self, {"category": cat})
                 return
-        self.send_error_json("Category not found", 404)
+        error(self, "Category not found", 404)
 
     def _handle_category_create(self, body: dict) -> None:
         """POST /api/data-dictionary/categories — create a new category."""
         category_code = (body.get("category_code") or "").strip()
         if not category_code:
-            self.send_error_json("category_code is required", 400)
+            error(self, "category_code is required", 400)
             return
 
         now = datetime.now(timezone.utc).isoformat()
@@ -240,10 +231,10 @@ class DataDictHandler(BaseHTTPRequestHandler):
         try:
             _db.insert_record(CATEGORY_TABLE, record)
         except Exception as e:
-            self.send_error_json(f"Failed to create category: {e}", 500)
+            error(self, f"Failed to create category: {e}", 500)
             return
 
-        self.send_json({"category": record}, 201)
+        send_json(self, {"category": record}, 201)
 
     def _handle_category_update(self, cat_id: int, body: dict) -> None:
         """POST /api/data-dictionary/categories/{id} — update a category.
@@ -253,7 +244,7 @@ class DataDictHandler(BaseHTTPRequestHandler):
         try:
             all_cats = _db.load_table(CATEGORY_TABLE)
         except Exception as e:
-            self.send_error_json(f"Database error: {e}", 500)
+            error(self, f"Database error: {e}", 500)
             return
 
         target = None
@@ -262,7 +253,7 @@ class DataDictHandler(BaseHTTPRequestHandler):
                 target = cat
                 break
         if target is None:
-            self.send_error_json("Category not found", 404)
+            error(self, "Category not found", 404)
             return
 
         now = datetime.now(timezone.utc).isoformat()
@@ -279,7 +270,7 @@ class DataDictHandler(BaseHTTPRequestHandler):
         try:
             _db.update_record(CATEGORY_TABLE, "id", cat_id, target)
         except Exception as e:
-            self.send_error_json(f"Failed to update category: {e}", 500)
+            error(self, f"Failed to update category: {e}", 500)
             return
 
         # Cascade: if deactivating category, deactivate all its entries
@@ -296,19 +287,19 @@ class DataDictHandler(BaseHTTPRequestHandler):
             except Exception:
                 pass  # cascade failure is non-fatal
 
-        self.send_json({"category": target})
+        send_json(self, {"category": target})
 
     def _handle_category_delete(self, cat_id: int) -> None:
         """DELETE /api/data-dictionary/categories/{id} — permanent delete with cascade."""
         try:
             all_cats = _db.load_table(CATEGORY_TABLE)
         except Exception as e:
-            self.send_error_json(f"Database error: {e}", 500)
+            error(self, f"Database error: {e}", 500)
             return
 
         found = any(cat.get("id") == cat_id for cat in all_cats)
         if not found:
-            self.send_error_json("Category not found", 404)
+            error(self, "Category not found", 404)
             return
 
         # Cascade-delete all entries in this category
@@ -320,17 +311,17 @@ class DataDictHandler(BaseHTTPRequestHandler):
                     _db.delete_record(ENTRY_TABLE, "id", entry["id"])
                     deleted_entries += 1
         except Exception as e:
-            self.send_error_json(f"Failed to delete entries: {e}", 500)
+            error(self, f"Failed to delete entries: {e}", 500)
             return
 
         # Delete the category itself
         try:
             _db.delete_record(CATEGORY_TABLE, "id", cat_id)
         except Exception as e:
-            self.send_error_json(f"Failed to delete category: {e}", 500)
+            error(self, f"Failed to delete category: {e}", 500)
             return
 
-        self.send_json({
+        send_json(self, {
             "success": True,
             "message": f"Category {cat_id} and {deleted_entries} entries deleted",
         })
@@ -344,7 +335,7 @@ class DataDictHandler(BaseHTTPRequestHandler):
         try:
             all_rows = _db.load_table(ENTRY_TABLE, order_by="category_id, display_order")
         except Exception as e:
-            self.send_error_json(f"Database error: {e}", 500)
+            error(self, f"Database error: {e}", 500)
             return
 
         total_all = len(all_rows)
@@ -387,26 +378,20 @@ class DataDictHandler(BaseHTTPRequestHandler):
         start = (page - 1) * page_size
         paged = filtered[start:start + page_size]
 
-        self.send_json({
-            "items": paged,
-            "total": total_filtered,
-            "total_all": total_all,
-            "page": page,
-            "page_size": page_size,
-        })
+        paginated(self, paged, page, page_size, total_filtered, total_all)
 
     def _handle_entry_get_one(self, entry_id: int) -> None:
         """GET /api/data-dictionary/entries/{id} — single entry."""
         try:
             all_rows = _db.load_table(ENTRY_TABLE)
         except Exception as e:
-            self.send_error_json(f"Database error: {e}", 500)
+            error(self, f"Database error: {e}", 500)
             return
         for row in all_rows:
             if row.get("id") == entry_id:
-                self.send_json({"entry": row})
+                send_json(self, {"entry": row})
                 return
-        self.send_error_json("Entry not found", 404)
+        error(self, "Entry not found", 404)
 
     def _handle_entry_create(self, body: dict) -> None:
         """POST /api/data-dictionary/entries — create entry."""
@@ -414,20 +399,20 @@ class DataDictHandler(BaseHTTPRequestHandler):
         entry_code = (body.get("entry_code") or "").strip()
 
         if not category_id:
-            self.send_error_json("category_id is required", 400)
+            error(self, "category_id is required", 400)
             return
         if not entry_code:
-            self.send_error_json("entry_code is required", 400)
+            error(self, "entry_code is required", 400)
             return
 
         # Validate category exists
         try:
             all_cats = _db.load_table(CATEGORY_TABLE)
         except Exception as e:
-            self.send_error_json(f"Database error: {e}", 500)
+            error(self, f"Database error: {e}", 500)
             return
         if not any(c.get("id") == category_id for c in all_cats):
-            self.send_error_json(f"Category with id {category_id} not found", 400)
+            error(self, f"Category with id {category_id} not found", 400)
             return
 
         now = datetime.now(timezone.utc).isoformat()
@@ -447,17 +432,17 @@ class DataDictHandler(BaseHTTPRequestHandler):
         try:
             _db.insert_record(ENTRY_TABLE, record)
         except Exception as e:
-            self.send_error_json(f"Failed to create entry: {e}", 500)
+            error(self, f"Failed to create entry: {e}", 500)
             return
 
-        self.send_json({"entry": record}, 201)
+        send_json(self, {"entry": record}, 201)
 
     def _handle_entry_update(self, entry_id: int, body: dict) -> None:
         """POST /api/data-dictionary/entries/{id} — update entry."""
         try:
             all_rows = _db.load_table(ENTRY_TABLE)
         except Exception as e:
-            self.send_error_json(f"Database error: {e}", 500)
+            error(self, f"Database error: {e}", 500)
             return
 
         target = None
@@ -466,7 +451,7 @@ class DataDictHandler(BaseHTTPRequestHandler):
                 target = row
                 break
         if target is None:
-            self.send_error_json("Entry not found", 404)
+            error(self, "Entry not found", 404)
             return
 
         # If category_id is being changed, validate new category exists
@@ -474,10 +459,10 @@ class DataDictHandler(BaseHTTPRequestHandler):
             try:
                 all_cats = _db.load_table(CATEGORY_TABLE)
             except Exception as e:
-                self.send_error_json(f"Database error: {e}", 500)
+                error(self, f"Database error: {e}", 500)
                 return
             if not any(c.get("id") == body["category_id"] for c in all_cats):
-                self.send_error_json(f"Category with id {body['category_id']} not found", 400)
+                error(self, f"Category with id {body['category_id']} not found", 400)
                 return
 
         now = datetime.now(timezone.utc).isoformat()
@@ -493,33 +478,33 @@ class DataDictHandler(BaseHTTPRequestHandler):
         try:
             _db.update_record(ENTRY_TABLE, "id", entry_id, target)
         except Exception as e:
-            self.send_error_json(f"Failed to update entry: {e}", 500)
+            error(self, f"Failed to update entry: {e}", 500)
             return
 
-        self.send_json({"entry": target})
+        send_json(self, {"entry": target})
 
     def _handle_entry_delete(self, entry_id: int) -> None:
         """DELETE /api/data-dictionary/entries/{id} — permanent delete."""
         try:
             all_rows = _db.load_table(ENTRY_TABLE)
         except Exception as e:
-            self.send_error_json(f"Database error: {e}", 500)
+            error(self, f"Database error: {e}", 500)
             return
 
         for row in all_rows:
             if row.get("id") == entry_id:
                 break
         else:
-            self.send_error_json("Entry not found", 404)
+            error(self, "Entry not found", 404)
             return
 
         try:
             _db.delete_record(ENTRY_TABLE, "id", entry_id)
         except Exception as e:
-            self.send_error_json(f"Failed to delete entry: {e}", 500)
+            error(self, f"Failed to delete entry: {e}", 500)
             return
 
-        self.send_json({"success": True, "message": f"Entry {entry_id} deleted"})
+        success(self, {"message": f"Entry {entry_id} deleted"})
 
 
 def parse_args() -> argparse.Namespace:

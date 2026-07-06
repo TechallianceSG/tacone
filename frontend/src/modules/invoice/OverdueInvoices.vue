@@ -12,7 +12,7 @@ const total = ref(0)
 
 async function load() {
   loading.value = true
-  try { const res = await invoiceApi.overdue(); overdueList.value = res.data.data?.items || []; total.value = overdueList.value.length } finally { loading.value = false }
+  try { const res = await invoiceApi.overdue(); overdueList.value = res.data.data || []; total.value = overdueList.value.length } finally { loading.value = false }
 }
 
 function viewDetail(id: string) { router.push(`/invoice/invoices/${id}`) }

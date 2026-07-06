@@ -52,7 +52,7 @@ async function load() {
   loading.value = true
   try {
     const res = await payrollJpApi.payslips()
-    payslips.value = res.data.data?.items || res.data.data || []
+    payslips.value = res.data.data || []
     filtered.value = [...payslips.value]
   } catch (e: any) { ElMessage.error(e.message) }
   finally { loading.value = false }

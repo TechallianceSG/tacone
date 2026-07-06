@@ -21,7 +21,7 @@ async function load() {
     const params: Record<string, any> = {}
     if (statusFilter.value) params.status = statusFilter.value
     const res = await invoiceApi.list(params)
-    invoices.value = res.data.data?.items || []
+    invoices.value = res.data.data || []
     total.value = invoices.value.length
   } finally { loading.value = false }
 }

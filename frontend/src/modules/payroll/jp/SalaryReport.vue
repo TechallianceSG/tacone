@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { payrollJpApi } from '@/api/client'
+import { payrollJpApi, masterdataApi } from '@/api/client'
 import { ElMessage } from 'element-plus'
 import { JP_STATUS_CONFIG } from '@/constants/payrollJp'
 
@@ -90,7 +90,7 @@ async function executeCalculation() {
       entity_id: calcEntity.value || undefined,
       notes: calcNotes.value || undefined,
     })
-    const sheetData = res.data.data || res.data || {}
+    const sheetData = res.data.data || {}
     const sheetId = sheetData.sheet_id || sheetData.batch_id
 
     if (sheetId) {
@@ -181,7 +181,7 @@ async function loadRecords() {
     if (searchQuery.value) params.q = searchQuery.value
 
     const res = await payrollJpApi.sheets(params)
-    const data = res.data.data || res.data || {}
+    const data = res.data.data || {}
     records.value = data.items || data || []
     total.value = data.total || records.value.length
     pages.value = data.pages || Math.ceil(total.value / pageSize.value) || 1
@@ -195,8 +195,8 @@ async function loadRecords() {
 
 async function loadEntities() {
   try {
-    const res = await fetch('/api/masterdata/entities').then(r => r.json())
-    entities.value = res.data || []
+    const res = await masterdataApi.entities()
+    entities.value = res.data.data || res.data.entities || []
   } catch (_) {}
 }
 

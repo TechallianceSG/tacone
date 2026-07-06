@@ -95,7 +95,7 @@ async function load() {
   loading.value = true
   try {
     const res = await payrollJpApi.batches()
-    sheets.value = res.data.data?.items || res.data.data || []
+    sheets.value = res.data.data || []
     filtered.value = [...sheets.value]
   } catch (e: any) { ElMessage.error(e.message) }
   finally { loading.value = false }
@@ -143,7 +143,7 @@ async function createSheet() {
   creating.value = true
   try {
     const res = await payrollJpApi.createBatch(createForm.value)
-    const data = res.data?.data || res.data || {}
+    const data = res.data.data || {}
     createDialog.value = false
     if (data.auto_voided) {
       ElMessage.success(t('payroll.jp.sheet_created_with_void', { n: data.auto_voided }))
@@ -188,7 +188,7 @@ async function openGlobalAuditLogs() {
   expandedAudit.value = new Set()
   try {
     const res = await payrollJpApi.auditLogs()
-    auditLogs.value = res.data?.data?.items || res.data?.data || []
+    auditLogs.value = res.data.data || []
   } catch (e: any) { ElMessage.error(e.message) }
   finally { auditLoading.value = false }
 }

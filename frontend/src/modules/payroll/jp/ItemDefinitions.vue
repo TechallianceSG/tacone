@@ -23,7 +23,7 @@ const paged = computed(() => {
 function handlePageChange(p: number) { page.value = p }
 function handleSizeChange(s: number) { pageSize.value = s; page.value = 1 }
 
-async function load() { loading.value = true; try { const res = await payrollJpApi.itemDefinitions(); items.value = res.data.data?.items || res.data.data || [] } catch (e: any) { ElMessage.error(e.message) } finally { loading.value = false } }
+async function load() { loading.value = true; try { const res = await payrollJpApi.itemDefinitions(); items.value = res.data.data || [] } catch (e: any) { ElMessage.error(e.message) } finally { loading.value = false } }
 function openEdit(row: any) { form.value = { ...row }; dialogVisible.value = true }
 async function save() { saving.value = true; try { await payrollJpApi.saveItemDefinition(form.value); dialogVisible.value = false; ElMessage.success(t('action.saved')); await load() } catch (e: any) { ElMessage.error(e.message) } finally { saving.value = false } }
 onMounted(load)

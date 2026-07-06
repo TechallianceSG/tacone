@@ -43,13 +43,15 @@ from urllib.parse import parse_qs, urlparse
 # ── Core JSON response sender ────────────────────────────────
 
 def send_json(handler, payload: dict, status: int = 200) -> None:
-    """Send a JSON response with standard headers."""
-    body = json.dumps(payload, ensure_ascii=False, default=str)
+    """Send a JSON response with standard headers (CORS + security)."""
+    from cors_middleware import add_cors_headers
+    body = json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
     handler.send_response(status)
+    add_cors_headers(handler)
     handler.send_header("Content-Type", "application/json; charset=utf-8")
-    handler.send_header("Content-Length", str(len(body.encode("utf-8"))))
+    handler.send_header("Content-Length", str(len(body)))
     handler.end_headers()
-    handler.wfile.write(body.encode("utf-8"))
+    handler.wfile.write(body)
 
 
 # ── Success responses ─────────────────────────────────────────
@@ -62,7 +64,7 @@ def success(handler, data: Any = None, status: int = 200) -> None:
     send_json(handler, payload, status)
 
 
-def paginated(handler, data: list, page: int, page_size: int, total: int, total_all: int | None = None) -> None:
+def paginated(handler, data: list, page: int, page_size: int, total: int, total_all: int | None = None, filtered: bool | None = None) -> None:
     """Send a standard paginated list response."""
     payload = {
         "success": True,
@@ -75,6 +77,8 @@ def paginated(handler, data: list, page: int, page_size: int, total: int, total_
     }
     if total_all is not None:
         payload["pagination"]["total_all"] = total_all
+    if filtered is not None:
+        payload["pagination"]["filtered"] = filtered
     send_json(handler, payload, 200)
 
 

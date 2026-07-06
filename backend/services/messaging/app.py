@@ -1657,25 +1657,25 @@ def api_inbox(self: BaseHTTPRequestHandler, user: dict[str, Any]) -> None:
     page = int((query.get("page", ["1"])[0] or "1"))
     limit = int((query.get("limit", ["20"])[0] or "20"))
     result = get_user_messages(user_id, msg_type, status, keyword, start_date, end_date, page, limit)
-    self._send_json({"code": 200, "data": result})
+    self._send_json({"success": True, "data": result})
 
 
 def api_unread_count(self: BaseHTTPRequestHandler, user: dict[str, Any]) -> None:
     user_id = str(user.get("user_id", ""))
     count = sum(1 for m in messages() if str(m.get("recipient_user_id", "")) == user_id and m.get("status") == "unread")
-    self._send_json({"code": 200, "data": {"unread_count": count}})
+    self._send_json({"success": True, "data": {"unread_count": count}})
 
 
 def api_message_detail(self: BaseHTTPRequestHandler, user: dict[str, Any], msg_id: str) -> None:
     m = get_message(msg_id)
     if not m:
-        self._send_json({"code": 404, "error": "Message not found"}, 404)
+        self._send_json({"success": False, "error": "Message not found"}, 404)
         return
     user_id = str(user.get("user_id", ""))
     if str(m.get("recipient_user_id", "")) != user_id and not is_system_admin(user):
-        self._send_json({"code": 403, "error": "Forbidden"}, 403)
+        self._send_json({"success": False, "error": "Forbidden"}, 403)
         return
-    self._send_json({"code": 200, "data": m})
+    self._send_json({"success": True, "data": m})
 
 
 # ---------------------------------------------------------------------------
@@ -1760,14 +1760,9 @@ class TacaiMsgHandler(BaseHTTPRequestHandler):
         handle_preflight(self)
 
     def _send_json(self, data: Any, status: int = 200) -> None:
-        payload = json.dumps(data, ensure_ascii=False).encode("utf-8")
-        self.send_response(status)
-        add_cors_headers(self)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Cache-Control", "no-store")
-        self.send_header("Content-Length", str(len(payload)))
-        self.end_headers()
-        self.wfile.write(payload)
+        """Delegate to api_utils for standard CORS + security headers."""
+        from api_utils import send_json as _send
+        _send(self, data, status)
 
     def _send_text(self, text: str, status: int = 200) -> None:
         payload = text.encode("utf-8")
@@ -1875,7 +1870,7 @@ class TacaiMsgHandler(BaseHTTPRequestHandler):
                     kw = keyword.lower()
                     all_msgs = [m for m in all_msgs if kw in str(m.get("title", "")).lower() or kw in str(m.get("content", "")).lower()]
                 all_msgs.sort(key=lambda m: str(m.get("created_at", "")), reverse=True)
-                self._send_json({"code": 200, "data": {"total": len(all_msgs), "items": all_msgs[:50]}})
+                self._send_json({"success": True, "data": {"total": len(all_msgs), "items": all_msgs[:50]}})
                 return
 
             # API: message detail
@@ -2067,7 +2062,7 @@ class TacaiMsgHandler(BaseHTTPRequestHandler):
                 # Validate internal token
                 token = self.headers.get("X-TACAI-Internal-Token", "")
                 if token != TACAIMSG_INTERNAL_TOKEN:
-                    self._send_json({"code": 403, "error": "Forbidden: invalid internal token"}, 403)
+                    self._send_json({"success": False, "error": "Forbidden: invalid internal token"}, 403)
                     return
                 messages_payload = body.get("messages")
                 if not isinstance(messages_payload, list) or not messages_payload:
@@ -2076,14 +2071,14 @@ class TacaiMsgHandler(BaseHTTPRequestHandler):
                 sender_user_id = str(body.get("sender_user_id", "SYSTEM")).strip()
                 sender_name = str(body.get("sender_name", "TACAI Payroll System")).strip()
                 result = send_message_batch(messages_payload, sender_user_id, sender_name)
-                self._send_json({"code": 200, "data": result})
+                self._send_json({"success": True, "data": result})
                 return
 
             if path == "/api/internal/users/resolve-employees":
                 # Resolve employee_ids to user accounts
                 token = self.headers.get("X-TACAI-Internal-Token", "")
                 if token != TACAIMSG_INTERNAL_TOKEN:
-                    self._send_json({"code": 403, "error": "Forbidden: invalid internal token"}, 403)
+                    self._send_json({"success": False, "error": "Forbidden: invalid internal token"}, 403)
                     return
                 body = self._read_body_json()
                 employee_ids = body.get("employee_ids")
@@ -2105,7 +2100,7 @@ class TacaiMsgHandler(BaseHTTPRequestHandler):
                         }
                     else:
                         result_mapping[eid] = {"has_account": False}
-                self._send_json({"code": 200, "data": {"mapping": result_mapping}})
+                self._send_json({"success": True, "data": {"mapping": result_mapping}})
                 return
 
             # === API POST routes ===
@@ -2115,7 +2110,7 @@ class TacaiMsgHandler(BaseHTTPRequestHandler):
                 user = self.require_user("tacaimsg.view")
                 if not user: return
                 mark_read(api_read_match.group(1), user)
-                self._send_json({"code": 200, "message": tr(lang, "msg.read_ok")})
+                self._send_json({"success": True, "message": tr(lang, "msg.read_ok")})
                 return
             if path == "/api/v1/messages/read-all":
                 user = self.require_user("tacaimsg.view")
@@ -2124,7 +2119,7 @@ class TacaiMsgHandler(BaseHTTPRequestHandler):
                 msg_type = str(body.get("type", "")).strip()
                 user_id = str(user.get("user_id", ""))
                 count = mark_all_read(user_id, msg_type, user)
-                self._send_json({"code": 200, "updated_count": count})
+                self._send_json({"success": True, "updated_count": count})
                 return
             # Confirm receipt (API)
             api_confirm_match = re.match(r"^/api/v1/messages/(MSG-\d{6}-\d+)/confirm$", path)
@@ -2132,7 +2127,7 @@ class TacaiMsgHandler(BaseHTTPRequestHandler):
                 user = self.require_user("tacaimsg.view")
                 if not user: return
                 confirm_receipt(api_confirm_match.group(1), user)
-                self._send_json({"code": 200, "message": tr(lang, "msg.confirmed_ok")})
+                self._send_json({"success": True, "message": tr(lang, "msg.confirmed_ok")})
                 return
             # Training response (API)
             api_tr_match = re.match(r"^/api/v1/messages/(MSG-\d{6}-\d+)/training-response$", path)
@@ -2142,7 +2137,7 @@ class TacaiMsgHandler(BaseHTTPRequestHandler):
                 body = self._read_body_json()
                 response = str(body.get("response", "confirmed")).strip()
                 training_response(api_tr_match.group(1), response, user)
-                self._send_json({"code": 200, "message": tr(lang, "msg.training_confirmed") if response == "confirmed" else tr(lang, "msg.training_declined")})
+                self._send_json({"success": True, "message": tr(lang, "msg.training_confirmed") if response == "confirmed" else tr(lang, "msg.training_declined")})
                 return
 
             # === Phase B: Workflow POST routes ===

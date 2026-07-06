@@ -224,7 +224,7 @@ def _bootstrap_admin_password_hash() -> str:
     return hash_password(random_pw)
 
 
-INITIAL_ADMIN_PASSWORD_HASH = _bootstrap_admin_password_hash()
+# INITIAL_ADMIN_PASSWORD_HASH is set after hash_password() is defined (see below)
 
 ROLE_DEFINITIONS = [
     {"role_id": "ROLE-SYSTEM-ADMIN", "role_key": "system_admin", "role_name": "System Admin", "description_key": "role.system_admin.description"},
@@ -701,6 +701,10 @@ def hash_password(password: str, salt: str | None = None) -> str:
     salt = salt or secrets.token_hex(16)
     digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), PASSWORD_ITERATIONS)
     return f"pbkdf2_sha256${PASSWORD_ITERATIONS}${salt}${digest.hex()}"
+
+
+# Lazy-init after hash_password() is defined
+INITIAL_ADMIN_PASSWORD_HASH = _bootstrap_admin_password_hash()
 
 
 def verify_password(password: str, encoded_hash: str) -> bool:
@@ -3152,7 +3156,7 @@ class UserAdminHandler(BaseHTTPRequestHandler):
             errors.append(t(messages, "validation.password_required"))
         errors.extend(password_policy_errors(initial_password, messages))
         if errors:
-            self.send_json(400, {"error": "Validation failed", "errors": errors})
+            self.send_json(400, {"success": False, "error": "Validation failed", "errors": errors})
             return
         users = load_users()
         timestamp = now_iso()
@@ -3207,7 +3211,7 @@ class UserAdminHandler(BaseHTTPRequestHandler):
         if would_leave_no_active_system_admin(target_user_id, selected_role_ids, str(enriched.get("status"))):
             errors.append(t(messages, "validation.last_system_admin"))
         if errors:
-            self.send_json(400, {"error": "Validation failed", "errors": errors})
+            self.send_json(400, {"success": False, "error": "Validation failed", "errors": errors})
             return
         users = load_users()
         persist_data = user_persistable_data(enriched)
@@ -3262,7 +3266,7 @@ class UserAdminHandler(BaseHTTPRequestHandler):
         if would_leave_no_active_system_admin(target_user_id, active_user_role_ids(target_user_id), "inactive"):
             errors.append(t(messages, "validation.last_system_admin"))
         if errors:
-            self.send_json(400, {"error": "Validation failed", "errors": errors})
+            self.send_json(400, {"success": False, "error": "Validation failed", "errors": errors})
             return
         users = load_users()
         before_user: dict[str, Any] = {}
@@ -3299,7 +3303,7 @@ class UserAdminHandler(BaseHTTPRequestHandler):
         if new_password == current_password:
             errors.append(t(messages, "validation.password_same_as_current"))
         if errors:
-            self.send_json(400, {"error": "Validation failed", "errors": errors})
+            self.send_json(400, {"success": False, "error": "Validation failed", "errors": errors})
             return
         users = load_users()
         for record in users:
@@ -3327,7 +3331,7 @@ class UserAdminHandler(BaseHTTPRequestHandler):
         data = self.parse_json_body()
         permission_ids = data.get("permission_ids", [])
         if not isinstance(permission_ids, list):
-            self.send_json(400, {"error": "permission_ids must be a list"})
+            self.send_json(400, {"success": False, "error": "permission_ids must be a list"})
             return
         selected = set(str(pid) for pid in permission_ids)
         # Get existing mappings

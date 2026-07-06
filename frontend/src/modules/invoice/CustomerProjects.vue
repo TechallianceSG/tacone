@@ -13,7 +13,7 @@ const form = ref<Record<string, any>>({ default_currency: 'JPY', default_tax_rat
 
 async function load() {
   loading.value = true
-  try { const res = await invoiceApi.projects(); projects.value = res.data.data?.items || []; total.value = projects.value.length } finally { loading.value = false }
+  try { const res = await invoiceApi.projects(); projects.value = res.data.data || []; total.value = projects.value.length } finally { loading.value = false }
 }
 
 function openDialog(row?: any) {

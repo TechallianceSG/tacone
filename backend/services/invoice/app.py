@@ -37,28 +37,7 @@ except Exception:
 
 from auth_utils import validate_session, has_permission, is_system_admin
 from cors_middleware import add_cors_headers, handle_preflight
-
-
-def send_json(handler, data, status=200):
-    body = json.dumps(data, ensure_ascii=False, default=str).encode('utf-8')
-    handler.send_response(status)
-    add_cors_headers(handler)
-    handler.send_header('Content-Type', 'application/json; charset=utf-8')
-    handler.send_header('Content-Length', str(len(body)))
-    handler.end_headers()
-    handler.wfile.write(body)
-
-
-def success(handler, data, status=200):
-    send_json(handler, {"success": True, "data": data}, status)
-
-
-def error(handler, message, status=400):
-    send_json(handler, {"success": False, "error": message}, status)
-
-
-def paginated(handler, data, page, page_size, total):
-    send_json(handler, {"success": True, "data": data, "page": page, "page_size": page_size, "total": total})
+from api_utils import send_json, success, error, paginated
 
 
 def parse_json_body(handler):
@@ -230,7 +209,7 @@ class InvoiceHandler(BaseHTTPRequestHandler):
             return
         try:
             rows = _db.load_table(table, order_by="created_at DESC")
-            success(self, {"items": rows, "total": len(rows)})
+            paginated(self, rows, 1, len(rows), len(rows))
         except Exception as e:
             error(self, f"Database error: {str(e)}", 500)
 
@@ -431,7 +410,7 @@ class InvoiceHandler(BaseHTTPRequestHandler):
             status_filter = get_query_param(self, "status", "")
             where = {"status": status_filter} if status_filter else None
             rows = _db.load_table("inv_invoices", where=where, order_by="created_at DESC")
-            success(self, {"items": rows, "total": len(rows)})
+            paginated(self, rows, 1, len(rows), len(rows))
         except Exception as e:
             error(self, f"Database error: {str(e)}", 500)
 
@@ -664,7 +643,7 @@ class InvoiceHandler(BaseHTTPRequestHandler):
             return
         try:
             logs = _db.load_table("inv_email_logs", where={"invoice_id": invoice_id}, order_by="created_at DESC")
-            success(self, {"items": logs, "total": len(logs)})
+            paginated(self, logs, 1, len(logs), len(logs))
         except Exception as e:
             error(self, f"Database error: {str(e)}", 500)
 
@@ -674,7 +653,7 @@ class InvoiceHandler(BaseHTTPRequestHandler):
             return
         try:
             records = _db.load_table("inv_approval_records", where={"invoice_id": invoice_id}, order_by="created_at DESC")
-            success(self, {"items": records, "total": len(records)})
+            paginated(self, records, 1, len(records), len(records))
         except Exception as e:
             error(self, f"Database error: {str(e)}", 500)
 
@@ -718,7 +697,7 @@ class InvoiceHandler(BaseHTTPRequestHandler):
             return
         try:
             payments = _db.load_table("inv_payments", where={"invoice_id": invoice_id}, order_by="payment_date DESC")
-            success(self, {"items": payments, "total": len(payments)})
+            paginated(self, payments, 1, len(payments), len(payments))
         except Exception as e:
             error(self, f"Database error: {str(e)}", 500)
 
@@ -842,7 +821,7 @@ class InvoiceHandler(BaseHTTPRequestHandler):
                             overdue.append(inv)
                 except ValueError:
                     pass
-            success(self, {"items": overdue, "total": len(overdue)})
+            paginated(self, overdue, 1, len(overdue), len(overdue))
         except Exception as e:
             error(self, f"Database error: {str(e)}", 500)
 

@@ -110,7 +110,7 @@ async function load() {
   loading.value = true
   try {
     const res = await payrollJpApi.parameters()
-    allParams.value = res.data.data?.items || res.data.data || []
+    allParams.value = res.data.data || []
   } catch (e: any) { ElMessage.error(e.message) }
   finally { loading.value = false }
 }

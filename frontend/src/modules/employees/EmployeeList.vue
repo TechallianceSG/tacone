@@ -131,7 +131,7 @@ async function handleCreate() {
     }
     console.log('[handleCreate] payload:', JSON.stringify(payload))
     const { data } = await (employeeApi as any).create(payload)
-    if (data?.success || data?.employee) { dialogVisible.value = false; loadEmployees() }
+    if (data?.success || data?.data) { dialogVisible.value = false; loadEmployees() }
     else { formErrors.value = data?.errors || ['Failed'] }
   } catch (e: any) { formErrors.value = e?.response?.data?.errors || [e?.message || 'Failed'] }
   finally { submitting.value = false }
@@ -161,7 +161,7 @@ async function loadEmployees() {
     if (filters.english_level) params.english_level = filters.english_level
     if (filters.skill.trim()) params.skill = filters.skill.trim()
     const { data } = await employeeApi.list(params)
-    employees.value = data?.employees || []; total.value = data?.total || 0; totalAll.value = data?.total_all || 0; filtered.value = data?.filtered || false
+    employees.value = data?.data || []; total.value = data?.pagination?.total || 0; totalAll.value = data?.pagination?.total_all || 0; filtered.value = data?.pagination?.filtered || false
   } catch (e: any) { error.value = e?.response?.data?.error || e?.message || 'Failed' }
   finally { loading.value = false }
 }
@@ -206,12 +206,18 @@ function teamDisp(e: Employee) { return e.employment?.team_name || e.employment?
 const countLabel = computed(() => filtered.value ? t('employee.showing_filtered', { shown: total.value, total: totalAll.value }) : t('employee.total_count', { count: total.value }))
 
 onMounted(async () => {
-  // Load data dictionary options (enum values) + masterdata (entities, depts, teams) in parallel
-  await Promise.all([
-    loadOptions([CAT.STATUS, CAT.EMPLOYMENT_TYPE, CAT.BUSINESS_LINE, CAT.LANGUAGE_LEVEL, CAT.COUNTRY_CODE]),
-    loadFilterOptions(),
-  ])
-  loadEmployees()
+  // Show loading immediately — don't wait for dropdowns to finish
+  loading.value = true
+  try {
+    // Load data dictionary options + masterdata dropdowns in parallel
+    await Promise.all([
+      loadOptions([CAT.STATUS, CAT.EMPLOYMENT_TYPE, CAT.BUSINESS_LINE, CAT.LANGUAGE_LEVEL, CAT.COUNTRY_CODE]),
+      loadFilterOptions(),
+    ])
+  } finally {
+    // Data is ready, load the employee list (loadEmployees sets its own error state)
+    loadEmployees()
+  }
 })
 </script>
 

@@ -111,7 +111,7 @@ async function loadCategories() {
   sidebarLoading.value = true
   try {
     const { data } = await datadictApi.categories.list()
-    categories.value = data?.categories || []
+    categories.value = data?.data?.categories || data?.data || [] || []
   } catch { /* ignore */ }
   finally {
     sidebarLoading.value = false
@@ -133,8 +133,8 @@ async function loadEntries() {
       show_inactive: '1',
     }
     const { data } = await datadictApi.entries.list(params)
-    entries.value = data?.items || []
-    entryTotal.value = data?.total || 0
+    entries.value = data?.data || []
+    entryTotal.value = data?.pagination?.total || 0
   } catch (e: any) {
     ElMessage.error(e?.response?.data?.error || t('error.load_failed'))
   } finally {

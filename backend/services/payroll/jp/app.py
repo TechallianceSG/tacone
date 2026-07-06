@@ -38,28 +38,7 @@ except Exception:
 
 from auth_utils import validate_session, has_permission, is_system_admin
 from cors_middleware import add_cors_headers, handle_preflight
-
-
-def send_json(handler, data, status=200):
-    body = json.dumps(data, ensure_ascii=False, default=str).encode('utf-8')
-    handler.send_response(status)
-    add_cors_headers(handler)
-    handler.send_header('Content-Type', 'application/json; charset=utf-8')
-    handler.send_header('Content-Length', str(len(body)))
-    handler.end_headers()
-    handler.wfile.write(body)
-
-
-def success(handler, data, status=200):
-    send_json(handler, {"success": True, "data": data}, status)
-
-
-def error(handler, message, status=400):
-    send_json(handler, {"success": False, "error": message}, status)
-
-
-def paginated(handler, data, page, page_size, total):
-    send_json(handler, {"success": True, "data": data, "page": page, "page_size": page_size, "total": total})
+from api_utils import send_json, success, error, paginated
 
 
 def parse_json_body(handler):
@@ -546,7 +525,7 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
             return
         try:
             rows = _db.load_table(table, order_by="created_at DESC")
-            success(self, {"items": rows, "total": len(rows)})
+            paginated(self, rows, 1, len(rows), len(rows))
         except Exception as e:
             error(self, f"Database error: {str(e)}", 500)
 
@@ -571,7 +550,7 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
                 body = json.loads(resp.read().decode("utf-8"))
             # Extract the list key (entities, departments, or teams)
             data = body.get("entities") or body.get("departments") or body.get("teams") or []
-            success(self, data)
+            paginated(self, data, 1, len(data), len(data))
         except Exception as e:
             error(self, f"Masterdata service unavailable: {str(e)}", 502)
 
@@ -582,7 +561,7 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
             return
         try:
             rows = _db.load_table("pay_jp_payroll_item_definitions", order_by="display_order ASC")
-            success(self, {"items": rows, "total": len(rows)})
+            paginated(self, rows, 1, len(rows), len(rows))
         except Exception as e:
             error(self, f"Database error: {str(e)}", 500)
 
@@ -595,7 +574,7 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
             cat = get_query_param(self, "category", "").strip()
             where = {"category": cat} if cat else None
             rows = _db.load_table("pay_jp_rate_type_labels", where=where, order_by="display_order")
-            success(self, {"items": rows, "total": len(rows)})
+            paginated(self, rows, 1, len(rows), len(rows))
         except Exception as e:
             error(self, f"Database error: {str(e)}", 500)
 
@@ -627,7 +606,7 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
             for r in ai_rows:
                 all_items.append({**r, "param_type": "accident_insurance_rate"})
 
-            success(self, {"items": all_items, "total": len(all_items)})
+            paginated(self, all_items, 1, len(all_items), len(all_items))
         except Exception as e:
             error(self, f"Database error: {str(e)}", 500)
 
@@ -744,7 +723,7 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
                     "salary_type": payroll.get("salary_type", "monthly") if isinstance(payroll, dict) else "monthly",
                     "already_imported": eid in existing_ids,
                 })
-            success(self, {"items": result, "total": len(result)})
+            paginated(self, result, 1, len(result), len(result))
         except Exception as e:
             error(self, f"Failed to list importable employees: {str(e)}", 500)
 
@@ -2039,13 +2018,13 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
             # Build IN clause
             ids_str = ", ".join(f"'{rid}'" for rid in record_ids if rid)
             if not ids_str:
-                success(self, {"items": [], "total": 0})
+                paginated(self, [], 1, 0, 0)
                 return
 
             logs = _db.load_table("pay_jp_audit_logs",
                 where=f"record_id IN ({ids_str})",
                 order_by="created_at DESC") or []
-            success(self, {"items": logs, "total": len(logs)})
+            paginated(self, logs, 1, len(logs), len(logs))
         except Exception as e:
             error(self, f"Get audit logs failed: {str(e)}", 500)
 

@@ -43,6 +43,7 @@ except Exception:
     print("[masterdata] FATAL: db_utils is required. PostgreSQL must be available.", file=_sys.stderr)
     _sys.exit(1)
 from cors_middleware import add_cors_headers, handle_preflight
+from api_utils import send_json as api_send_json, success as api_success, error as api_error, paginated
 # ============================================
 
 ROOT_DIR = Path(__file__).resolve().parents[0]
@@ -2079,13 +2080,8 @@ class MasterDataHandler(BaseHTTPRequestHandler):
         handle_preflight(self)
 
     def send_json(self, status: int, data: Any) -> None:
-        payload = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
-        self.send_response(status)
-        add_cors_headers(self)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(payload)))
-        self.end_headers()
-        self.wfile.write(payload)
+        """Delegate to api_utils for standard CORS + security headers."""
+        api_send_json(self, data, status)
 
     def redirect(self, location: str, status: int = 303) -> None:
         parsed = urlparse(location)
@@ -2142,7 +2138,7 @@ class MasterDataHandler(BaseHTTPRequestHandler):
             return user
         if user and not has_entity_context(user):
             if self.is_api_request():
-                self.send_json(403, {"error": t(messages, "auth.entity_required")})
+                api_error(self, t(messages, "auth.entity_required"), 403)
                 return None
             body = f"""
 <section class="card">
@@ -2154,7 +2150,7 @@ class MasterDataHandler(BaseHTTPRequestHandler):
             self.send_html(403, t(messages, "auth.entity_required"), body, lang, messages, user)
             return None
         if self.is_api_request():
-            self.send_json(401, {"error": t(messages, "api.unauthorized")})
+            api_error(self, t(messages, "api.unauthorized"), 401)
             return None
         next_url = quote(f"{APP_BASE_URL}{self.path}", safe="")
         self.redirect(f"{USER_ADMIN_BASE_URL}/login?next={next_url}")
@@ -2164,14 +2160,14 @@ class MasterDataHandler(BaseHTTPRequestHandler):
         if has_permission(user, permission_key):
             return True
         if self.is_api_request():
-            self.send_json(403, {"error": t(messages, "api.forbidden")})
+            api_error(self, t(messages, "api.forbidden"), 403)
         else:
             self.send_forbidden(lang, messages, user)
         return False
 
     def send_forbidden(self, lang: str, messages: dict[str, str], user: Optional[dict[str, Any]] = None) -> None:
         if self.is_api_request():
-            self.send_json(403, {"error": t(messages, "api.forbidden")})
+            api_error(self, t(messages, "api.forbidden"), 403)
             return
         body = f"""
 <section class="card">
@@ -2230,7 +2226,7 @@ class MasterDataHandler(BaseHTTPRequestHandler):
             self.send_json(200, {"teams": load_teams()})
             return
 
-        self.send_json(404, {"error": "Internal endpoint not found"})
+        api_error(self, "Internal endpoint not found", 404)
 
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
@@ -2266,7 +2262,7 @@ class MasterDataHandler(BaseHTTPRequestHandler):
         # ── JSON APIs (Vue 3 SPA) ──
         if path == "/api/masterdata/entities":
             if not can_view(user):
-                self.send_json(403, {"error": "Forbidden"})
+                api_error(self, "Forbidden", 403)
                 return
             entities = [e for e in load_entities() if entity_accessible_to_user(e, user)]
             self.send_json(200, {"entities": entities})
@@ -2277,14 +2273,14 @@ class MasterDataHandler(BaseHTTPRequestHandler):
             pass  # fall through to below
         elif path == "/api/masterdata/departments":
             if not can_view(user):
-                self.send_json(403, {"error": "Forbidden"})
+                api_error(self, "Forbidden", 403)
                 return
             departments = [d for d in load_departments() if department_accessible_to_user(d, user)]
             self.send_json(200, {"departments": departments})
             return
         elif path == "/api/masterdata/teams":
             if not can_view(user):
-                self.send_json(403, {"error": "Forbidden"})
+                api_error(self, "Forbidden", 403)
                 return
             teams = [t for t in load_teams() if team_accessible_to_user(t, user)]
             self.send_json(200, {"teams": teams})
@@ -2292,33 +2288,33 @@ class MasterDataHandler(BaseHTTPRequestHandler):
         elif len(parts) >= 3 and parts[0] == "api" and parts[1] == "masterdata" and parts[2] == "entities" and len(parts) == 4:
             # GET /api/masterdata/entities/{id}
             if not can_view(user):
-                self.send_json(403, {"error": "Forbidden"})
+                api_error(self, "Forbidden", 403)
                 return
             entity = find_entity(parts[3])
             if not entity or not entity_accessible_to_user(entity, user):
-                self.send_json(404, {"error": "Entity not found"})
+                api_error(self, "Entity not found", 404)
                 return
             self.send_json(200, {"entity": entity})
             return
         elif len(parts) >= 3 and parts[0] == "api" and parts[1] == "masterdata" and parts[2] == "departments" and len(parts) == 4:
             # GET /api/masterdata/departments/{id}
             if not can_view(user):
-                self.send_json(403, {"error": "Forbidden"})
+                api_error(self, "Forbidden", 403)
                 return
             department = find_department(parts[3])
             if not department or not department_accessible_to_user(department, user):
-                self.send_json(404, {"error": "Department not found"})
+                api_error(self, "Department not found", 404)
                 return
             self.send_json(200, {"department": department})
             return
         elif len(parts) >= 3 and parts[0] == "api" and parts[1] == "masterdata" and parts[2] == "teams" and len(parts) == 4:
             # GET /api/masterdata/teams/{id}
             if not can_view(user):
-                self.send_json(403, {"error": "Forbidden"})
+                api_error(self, "Forbidden", 403)
                 return
             team = find_team(parts[3])
             if not team or not team_accessible_to_user(team, user):
-                self.send_json(404, {"error": "Team not found"})
+                api_error(self, "Team not found", 404)
                 return
             self.send_json(200, {"team": team})
             return
@@ -2483,7 +2479,7 @@ class MasterDataHandler(BaseHTTPRequestHandler):
                 return
             customer = find_customer(parts[2])
             if not customer or customer.get("status") != "active":
-                self.send_json(404, {"error": t(messages, "customer.not_found", "Customer not found.")})
+                api_error(self, t(messages, "customer.not_found", "Customer not found."), 404)
                 return
             self.send_json(200, customer_api_record(customer))
         elif path == "/api/vendors/active" or path == "/api/vendors":
@@ -2500,7 +2496,7 @@ class MasterDataHandler(BaseHTTPRequestHandler):
                 return
             vendor = find_vendor(parts[2])
             if not vendor or vendor.get("status") != "active" or not vendor_accessible_to_user(vendor, user):
-                self.send_json(404, {"error": t(messages, "vendor.not_found", "Vendor not found.")})
+                api_error(self, t(messages, "vendor.not_found", "Vendor not found."), 404)
                 return
             self.send_json(200, vendor_api_record(vendor, lang))
         elif path == "/api/entities/current":
@@ -2549,7 +2545,7 @@ class MasterDataHandler(BaseHTTPRequestHandler):
 
         if not self.csrf_origin_allowed():
             if self.is_api_request():
-                self.send_json(403, {"error": t(messages, "validation.csrf")})
+                api_error(self, t(messages, "validation.csrf"), 403)
             else:
                 self.send_forbidden(lang, messages)
             return
@@ -3298,7 +3294,7 @@ class MasterDataHandler(BaseHTTPRequestHandler):
         entities = load_entities()
         index = next((i for i, entity in enumerate(entities) if str(entity.get("entity_id", "")) == entity_id and entity.get("status") != "deleted"), None)
         if index is None:
-            self.send_json(404, {"error": "Entity not found"})
+            api_error(self, "Entity not found", 404)
             return
         form = {key: str(value) if not isinstance(value, (list, dict)) else "" for key, value in body.items()}
         form["entity_id"] = entity_id
@@ -3359,10 +3355,10 @@ class MasterDataHandler(BaseHTTPRequestHandler):
         departments = load_departments()
         index = next((i for i, d in enumerate(departments) if str(d.get("department_id", "")) == department_id and d.get("status") != "deleted"), None)
         if index is None:
-            self.send_json(404, {"error": "Department not found"})
+            api_error(self, "Department not found", 404)
             return
         if not department_accessible_to_user(departments[index], user):
-            self.send_json(404, {"error": "Department not found"})
+            api_error(self, "Department not found", 404)
             return
         form = {key: str(value) if not isinstance(value, (list, dict)) else "" for key, value in body.items()}
         if not can_admin_masterdata(user):
@@ -3398,10 +3394,10 @@ class MasterDataHandler(BaseHTTPRequestHandler):
         departments = load_departments()
         index = next((i for i, d in enumerate(departments) if str(d.get("department_id", "")) == department_id and d.get("status") != "deleted"), None)
         if index is None:
-            self.send_json(404, {"error": "Department not found"})
+            api_error(self, "Department not found", 404)
             return
         if not department_accessible_to_user(departments[index], user):
-            self.send_json(404, {"error": "Department not found"})
+            api_error(self, "Department not found", 404)
             return
         body = self.parse_json_body()
         before_value = dict(departments[index])
@@ -3447,10 +3443,10 @@ class MasterDataHandler(BaseHTTPRequestHandler):
         teams = load_teams()
         index = next((i for i, t in enumerate(teams) if str(t.get("team_id", "")) == team_id and t.get("status") != "deleted"), None)
         if index is None:
-            self.send_json(404, {"error": "Team not found"})
+            api_error(self, "Team not found", 404)
             return
         if not team_accessible_to_user(teams[index], user):
-            self.send_json(404, {"error": "Team not found"})
+            api_error(self, "Team not found", 404)
             return
         form = {key: str(value) if not isinstance(value, (list, dict)) else "" for key, value in body.items()}
         if not can_admin_masterdata(user):
@@ -3485,10 +3481,10 @@ class MasterDataHandler(BaseHTTPRequestHandler):
         teams = load_teams()
         index = next((i for i, t in enumerate(teams) if str(t.get("team_id", "")) == team_id and t.get("status") != "deleted"), None)
         if index is None:
-            self.send_json(404, {"error": "Team not found"})
+            api_error(self, "Team not found", 404)
             return
         if not team_accessible_to_user(teams[index], user):
-            self.send_json(404, {"error": "Team not found"})
+            api_error(self, "Team not found", 404)
             return
         body = self.parse_json_body()
         before_value = dict(teams[index])
@@ -3507,10 +3503,10 @@ class MasterDataHandler(BaseHTTPRequestHandler):
         entities = load_entities()
         index = next((i for i, e in enumerate(entities) if str(e.get("entity_id", "")) == entity_id and e.get("status") != "deleted"), None)
         if index is None:
-            self.send_json(404, {"error": "Entity not found"})
+            api_error(self, "Entity not found", 404)
             return
         if not entity_accessible_to_user(entities[index], user):
-            self.send_json(404, {"error": "Entity not found"})
+            api_error(self, "Entity not found", 404)
             return
         body = self.parse_json_body()
         before_value = dict(entities[index])
@@ -3534,7 +3530,7 @@ class MasterDataHandler(BaseHTTPRequestHandler):
         parts = [part for part in path.split("/") if part]
 
         if not self.csrf_origin_allowed():
-            self.send_json(403, {"error": t(messages, "validation.csrf")})
+            api_error(self, t(messages, "validation.csrf"), 403)
             return
 
         user = self.require_user(lang, messages)
@@ -3560,7 +3556,7 @@ class MasterDataHandler(BaseHTTPRequestHandler):
             self.handle_api_delete_team_json(lang, messages, user, parts[3])
             return
         else:
-            self.send_json(404, {"error": "Not found"})
+            api_error(self, "Not found", 404)
 
     def send_departments_list(self, lang: str, messages: dict[str, str], user: dict[str, Any], query: dict[str, list[str]]) -> None:
         entities_by_id = {str(entity.get("entity_id", "")): entity for entity in load_entities()}

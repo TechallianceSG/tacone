@@ -350,7 +350,7 @@ onMounted(async () => {
     ])
     // Load data dictionary options in parallel (non-blocking for the employee data)
     loadOptions([CAT.STATUS, CAT.EMPLOYMENT_TYPE, CAT.BUSINESS_LINE, CAT.LANGUAGE_LEVEL, CAT.COUNTRY_CODE, CAT.GENDER])
-    employee.value = empRes.data?.employee as Employee
+    employee.value = empRes.data?.data as Employee
     entityOptions.value = er.data?.entities || []
     deptOptions.value = dr.data?.departments || []
     teamOptions.value = tr.data?.teams || []
@@ -395,7 +395,7 @@ async function handleSave() {
     }
 
     const { data } = await (employeeApi as any).update(employeeId, payload)
-    if (data?.employee) {
+    if (data?.data) {
       ElMessage.success(t('employee.update_success') || 'Updated')
       // Refresh view data and switch to view mode
       employee.value = data.employee as Employee
