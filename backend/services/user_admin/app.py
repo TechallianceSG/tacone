@@ -138,7 +138,7 @@ CONFIGURED_PUBLIC_HOSTS = {host.strip().lower() for host in os.environ.get("TACA
 LOCAL_ALLOWED_HOSTS = {"127.0.0.1", "localhost", TACAI_PUBLIC_HOST}
 # ── Shared port/host config (single source of truth) ──
 try:
-    from config import ALLOWED_PORTS as LOCAL_ALLOWED_PORTS
+    from config import ALLOWED_PORTS as LOCAL_ALLOWED_PORTS, internal_url
 except ImportError:
     LOCAL_ALLOWED_PORTS = {3000, 3001, 4000, 4001, 5000, 5001, 4173, 6000, 6001, 8000, 8001, 8002, 8003, 8004, 8005, 8006, 8007, 8008, 8009, 8011, 8012, 8015, 8016, 8018}
 
