@@ -729,7 +729,7 @@ def read_users() -> list[dict[str, Any]]:
     """Load users via user_admin internal API."""
     try:
         req = Request(
-            "http://127.0.0.1:3001/api/internal/users",
+            internal_url("user_admin", "/api/internal/users"),
             headers={"Accept": "application/json"},
             method="GET",
         )
@@ -744,7 +744,7 @@ def read_entities() -> list[dict[str, Any]]:
     """Load entities via masterdata internal API."""
     try:
         req = Request(
-            "http://127.0.0.1:8007/api/internal/entities/active",
+            internal_url("masterdata", "/api/internal/entities/active"),
             headers={"Accept": "application/json"},
             method="GET",
         )
@@ -759,7 +759,7 @@ def read_departments() -> list[dict[str, Any]]:
     """Load departments via masterdata internal API."""
     try:
         req = Request(
-            "http://127.0.0.1:8007/api/internal/departments",
+            internal_url("masterdata", "/api/internal/departments"),
             headers={"Accept": "application/json"},
             method="GET",
         )
@@ -798,7 +798,7 @@ def find_supervisor(user_id: str) -> dict[str, Any] | None:
     """Find supervisor from employee_admin internal API."""
     try:
         req = Request(
-            "http://127.0.0.1:8004/api/internal/employees",
+            internal_url("employee_admin", "/api/internal/employees"),
             headers={"Accept": "application/json"},
             method="GET",
         )
@@ -1761,6 +1761,7 @@ class TacaiMsgHandler(BaseHTTPRequestHandler):
 
     def _send_json(self, data: Any, status: int = 200) -> None:
         """Delegate to api_utils for standard CORS + security headers."""
+        from config import internal_url
         from api_utils import send_json as _send
         _send(self, data, status)
 

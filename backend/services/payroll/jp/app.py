@@ -23,6 +23,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
+from urllib.request import Request, urlopen
 
 # ── Shared libraries ──
 import sys as _sys
@@ -39,6 +40,7 @@ except Exception:
 from auth_utils import validate_session, has_permission, is_system_admin
 from cors_middleware import add_cors_headers, handle_preflight
 from api_utils import send_json, success, error, paginated
+from config import internal_url
 
 
 def parse_json_body(handler):
@@ -299,13 +301,20 @@ def _calc_fiscal_age(employee_id: str) -> int | None:
     Returns None if DOB is unavailable or cannot be parsed.
     Used for 介護保険 eligibility (40-64 years old).
     """
-    if not employee_id or not _PG_AVAILABLE:
+    if not employee_id:
         return None
     try:
-        rows = _db.load_table("emp_employees", where={"employee_id": employee_id})
-        if not rows:
+        req = Request(
+            internal_url("employee_admin", f"/api/internal/employees/{employee_id}"),
+            headers={"Accept": "application/json"},
+            method="GET",
+        )
+        with urlopen(req, timeout=3) as resp:
+            body = json.loads(resp.read().decode("utf-8"))
+        emp = body.get("employee")
+        if not emp:
             return None
-        profile = rows[0].get("profile", {})
+        profile = emp.get("profile", {})
         if isinstance(profile, str):
             import json as _json
             profile = _json.loads(profile)
@@ -530,7 +539,7 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
             error(self, f"Database error: {str(e)}", 500)
 
     def _list_md_table(self, table: str, order_col: str):
-        """Read master data via masterdata internal API (no direct DB reads)."""
+        """Read master data via masterdata internal API."""
         endpoint_map = {
             "md_entities": "/api/internal/entities/active",
             "md_departments": "/api/internal/departments",
@@ -542,13 +551,12 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
             return
         try:
             req = Request(
-                f"http://127.0.0.1:8007{endpoint}",
+                internal_url("masterdata", endpoint),
                 headers={"Accept": "application/json"},
                 method="GET",
             )
             with urlopen(req, timeout=3) as resp:
                 body = json.loads(resp.read().decode("utf-8"))
-            # Extract the list key (entities, departments, or teams)
             data = body.get("entities") or body.get("departments") or body.get("teams") or []
             paginated(self, data, 1, len(data), len(data))
         except Exception as e:
@@ -677,7 +685,7 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
         try:
             # Get employees from employee_admin internal API (with payroll data)
             req = Request(
-                "http://127.0.0.1:8004/api/internal/employees?include_payroll=true",
+                internal_url("employee_admin", "/api/internal/employees?include_payroll=true"),
                 headers={"Accept": "application/json"},
                 method="GET",
             )
@@ -766,7 +774,7 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
                 # Load employee from employee_admin internal API
                 try:
                     req = Request(
-                        f"http://127.0.0.1:8004/api/internal/employees/{emp_id}?include_payroll=true",
+                        internal_url("employee_admin", f"/api/internal/employees/{emp_id}?include_payroll=true"),
                         headers={"Accept": "application/json"},
                         method="GET",
                     )
@@ -1550,12 +1558,21 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
                 })
 
             # Persist all records
+            active_eids = {e.get("employee_id", "") for e in employees}
             for rec in records:
                 existing_id = existing_by_emp.get(rec.get("employee_id", ""), {}).get("record_id")
                 if existing_id:
                     _db.update_record("pay_jp_monthly_salary_records", "record_id", existing_id, rec)
                 else:
                     _db.insert_record("pay_jp_monthly_salary_records", rec)
+
+            # Clean up records for deactivated employees
+            for old_eid, old_rec in existing_by_emp.items():
+                if old_eid not in active_eids:
+                    try:
+                        _db.delete_record("pay_jp_monthly_salary_records", "record_id", old_rec.get("record_id", ""))
+                    except Exception:
+                        pass
 
             employee_count = len(records)
             gross_total = sum(float(r.get("gross_pay") or 0) for r in records)
@@ -1628,7 +1645,7 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
             entity_label_text = entity_id  # fallback
             try:
                 req = Request(
-                    f"http://127.0.0.1:8007/api/internal/entity/{entity_id}/active",
+                    internal_url("masterdata", f"/api/internal/entity/{entity_id}/active"),
                     headers={"Accept": "application/json"},
                     method="GET",
                 )
@@ -1726,6 +1743,16 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
                 "confirmed_by": None,
                 "updated_at": now_iso,
             })
+
+            # Delete unsent payslips for this batch
+            payslips = _db.load_table("pay_jp_payslips",
+                where="batch_id = %s AND email_status != 'sent'",
+                params=(batch_id,)) or []
+            for ps in payslips:
+                try:
+                    _db.delete_record("pay_jp_payslips", "record_id", ps.get("record_id", ""))
+                except Exception:
+                    pass
 
             # ── Audit log ──
             _write_audit_log(self, "ROLLBACK", "pay_jp_payroll_batches", batch_id,

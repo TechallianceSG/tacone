@@ -138,7 +138,7 @@ CONFIGURED_PUBLIC_HOSTS = {host.strip().lower() for host in os.environ.get("TACA
 LOCAL_ALLOWED_HOSTS = {"127.0.0.1", "localhost", TACAI_PUBLIC_HOST}
 # ── Shared port/host config (single source of truth) ──
 try:
-    from config import ALLOWED_PORTS as LOCAL_ALLOWED_PORTS
+    from config import ALLOWED_PORTS, internal_url as LOCAL_ALLOWED_PORTS
 except ImportError:
     LOCAL_ALLOWED_PORTS = {3000, 3001, 4000, 4001, 5000, 5001, 4173, 6000, 6001, 8000, 8001, 8002, 8003, 8004, 8005, 8006, 8007, 8008, 8009, 8011, 8012, 8015, 8016, 8018}
 
@@ -588,7 +588,7 @@ def _cached_internal_api(endpoint: str, ttl: int | None = None) -> list[dict[str
     # Cache miss — call internal API
     try:
         req = Request(
-            f"http://127.0.0.1:8007{endpoint}",
+            internal_url("masterdata", endpoint),
             headers={"Accept": "application/json"},
             method="GET",
         )
@@ -618,7 +618,7 @@ def load_employeeadmin_employees() -> list[dict[str, Any]]:
     """Load all employees via employee_admin internal API (no direct DB read)."""
     try:
         req = Request(
-            "http://127.0.0.1:8004/api/internal/employees",
+            internal_url("employee_admin", "/api/internal/employees"),
             headers={"Accept": "application/json"},
             method="GET",
         )
@@ -633,7 +633,7 @@ def load_employeeadmin_employee_by_id(employee_id: str) -> dict[str, Any] | None
     """Load a single employee by ID via employee_admin internal API."""
     try:
         req = Request(
-            f"http://127.0.0.1:8004/api/internal/employees/{employee_id}",
+            internal_url("employee_admin", f"/api/internal/employees/{employee_id}"),
             headers={"Accept": "application/json"},
             method="GET",
         )
@@ -650,7 +650,7 @@ def load_employeeadmin_employees_by_ids(employee_ids: list[str]) -> list[dict[st
         return []
     try:
         req = Request(
-            f"http://127.0.0.1:8004/api/internal/employees?employee_ids={','.join(employee_ids)}",
+            internal_url("employee_admin", f"/api/internal/employees?employee_ids={','.join(employee_ids)}"),
             headers={"Accept": "application/json"},
             method="GET",
         )
@@ -1160,7 +1160,7 @@ def find_employeeadmin_employee_by_number(employee_number: str, employee_id_hint
     # Use targeted API call instead of loading all employees
     try:
         req = Request(
-            f"http://127.0.0.1:8004/api/internal/employees?employee_number={target}",
+            internal_url("employee_admin", f"/api/internal/employees?employee_number={target}"),
             headers={"Accept": "application/json"},
             method="GET",
         )

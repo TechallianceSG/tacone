@@ -57,6 +57,32 @@ SHARED_PORT = {
     "tacaiinvoice": 8019,
 }
 
+# ── Internal service URLs (for service-to-service HTTP calls) ──────────
+# Read from env so dev/stg/prd can use different hosts if needed.
+INTERNAL_HOST = os.environ.get("TACAI_INTERNAL_HOST", "127.0.0.1").strip() or "127.0.0.1"
+
+# All internal service base URLs (derived from SHARED_PORT + AUTH_PORT)
+INTERNAL_BASE_URLS = {
+    "user_admin": f"http://{INTERNAL_HOST}:{AUTH_PORT}",
+    **{name: f"http://{INTERNAL_HOST}:{port}" for name, port in SHARED_PORT.items()},
+}
+
+
+def internal_url(service: str, path: str = "") -> str:
+    """Build an internal service URL.
+
+    Usage:
+        internal_url("masterdata", "/api/internal/entities/active")
+        internal_url("employee_admin", f"/api/internal/employees/{eid}")
+        internal_url("user_admin", "/api/internal/users")
+
+    Uses INTERNAL_HOST (default 127.0.0.1) — override via TACAI_INTERNAL_HOST env.
+    """
+    base = INTERNAL_BASE_URLS.get(service)
+    if base is None:
+        raise ValueError(f"Unknown internal service: {service}")
+    return f"{base}{path}"
+
 # Currently all internal services use fixed ports; no reserved ports needed.
 RESERVED_PORTS: set[int] = set()
 

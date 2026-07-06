@@ -26,6 +26,7 @@ import db_utils as _db
 from auth_utils import validate_session, has_permission, is_system_admin
 from cors_middleware import add_cors_headers, handle_preflight
 from api_utils import send_json, success, error, paginated
+from config import internal_url
 
 MODULE_NAME = "tacai-employee-admin"
 DEFAULT_PORT = 8004
@@ -50,7 +51,7 @@ def _cached_masterdata(endpoint: str) -> list[dict[str, Any]]:
             return data
     try:
         req = Request(
-            f"http://127.0.0.1:8007{endpoint}",
+            internal_url("masterdata", endpoint),
             headers={"Accept": "application/json"},
             method="GET",
         )
