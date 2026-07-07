@@ -163,6 +163,28 @@ async function viewPayslip(record: any) {
   finally { previewLoading.value = false }
 }
 
+// ── Email Logs ──
+const emailLogs = ref<any[]>([])
+const logLoading = ref(false)
+const logDialog = ref(false)
+const logPage = ref(1)
+const logPageSize = ref(20)
+const logPaged = computed(() => {
+  const start = (logPage.value - 1) * logPageSize.value
+  return emailLogs.value.slice(start, start + logPageSize.value)
+})
+
+async function openLogDialog() {
+  logDialog.value = true
+  logPage.value = 1
+  logLoading.value = true
+  try {
+    const res = await payrollJpApi.emailLogs({ limit: 500 })
+    emailLogs.value = res.data?.data || res.data || []
+  } catch { emailLogs.value = [] }
+  finally { logLoading.value = false }
+}
+
 onMounted(async () => {
   await load()
   // Check SMTP status
@@ -190,6 +212,7 @@ onMounted(async () => {
       <el-date-picker v-model="filterMonth" type="month" format="YYYY-MM" value-format="YYYY-MM" :placeholder="t('field.payroll_month')" style="width:160px" />
       <el-button type="primary" @click="applyFilters">{{ t('action.filter') }}</el-button>
       <el-button @click="clearFilters">{{ t('action.clear') }}</el-button>
+      <el-button text type="info" @click="openLogDialog">📋 发送日志</el-button>
     </div>
 
     <!-- Batch Action Bar -->
@@ -259,6 +282,43 @@ onMounted(async () => {
         />
       </div>
     </div>
+
+    <!-- ═══ Email Logs Dialog ═══ -->
+    <el-dialog v-model="logDialog" title="📋 邮件发送日志" width="900px" top="3vh" destroy-on-close>
+      <div v-loading="logLoading" style="min-height:200px;">
+        <template v-if="logPaged.length">
+          <el-table :data="logPaged" border stripe size="small" style="width:100%">
+            <el-table-column prop="sent_at" label="发送时间" min-width="160">
+              <template #default="{row}">{{ row.sent_at?.slice(0, 19) || '—' }}</template>
+            </el-table-column>
+            <el-table-column prop="employee_name" label="员工" min-width="120" show-overflow-tooltip />
+            <el-table-column prop="recipient_email" label="收件人" min-width="180" show-overflow-tooltip />
+            <el-table-column prop="status" label="状态" min-width="70" align="center">
+              <template #default="{row}">
+                <el-tag size="small" :type="row.status==='sent'?'success':'danger'">{{ row.status==='sent'?'✅ 成功':'❌ 失败' }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="sent_by" label="操作人" min-width="100" />
+            <el-table-column prop="error_message" label="失败原因" min-width="180" show-overflow-tooltip>
+              <template #default="{row}"><span :style="{color:row.error_message?'#dc2626':'#9ca3af'}">{{ row.error_message || '—' }}</span></template>
+            </el-table-column>
+          </el-table>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;padding:0 4px">
+            <span class="helper-text">{{ emailLogs.length }} 条记录</span>
+            <el-pagination
+              v-model:current-page="logPage"
+              v-model:page-size="logPageSize"
+              :page-sizes="[10, 20, 50]"
+              :total="emailLogs.length"
+              layout="total, sizes, prev, pager, next"
+              background small
+            />
+          </div>
+        </template>
+        <div v-else style="text-align:center;padding:40px;color:#9ca3af;">暂无发送记录</div>
+      </div>
+      <template #footer><el-button @click="logDialog = false">关闭</el-button></template>
+    </el-dialog>
 
     <!-- ═══ Send Progress Dialog ═══ -->
     <el-dialog
@@ -444,4 +504,5 @@ onMounted(async () => {
 .preview-dialog .el-dialog__header { padding-bottom: 8px; border-bottom: 1px solid #e5e7eb; margin-bottom: 0; }
 .preview-dialog .el-dialog__body { padding: 12px 20px; }
 .preview-dialog .el-dialog__footer { padding-top: 8px; border-top: 1px solid #e5e7eb; }
+
 </style>

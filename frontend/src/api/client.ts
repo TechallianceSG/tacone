@@ -211,6 +211,8 @@ export const payrollJpApi = {
   // Batch Send (standalone, for payslip list page)
   sendPayslipsSelected: (data: { record_ids: string[] }) => client.post('/api/payroll/jp/payslips/send-selected', data),
   sendPayslipsAll: (data: Record<string, any>) => client.post('/api/payroll/jp/payslips/send-all', data),
+  // Email Logs
+  emailLogs: (params?: Record<string, any>) => client.get('/api/payroll/jp/email-logs', { params }),
 }
 
 // ── Data Dictionary API (2-level: categories + entries) ──

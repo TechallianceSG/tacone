@@ -164,6 +164,9 @@ onMounted(() => { load(); loadItemDefs(); loadDropdowns(); loadOptions([CAT.SALA
         <el-table-column prop="department_label" :label="t('field.department')" min-width="120" show-overflow-tooltip />
         <el-table-column prop="team_label" :label="t('field.team')" min-width="120" show-overflow-tooltip />
         <el-table-column prop="email" :label="t('field.email')" min-width="200" show-overflow-tooltip />
+        <el-table-column prop="date_of_birth" :label="t('field.profile__date_of_birth')" min-width="110" align="center">
+          <template #default="{row}"><span :style="{color: row.date_of_birth ? '#1d2a3a' : '#9ca3af'}">{{ row.date_of_birth || '—' }}</span></template>
+        </el-table-column>
         <el-table-column prop="payroll_currency" :label="t('field.payroll_currency')" min-width="80" align="center" />
         <el-table-column :label="t('field.active')" min-width="70" align="center">
           <template #default="{row}"><span class="dot" :class="row.active?'dot-on':'dot-off'" /></template>
@@ -292,13 +295,14 @@ onMounted(() => { load(); loadItemDefs(); loadDropdowns(); loadOptions([CAT.SALA
         </div>
       </template>
       <div class="drawer-body" v-if="drawerRecord">
-        <!-- Card 1: Basic -->
-        <div class="fi-card"><div class="fi-card-head"><span>📋</span> {{ t('payroll.jp.tab_basic') }}</div>
+        <!-- Card 1: Basic Info (synced from Employee Admin) -->
+        <div class="fi-card"><div class="fi-card-head"><span>📋</span> {{ t('payroll.jp.tab_basic') }}<span class="sync-badge">从員工管理同步</span></div>
           <el-row :gutter="16">
-            <el-col :span="12"><label>{{ t('field.email') }}</label><el-input v-model="drawerForm.email" size="small" /></el-col>
+            <el-col :span="12"><label>{{ t('field.profile__date_of_birth') }}</label><el-input :model-value="drawerForm.date_of_birth || '—'" size="small" disabled><template #suffix><span style="color:#9ca3af;font-size:11px;">同步</span></template></el-input></el-col>
+            <el-col :span="12"><label>{{ t('field.email') }}</label><el-input v-model="drawerForm.email" size="small" disabled /></el-col>
+            <el-col :span="12"><label>{{ t('field.department') }}</label><el-input :model-value="drawerForm.department_label || '—'" size="small" disabled /></el-col>
+            <el-col :span="12"><label>{{ t('field.team') }}</label><el-input :model-value="drawerForm.team_label || '—'" size="small" disabled /></el-col>
             <el-col :span="12"><label>{{ t('field.payroll_currency') }}</label><el-select v-model="drawerForm.payroll_currency" size="small" style="width:100%"><el-option v-for="c in ddOptions(CAT.CURRENCY).value" :key="c.value" :label="c.label" :value="c.value" /></el-select></el-col>
-            <el-col :span="12"><label>{{ t('field.department') }}</label><el-select v-model="drawerForm.department_label" size="small" style="width:100%" allow-create filterable clearable><el-option v-for="d in departments" :key="d.department_id" :label="d.department_name_en||d.department_name_ja" :value="d.department_name_en||d.department_name_ja" /></el-select></el-col>
-            <el-col :span="12"><label>{{ t('field.team') }}</label><el-select v-model="drawerForm.team_label" size="small" style="width:100%" allow-create filterable clearable><el-option v-for="tm in teams" :key="tm.team_id" :label="tm.team_name_en||tm.team_name_ja" :value="tm.team_name_en||tm.team_name_ja" /></el-select></el-col>
             <el-col :span="12"><label>{{ t('field.active') }}</label><div><el-switch v-model="drawerForm.active" size="small" /></div></el-col>
           </el-row>
         </div>
@@ -408,6 +412,7 @@ onMounted(() => { load(); loadItemDefs(); loadDropdowns(); loadOptions([CAT.SALA
 
 .fi-card { background:#fff; border:1px solid #e5e7eb; border-radius:10px; padding:16px; margin-bottom:14px; }
 .fi-card-head { display:flex; align-items:center; gap:8px; font-weight:700; font-size:.95rem; color:#1d2a3a; margin-bottom:14px; padding-bottom:10px; border-bottom:1px solid #e5e7eb; }
+.sync-badge { font-weight:400; font-size:.72rem; color:#1B6CB2; background:#eff6ff; padding:2px 8px; border-radius:10px; margin-left:auto; }
 .fi-card label { display:block; font-size:.75rem; font-weight:700; color:#374151; text-transform:uppercase; margin-bottom:2px; letter-spacing:.02em; }
 .fi-card .el-col { margin-bottom:10px; }
 </style>

@@ -349,6 +349,38 @@ def _resolve_email_sender(settings: dict) -> tuple | None:
     return None
 
 
+def _write_email_log(payslip_id: str = "", employee_name: str = "",
+                     to_email: str = "", cc_emails: list | None = None,
+                     subject: str = "", sender_email: str = "",
+                     status: str = "sent", error_message: str = "",
+                     sent_by: str = "system") -> None:
+    """Write an email send log entry to pay_jp_email_logs.
+
+    Called after every email send attempt (success or failure).
+    This is the single entry point — future migration to a centralized
+    log service only needs to change this function.
+    """
+    if not _PG_AVAILABLE:
+        return
+    try:
+        entry = {
+            "module": MODULE_PREFIX,
+            "payslip_id": payslip_id,
+            "employee_name": employee_name,
+            "recipient_email": to_email,
+            "cc_emails": json.dumps(cc_emails or [], ensure_ascii=False),
+            "sender_email": sender_email,
+            "subject": subject,
+            "status": status,
+            "error_message": error_message,
+            "sent_by": sent_by,
+            "sent_at": datetime.now(timezone.utc).isoformat(),
+        }
+        _db.insert_record("pay_jp_email_logs", entry)
+    except Exception:
+        pass  # log failure should never block the main flow
+
+
 def _resolve_email_cc(settings: dict) -> list[str]:
     """Resolve CC list from settings. Returns empty list if not configured."""
     cc = settings.get("cc_recipients") or []
@@ -637,41 +669,53 @@ def _generate_payslip_html(record: dict, batch: dict, entity_label_text: str,
     return html
 
 
-def _calc_fiscal_age(employee_id: str) -> int | None:
+def _calc_fiscal_age(employee_id: str, emp_record: dict | None = None) -> int | None:
     """Calculate age at fiscal year start (April 1) from employee's date_of_birth.
 
+    Reads DOB from salary master (synced from employee_admin on import).
     Returns None if DOB is unavailable or cannot be parsed.
     Used for 介護保険 eligibility (40-64 years old).
     """
     if not employee_id:
         return None
-    try:
-        req = Request(
-            internal_url("employee_admin", f"/api/internal/employees/{employee_id}"),
-            headers={"Accept": "application/json"},
-            method="GET",
-        )
-        with urlopen(req, timeout=3) as resp:
-            body = json.loads(resp.read().decode("utf-8"))
-        emp = body.get("employee")
-        if not emp:
+
+    dob_str = None
+
+    # 1. Check the salary master record passed by caller
+    if emp_record:
+        dob_str = emp_record.get("date_of_birth", "")
+
+    # 2. If not in record, query salary master DB directly
+    if not dob_str and _PG_AVAILABLE:
+        try:
+            rows = _db.load_table("pay_jp_salary_master", where={"employee_id": employee_id})
+            if rows:
+                dob_str = rows[0].get("date_of_birth", "")
+        except Exception:
+            pass
+
+    # 3. Parse DOB and calculate fiscal age
+    if dob_str:
+        try:
+            if isinstance(dob_str, date):
+                dob_date = dob_str
+            elif isinstance(dob_str, str) and dob_str.strip():
+                dob_date = datetime.strptime(dob_str.strip()[:10], "%Y-%m-%d").date()
+            else:
+                return None
+
+            today = datetime.now(timezone.utc).date()
+            fiscal_start = date(today.year, 4, 1)
+            if today < fiscal_start:
+                fiscal_start = date(today.year - 1, 4, 1)
+            age = fiscal_start.year - dob_date.year
+            if (fiscal_start.month, fiscal_start.day) < (dob_date.month, dob_date.day):
+                age -= 1
+            return age
+        except Exception:
             return None
-        profile = emp.get("profile", {})
-        dob = profile.get("date_of_birth", "")
-        if not dob:
-            return None
-        dob_date = datetime.strptime(dob, "%Y-%m-%d").date()
-        # Fiscal year start: April 1 of the current calendar year
-        today = datetime.now(timezone.utc).date()
-        fiscal_start = date(today.year, 4, 1)
-        if today < fiscal_start:
-            fiscal_start = date(today.year - 1, 4, 1)
-        age = fiscal_start.year - dob_date.year
-        if (fiscal_start.month, fiscal_start.day) < (dob_date.month, dob_date.day):
-            age -= 1
-        return age
-    except Exception:
-        return None
+
+    return None
 
 
 class PayrollJPHandler(BaseHTTPRequestHandler):
@@ -742,6 +786,8 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
             self._list("pay_jp_audit_logs")
         elif path == "/api/payroll/jp/email-settings":
             self._get_email_settings()
+        elif path == "/api/payroll/jp/email-logs":
+            self._list_email_logs()
         else:
             # ── Batch-level audit logs ──
             if path.startswith("/api/payroll/jp/batches/") and path.endswith("/audit-logs"):
@@ -1210,6 +1256,7 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
                     "project_bonus": float(payroll.get("project_bonus", 0) or 0),
                     "social_insurance_eligible": payroll.get("social_insurance_eligible", True),
                     "employment_insurance_eligible": payroll.get("employment_insurance_eligible", True),
+                    "date_of_birth": profile.get("date_of_birth", None) if isinstance(profile, dict) else None,
                     "age_at_fiscal_year_start": _calc_fiscal_age(ea.get("employee_id", emp_id)) or int(payroll.get("age_at_fiscal_year_start", 0) or 0),
                     "dependents_count": int(payroll.get("dependents_count", 0) or 0),
                     "prefecture_code": payroll.get("prefecture_code", "13") or "13",
@@ -1536,7 +1583,7 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
         # Age at fiscal year start (April 1) for 介護保険 determination.
         # Calculated from emp_employees.date_of_birth.
         # If DOB is unavailable, defaults to 0 (no 介護保険).
-        age = _calc_fiscal_age(emp.get("employee_id", "")) or 0
+        age = _calc_fiscal_age(emp.get("employee_id", ""), emp) or 0
         prefecture_code = emp.get("prefecture_code") or None
 
         # Look up rates from parameter table (prefecture-specific health insurance)
@@ -2433,6 +2480,34 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
         except Exception as e:
             error(self, f"Get audit logs failed: {str(e)}", 500)
 
+    # ── Email Logs ──
+    def _list_email_logs(self):
+        """List email send logs with optional filters."""
+        if not _PG_AVAILABLE:
+            error(self, "Database not available", 503)
+            return
+        try:
+            limit = int(get_query_param(self, "limit", "50"))
+            status = get_query_param(self, "status", "")
+            payslip_id = get_query_param(self, "payslip_id", "")
+
+            where_parts = []
+            params = []
+            if status:
+                where_parts.append("status = %s")
+                params.append(status)
+            if payslip_id:
+                where_parts.append("payslip_id = %s")
+                params.append(payslip_id)
+
+            where = " AND ".join(where_parts) if where_parts else None
+            logs = _db.load_table("pay_jp_email_logs", where=where, params=tuple(params) if params else None,
+                                  order_by="sent_at DESC") or []
+            logs = logs[:limit]
+            paginated(self, logs, 1, len(logs), len(logs))
+        except Exception as e:
+            error(self, f"List email logs failed: {str(e)}", 500)
+
     # ── Email Settings CRUD ──
     def _get_email_settings(self):
         """Get email settings for a country (default JP)."""
@@ -2555,6 +2630,13 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
                 cc_emails=cc_list if cc_list else None,
                 from_override=from_override,
                 smtp_override=_resolve_email_smtp(settings),
+            )
+
+            _write_email_log(
+                to_email=test_to, cc_emails=cc_list if cc_list else [],
+                subject=subject, sender_email=from_override[1] if from_override else SMTP_FROM,
+                status="sent" if success_flag else "failed",
+                error_message="" if success_flag else error_msg, sent_by=user_name,
             )
 
             if success_flag:
@@ -2686,6 +2768,14 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
                     smtp_override=_resolve_email_smtp(settings),
                 )
 
+                _write_email_log(
+                    payslip_id=ps_id, employee_name=ps.get("employee_name", ""),
+                    to_email=to_email, cc_emails=cc_list if cc_list else [],
+                    subject=subject, sender_email=from_override[1] if from_override else SMTP_FROM,
+                    status="sent" if success_flag else "failed",
+                    error_message="" if success_flag else error_msg, sent_by=user_name,
+                )
+
                 if success_flag:
                     _db.update_record("pay_jp_payslips", "record_id", ps_id, {
                         "email_status": "sent", "sent_at": now_iso, "sent_by": user_name,
@@ -2770,6 +2860,14 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
                     cc_emails=cc_list if cc_list else None,
                     from_override=from_override,
                     smtp_override=_resolve_email_smtp(settings),
+                )
+
+                _write_email_log(
+                    payslip_id=ps_id, employee_name=ps.get("employee_name", ""),
+                    to_email=to_email, cc_emails=cc_list if cc_list else [],
+                    subject=subject, sender_email=from_override[1] if from_override else SMTP_FROM,
+                    status="sent" if success_flag else "failed",
+                    error_message="" if success_flag else error_msg, sent_by=user_name,
                 )
 
                 if success_flag:
@@ -2895,6 +2993,15 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
                 from_override=from_override,
                 smtp_override=_resolve_email_smtp(settings),
             )
+
+            _write_email_log(
+                payslip_id=payslip_id, employee_name=ps.get("employee_name", ""),
+                to_email=to_email, cc_emails=cc_list if cc_list else [],
+                subject=subject, sender_email=from_override[1] if from_override else SMTP_FROM,
+                status="sent" if success_flag else "failed",
+                error_message="" if success_flag else error_msg, sent_by=user_name,
+            )
+
             now_iso = datetime.now(timezone.utc).isoformat()
 
             if success_flag:
@@ -2963,6 +3070,14 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
                     smtp_override=_resolve_email_smtp(settings),
                 )
 
+                _write_email_log(
+                    payslip_id=ps_id, employee_name=ps.get("employee_name", ""),
+                    to_email=to_email, cc_emails=cc_list if cc_list else [],
+                    subject=subject, sender_email=from_override[1] if from_override else SMTP_FROM,
+                    status="sent" if success_flag else "failed",
+                    error_message="" if success_flag else error_msg, sent_by=user_name,
+                )
+
                 if success_flag:
                     _db.update_record("pay_jp_payslips", "record_id", ps_id, {
                         "email_status": "sent", "sent_at": now_iso, "sent_by": user_name, "email_error": None, "updated_at": now_iso,
@@ -3029,6 +3144,14 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
                     cc_emails=cc_list if cc_list else None,
                     from_override=from_override,
                     smtp_override=_resolve_email_smtp(settings),
+                )
+
+                _write_email_log(
+                    payslip_id=ps_id, employee_name=ps.get("employee_name", ""),
+                    to_email=to_email, cc_emails=cc_list if cc_list else [],
+                    subject=subject, sender_email=from_override[1] if from_override else SMTP_FROM,
+                    status="sent" if success_flag else "failed",
+                    error_message="" if success_flag else error_msg, sent_by=user_name,
                 )
 
                 if success_flag:
