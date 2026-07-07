@@ -812,7 +812,7 @@ def _proxy_to_service(target_port: int, path: str, method: str = "GET",
     import urllib.request as _ur
     from urllib.error import HTTPError
 
-    target_url = f"http://127.0.0.1:{target_port}{path}"
+    target_url = f"http://{TACAI_INTERNAL_HOST}:{target_port}{path}"
     try:
         req = _ur.Request(target_url, data=body, method=method)
         # Forward relevant headers

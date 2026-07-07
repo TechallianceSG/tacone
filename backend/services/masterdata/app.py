@@ -70,7 +70,7 @@ TACAI_PUBLIC_HOST = os.environ.get("TACAI_PUBLIC_HOST", "127.0.0.1").strip() or 
 TACAI_INTERNAL_HOST = os.environ.get("TACAI_INTERNAL_HOST", "127.0.0.1").strip() or "127.0.0.1"
 # ── Shared port/host config (single source of truth) ──
 try:
-    from config import ALLOWED_PORTS as LOCAL_ALLOWED_PORTS, ALLOWED_HOSTS as LOCAL_ALLOWED_HOSTS
+    from config import ALLOWED_PORTS as LOCAL_ALLOWED_PORTS, ALLOWED_HOSTS as LOCAL_ALLOWED_HOSTS, INTERNAL_HOST
 except ImportError:
     LOCAL_ALLOWED_HOSTS = {"127.0.0.1", "localhost", TACAI_PUBLIC_HOST, TACAI_INTERNAL_HOST}
     LOCAL_ALLOWED_PORTS = {3000, 3001, 4000, 4001, 5000, 5001, 6000, 6001, 8000, 8001, 8002, 8003, 8004, 8005, 8006, 8007, 8008, 8009, 8012, 8016, 8018}
@@ -2190,7 +2190,7 @@ class MasterDataHandler(BaseHTTPRequestHandler):
     def _is_localhost(self) -> bool:
         """Check if the request comes from localhost (internal service call)."""
         client = (self.client_address[0] if self.client_address else "")
-        return client in ("127.0.0.1", "::1", "localhost")
+        return client in ("127.0.0.1", "::1", "localhost", INTERNAL_HOST)
 
     def _handle_internal_api(self, path: str, query: dict[str, list[str]]) -> None:
         """Handle internal API calls from other TACAI services (no auth)."""

@@ -54,6 +54,7 @@ SHARED_PORT = {
     "masterdata": 8007,
     "tacaimsg": 8012,
     "tacaipay_jp": 8013,
+    "tacaipay_sg": 8016,
     "tacaiinvoice": 8019,
 }
 
@@ -108,6 +109,7 @@ GATEWAY_ROUTES: Dict[str, int] = {
     '/api/master-data/':     SHARED_PORT['masterdata'],
     '/api/messages/':        SHARED_PORT['tacaimsg'],
     # ── Payroll ──
+    '/api/payroll/sg/':     SHARED_PORT['tacaipay_sg'],
     '/api/payroll/jp/':     SHARED_PORT['tacaipay_jp'],
     '/api/payroll/':        SHARED_PORT['tacaipay_jp'],
     # ── Invoice ──
@@ -128,7 +130,7 @@ ALLOWED_PORTS: Set[int] = {
     # Gateway (cloudflared tunnel)
     8010,  # TACAI_GATEWAY_PORT
     # Internal shared services (accessed via localhost)
-    8004, 8005, 8007, 8012, 8013, 8019,
+    8004, 8005, 8007, 8012, 8013, 8016, 8019,
 }
 
 # ── Allowed hosts for local development ────────────────────────────────
@@ -166,6 +168,7 @@ SHARED_SERVICES: Dict[str, ServiceInfo] = {
     "masterdata": ServiceInfo("masterdata", 8007, "backend/services/masterdata", "python3 app.py --host 0.0.0.0 --port 8007"),
     "tacaimsg": ServiceInfo("tacaimsg", 8012, "backend/services/messaging", "python3 app.py --host 0.0.0.0 --port 8012"),
     "tacaipay_jp": ServiceInfo("tacaipay_jp", 8013, "backend/services/payroll/jp", "python3 app.py --host 0.0.0.0 --port 8013"),
+    "tacaipay_sg": ServiceInfo("tacaipay_sg", 8016, "backend/services/payroll/sg", "python3 app.py --host 0.0.0.0 --port 8016"),
     "tacaiinvoice": ServiceInfo("tacaiinvoice", 8019, "backend/services/invoice", "python3 app.py --host 0.0.0.0 --port 8019"),
 }
 

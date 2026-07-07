@@ -6,7 +6,7 @@ import { fileURLToPath, URL } from 'node:url'
 export default defineConfig(({ mode }) => {
   // Load env vars: .env.development / .env.staging / .env.production
   const env = loadEnv(mode, process.cwd(), '')
-  const portalPort = env.VITE_PORTAL_PORT || '3000'
+  const apiPort = env.VITE_API_PORT || env.VITE_PORTAL_PORT || '8000'
   const isProduction = mode === 'production'
 
   return {
@@ -29,11 +29,15 @@ export default defineConfig(({ mode }) => {
     server: {
       port: 5173,
       proxy: {
+        // ── Payroll JP → standalone service (full implementation) ──
+        '/api/payroll/jp': {
+          target: 'http://127.0.0.1:8013',
+          changeOrigin: true,
+        },
         // ── Unified API Gateway ──
-        // All /api/* requests go to Portal (:3000), which forwards to
-        // the appropriate internal backend service.
+        // All other /api/* requests (including /api/payroll/sg) go to monolith (:8000)
         '/api': {
-          target: `http://127.0.0.1:${portalPort}`,
+          target: `http://127.0.0.1:${apiPort}`,
           changeOrigin: true,
         },
       },

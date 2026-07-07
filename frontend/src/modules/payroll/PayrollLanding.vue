@@ -5,16 +5,14 @@ import { useI18n } from 'vue-i18n'
 const router = useRouter()
 const { t } = useI18n()
 
-const modules = [
-  { key: 'parameters', label: 'payroll.jp.parameters', desc: 'payroll.jp.parameters_desc', icon: '⚙️', color: '#1B6CB2' },
-  { key: 'item-definitions', label: 'payroll.jp.item_definitions', desc: 'payroll.jp.item_definitions_desc', icon: '📋', color: '#6366f1' },
-  { key: 'employees', label: 'payroll.jp.employees', desc: 'payroll.jp.employees_desc', icon: '👥', color: '#0f766e' },
-  { key: 'batches', label: 'payroll.jp.batches', desc: 'payroll.jp.batches_desc', icon: '📅', color: '#e65100' },
-  { key: 'payslips', label: 'payroll.jp.payslips', desc: 'payroll.jp.payslips_desc', icon: '📄', color: '#7c3aed' },
+const countries = [
+  { key: 'sg', flag: '🇸🇬', title: 'payroll.sg.title', desc: 'payroll.sg.desc', color: '#e65100' },
+  { key: 'jp', flag: '🇯🇵', title: 'payroll.jp.title', desc: 'payroll.jp.desc', color: '#1B6CB2' },
+  { key: 'cn', flag: '🇨🇳', title: 'payroll.cn.title', desc: 'payroll.cn.desc', color: '#b91c1c' },
 ]
 
-function navigate(module: string) {
-  router.push(`/payroll/jp/${module}`)
+function navigate(key: string) {
+  router.push(`/payroll/${key}`)
 }
 </script>
 
@@ -23,26 +21,25 @@ function navigate(module: string) {
     <!-- Hero -->
     <header class="lp-hero">
       <div>
-        <h1>{{ t('payroll.jp.title') }}</h1>
-        <p>{{ t('payroll.jp.desc') }}</p>
+        <h1>{{ t('module.payroll') }}</h1>
+        <p>{{ t('dashboard.payroll_desc') }}</p>
       </div>
-      <span class="lp-badge">FY2026 (Reiwa 8)</span>
     </header>
 
-    <!-- Body: 3-column grid -->
+    <!-- Body: 3-column grid of countries -->
     <div class="lp-body">
       <div
-        v-for="mod in modules"
-        :key="mod.key"
+        v-for="c in countries"
+        :key="c.key"
         class="lp-tile"
-        :style="{ '--tile-color': mod.color }"
-        @click="navigate(mod.key)"
+        :style="{ '--tile-color': c.color }"
+        @click="navigate(c.key)"
       >
-        <span class="lp-tile-dot" :style="{ background: mod.color }"></span>
-        <span class="lp-tile-icon">{{ mod.icon }}</span>
+        <span class="lp-tile-dot" :style="{ background: c.color }"></span>
+        <span class="lp-tile-flag">{{ c.flag }}</span>
         <div class="lp-tile-text">
-          <div class="lp-tile-title">{{ t(mod.label) }}</div>
-          <div class="lp-tile-desc">{{ t(mod.desc) }}</div>
+          <div class="lp-tile-title">{{ t(c.title) }}</div>
+          <div class="lp-tile-desc">{{ t(c.desc) }}</div>
         </div>
       </div>
     </div>
@@ -60,10 +57,6 @@ function navigate(module: string) {
 }
 .lp-hero h1 { margin: 0 0 4px; font-size: 1.5rem; font-weight: 700; color: #1d2a3a; }
 .lp-hero p { margin: 0; font-size: .92rem; color: #6b7280; }
-.lp-badge {
-  flex-shrink: 0; background: #eff6ff; color: #1B6CB2;
-  padding: 4px 14px; border-radius: 14px; font-size: .82rem; font-weight: 600;
-}
 
 /* ── 3-column grid ── */
 .lp-body {
@@ -78,7 +71,7 @@ function navigate(module: string) {
 .lp-tile {
   display: flex; flex-direction: column; align-items: center; gap: 12px;
   background: #fff; border: 1px solid #e5e7eb; border-radius: 12px;
-  padding: 28px 20px 24px;
+  padding: 36px 20px 32px;
   cursor: pointer; transition: all .2s ease;
   position: relative; overflow: hidden;
   text-align: center;
@@ -94,8 +87,8 @@ function navigate(module: string) {
   opacity: 0; transition: opacity .2s;
 }
 .lp-tile:hover .lp-tile-dot { opacity: 1; }
-.lp-tile-icon { font-size: 2rem; flex-shrink: 0; }
+.lp-tile-flag { font-size: 2.5rem; flex-shrink: 0; }
 .lp-tile-text { min-width: 0; }
-.lp-tile-title { font-size: .95rem; font-weight: 700; color: #1d2a3a; margin-bottom: 4px; }
+.lp-tile-title { font-size: 1.05rem; font-weight: 700; color: #1d2a3a; margin-bottom: 4px; }
 .lp-tile-desc { font-size: .8rem; color: #9ca3af; line-height: 1.4; }
 </style>

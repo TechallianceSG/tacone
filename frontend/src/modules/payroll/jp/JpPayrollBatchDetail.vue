@@ -340,7 +340,11 @@ onMounted(load)
             <el-tag v-if="isManuallyEdited(row)" size="small" type="warning" effect="plain" class="ml-6">{{ t('payroll.jp.manually_edited') }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="salary_type" :label="t('field.salary_type_label')" width="80" align="center" />
+        <el-table-column :label="t('field.salary_type_label')" width="100" align="center">
+          <template #default="{row}">
+            <el-tag size="small" type="info">{{ t('payroll.jp.salary_type_' + (row.salary_type || 'monthly')) }}</el-tag>
+          </template>
+        </el-table-column>
         <!-- Attendance -->
         <el-table-column :label="t('field.absence_days')" width="65" align="center">
           <template #default="{row}">{{ row.absence_days || 0 }}</template>

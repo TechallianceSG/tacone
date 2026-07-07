@@ -6,7 +6,7 @@ TACAI 是一套面向人力资源/薪资/招聘业务的企业级管理系统，
 
 | 层 | 技术 |
 |----|------|
-| 后端 | Python 3.9+ 标准库 (`http.server` + `ThreadingHTTPServer`) |
+| 后端 | Python 3.9+ / FastAPI + uvicorn（Monolith 架构）|
 | 数据库 | PostgreSQL（通过 `psycopg2`） |
 | 前端 | Vue 3 + TypeScript + Element Plus + Pinia |
 | 构建 | Vite 5 |
@@ -16,22 +16,25 @@ TACAI 是一套面向人力资源/薪资/招聘业务的企业级管理系统，
 
 ```
 tacai-project/
-├── backend/                         # 后端
-│   ├── shared/                      #   共享库 (db_utils, api_utils, auth_utils, config, cors)
-│   └── services/                    #   业务服务
-│       ├── user_admin/              #     用户管理 & 认证 (port 3001)
-│       ├── portal/                  #     统一入口 (port 3000)
-│       ├── employee_admin/          #     员工管理 (port 8004)
-│       ├── datadict/                #     数据字典 (port 8005)
-│       ├── masterdata/              #     主数据管理 (port 8007)
-│       ├── messaging/               #     消息中心 (port 8012)
-│       ├── payroll/jp/              #     日本薪资 (port 8013)
-│       └── invoice/                 #     发票管理 (port 8019)
+├── backend/                         # 后端 FastAPI Monolith
+│   ├── app.py                       #   入口（单进程，端口 8000）
+│   ├── dependencies.py              #   认证/权限依赖注入
+│   ├── start.sh                     #   后端启动脚本
+│   ├── shared/                      #   共享库 (db_utils, logger)
+│   ├── modules/                     #   业务模块（原 9 个独立服务已合并）
+│   │   ├── auth/                    #     用户管理 & 认证
+│   │   ├── masterdata/              #     主数据管理
+│   │   ├── employees/               #     员工管理
+│   │   ├── datadict/                #     数据字典
+│   │   ├── messaging/               #     消息中心
+│   │   ├── payroll_jp/              #     日本薪资
+│   │   ├── payroll_sg/              #     新加坡薪资
+│   │   └── invoice/                 #     发票管理
+│   └── services/                    #   [归档] 原独立服务
 ├── frontend/                        # 前端 Vue 3 SPA
 ├── docs/                            # 项目文档
-├── deployment/                      # 部署配置
 ├── .env.dev / .env.stg / .env.prd   # 环境配置
-└── start_tacai_lan.sh               # 一键启动脚本
+└── start_tacai_lan.sh               # 一键管理脚本（前后端）
 ```
 
 > 完整目录说明见 [docs/DIRECTORY_STRUCTURE.md](docs/DIRECTORY_STRUCTURE.md)
@@ -43,6 +46,9 @@ tacai-project/
 ```bash
 # PostgreSQL 必须运行
 brew services start postgresql@16   # macOS
+
+# Python 依赖
+pip3 install fastapi uvicorn psycopg2-binary pydantic python-multipart python-dotenv
 
 # 前端依赖
 cd frontend && npm install
@@ -57,17 +63,23 @@ cp .env.example .env.dev
 
 ### 3. 启动服务
 
+**前后端分开启动（推荐开发时使用）：**
+
 ```bash
-# 一键启动所有服务
-bash start_tacai_lan.sh start dev
+# 后端（终端 1）
+cd backend && bash start.sh          # dev 环境，端口 8000
+# 或 bash start.sh stg / bash start.sh prd
 
-# 或手动启动核心服务
-cd backend/services/user_admin && python3 app.py --port 3001 &
-cd backend/services/portal && python3 app.py --port 3000 &
-cd backend/services/masterdata && python3 app.py --port 8007 &
+# 前端（终端 2）
+cd frontend && npm start             # Vite 热加载，端口 5173
+```
 
-# 前端开发服务器
-cd frontend && npm run dev
+**一键启动：**
+
+```bash
+bash start_tacai_lan.sh start dev    # 同时启动后端 + 前端
+bash start_tacai_lan.sh stop         # 停止全部
+bash start_tacai_lan.sh status       # 查看状态
 ```
 
 ### 4. 访问
@@ -75,15 +87,13 @@ cd frontend && npm run dev
 | 服务 | URL |
 |------|-----|
 | 前端 SPA | http://localhost:5173 |
-| Portal | http://localhost:3000 |
-| User_admin API | http://localhost:3001 |
+| 后端 API | http://localhost:8000 |
+| API 文档 (Swagger) | http://localhost:8000/docs |
 
 ### 5. 健康检查
 
 ```bash
-curl http://localhost:3001/health
-curl http://localhost:3000/health
-curl http://localhost:8007/health
+curl http://localhost:8000/health
 ```
 
 ## 当前模块状态

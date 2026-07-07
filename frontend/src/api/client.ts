@@ -203,6 +203,74 @@ export const payrollJpApi = {
   getBatchAuditLogs: (batchId: string) => client.get(`/api/payroll/jp/batches/${batchId}/audit-logs`),
   auditLogs: (params?: Record<string, any>) => client.get('/api/payroll/jp/audit-logs', { params }),
   getSmtpStatus: () => client.get('/api/payroll/jp/smtp-status'),
+  smtpStatus: () => client.get('/api/payroll/jp/smtp-status'),
+  // Email Settings
+  emailSettings: (params?: Record<string, any>) => client.get('/api/payroll/jp/email-settings', { params }),
+  saveEmailSettings: (data: Record<string, any>) => client.post('/api/payroll/jp/email-settings', data),
+  testEmailSettings: (data: Record<string, any>) => client.post('/api/payroll/jp/email-settings/test', data),
+  previewEmailTemplate: (data: Record<string, any>) => client.post('/api/payroll/jp/email-settings/preview', data),
+  // Batch Send (standalone, for payslip list page)
+  sendPayslipsSelected: (data: { record_ids: string[] }) => client.post('/api/payroll/jp/payslips/send-selected', data),
+  sendPayslipsAll: (data: Record<string, any>) => client.post('/api/payroll/jp/payslips/send-all', data),
+  // Email Logs
+  emailLogs: (params?: Record<string, any>) => client.get('/api/payroll/jp/email-logs', { params }),
+  // Constants (reference/enum data for dropdowns)
+  constants: () => client.get('/api/payroll/jp/constants'),
+}
+
+// ── SG Payroll API ──
+export const payrollSgApi = {
+  // Master data
+  entities: () => client.get('/api/payroll/sg/entities'),
+  departments: () => client.get('/api/payroll/sg/departments'),
+  teams: () => client.get('/api/payroll/sg/teams'),
+  // Item definitions
+  itemDefinitions: () => client.get('/api/payroll/sg/item-definitions'),
+  saveItemDefinition: (data: Record<string, any>) => client.post('/api/payroll/sg/item-definitions', data),
+  // CPF rates
+  cpfRates: () => client.get('/api/payroll/sg/cpf-rates'),
+  // Employees (salary master)
+  employees: (params?: Record<string, any>) => client.get('/api/payroll/sg/employees', { params }),
+  saveEmployee: (data: Record<string, any>) => client.post('/api/payroll/sg/employees', data),
+  getEmployee: (id: string) => client.get(`/api/payroll/sg/employees/${id}`),
+  deactivateEmployee: (id: string, data: Record<string, any>) => client.post(`/api/payroll/sg/employees/${id}/deactivate`, data),
+  activateEmployee: (id: string) => client.post(`/api/payroll/sg/employees/${id}/activate`),
+  calcPreview: (id: string, params?: Record<string, any>) => client.get(`/api/payroll/sg/employees/${id}/calc-preview`, { params }),
+  importableEmployees: (params?: Record<string, any>) => client.get('/api/payroll/sg/employees/importable', { params }),
+  importEmployees: (data: { employee_ids: string[] }) => client.post('/api/payroll/sg/employees/import', data),
+  // Batches
+  batches: (params?: Record<string, any>) => client.get('/api/payroll/sg/batches', { params }),
+  getBatch: (id: string) => client.get(`/api/payroll/sg/batches/${id}`),
+  createBatch: (data: Record<string, any>) => client.post('/api/payroll/sg/batches', data),
+  calculateBatch: (batchId: string) => client.post(`/api/payroll/sg/batches/${batchId}/calculate`, {}),
+  confirmBatch: (batchId: string) => client.post(`/api/payroll/sg/batches/${batchId}/confirm`, {}),
+  confirmSheet: (batchId: string) => client.post(`/api/payroll/sg/batches/${batchId}/confirm`, {}),
+  rollbackBatch: (batchId: string, data: { reason: string }) => client.post(`/api/payroll/sg/batches/${batchId}/rollback`, data),
+  voidBatch: (batchId: string, data: { reason: string }) => client.post(`/api/payroll/sg/batches/${batchId}/void`, data),
+  voidSheet: (batchId: string, data: { reason: string }) => client.post(`/api/payroll/sg/batches/${batchId}/void`, data),
+  deleteBatch: (batchId: string) => client.delete(`/api/payroll/sg/batches/${batchId}`),
+  deleteSheet: (batchId: string) => client.delete(`/api/payroll/sg/batches/${batchId}`),
+  // Records
+  recalculateSingleRecord: (batchId: string, recordId: string) => client.post(`/api/payroll/sg/batches/${batchId}/records/${recordId}/recalculate`, {}),
+  editRecord: (batchId: string, recordId: string, data: Record<string, any>) => client.put(`/api/payroll/sg/batches/${batchId}/records/${recordId}`, data),
+  // Payslips
+  payslips: (params?: Record<string, any>) => client.get('/api/payroll/sg/payslips', { params }),
+  viewPayslipHtml: (recordId: string) => client.get(`/api/payroll/sg/payslips/${recordId}/html`),
+  sendSinglePayslip: (recordId: string) => client.post(`/api/payroll/sg/payslips/${recordId}/send`, {}),
+  sendPayslipsSelected: (data: { record_ids: string[] }) => client.post('/api/payroll/sg/payslips/send-selected', data),
+  sendPayslipsAll: (data: Record<string, any>) => client.post('/api/payroll/sg/payslips/send-all', data),
+  // Email settings
+  smtpStatus: () => client.get('/api/payroll/sg/smtp-status'),
+  emailSettings: () => client.get('/api/payroll/sg/email-settings'),
+  saveEmailSettings: (data: Record<string, any>) => client.post('/api/payroll/sg/email-settings', data),
+  testEmailSettings: (data: Record<string, any>) => client.post('/api/payroll/sg/email-settings/test', data),
+  previewEmailTemplate: (data: Record<string, any>) => client.post('/api/payroll/sg/email-settings/preview', data),
+  emailLogs: (params?: Record<string, any>) => client.get('/api/payroll/sg/email-logs', { params }),
+  // Audit
+  auditLogs: (params?: Record<string, any>) => client.get('/api/payroll/sg/audit-logs', { params }),
+  getBatchAuditLogs: (batchId: string) => client.get(`/api/payroll/sg/batches/${batchId}/audit-logs`),
+  // Constants (reference/enum data for dropdowns)
+  constants: () => client.get('/api/payroll/sg/constants'),
 }
 
 // ── Data Dictionary API (2-level: categories + entries) ──

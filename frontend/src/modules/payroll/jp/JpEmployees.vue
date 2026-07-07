@@ -10,6 +10,7 @@ const { t } = useI18n()
 
 const loading = ref(false)
 const allRecords = ref<any[]>([])
+const total = ref(0)
 const page = ref(1)
 const pageSize = ref(20)
 
@@ -43,18 +44,11 @@ const toggleReason = ref('')
 
 const departments = ref<any[]>([])
 const teams = ref<any[]>([])
-
-const salaryTypes = [
-  { value: 'monthly', label: 'payroll.jp.salary_type_monthly' },
-  { value: 'hourly', label: 'payroll.jp.salary_type_hourly' },
-  { value: 'daily', label: 'payroll.jp.salary_type_daily' },
-  { value: 'monthly_fixed_ot', label: 'payroll.jp.salary_type_monthly_fixed_ot' },
-  { value: 'monthly_hour', label: 'payroll.jp.salary_type_monthly_hour' },
-]
+const entities = ref<any[]>([])
 const bankAccountTypes = ['普通預金', '当座預金', '定期預金']
 
 // ── Data Dictionary ──
-const CAT = { SALARY_TYPE: 'salary_type', BANK_ACCOUNT: 'bank_account_type', CURRENCY: 'currency', LEGAL_ENTITY: 'legal_entity' }
+const CAT = { SALARY_TYPE: 'salary_type', BANK_ACCOUNT: 'bank_account_type', CURRENCY: 'currency' }
 const { loadOptions, getValues, getOptions } = useDictOptions()
 const FALLBACK_DD: Record<string, string[]> = {
   [CAT.SALARY_TYPE]: ['monthly', 'hourly', 'daily', 'monthly_fixed_ot', 'monthly_hour'],
@@ -75,24 +69,29 @@ function getItemLabel(item: any): string {
 }
 const editableItems = computed(() => itemDefs.value.filter((i: any) => editableItemCodes.includes(i.display_order)))
 
-const filteredRecords = computed(() => {
-  let result = allRecords.value
-  if (searchText.value) { const q = searchText.value.toLowerCase(); result = result.filter((r: any) => (r.employee_number || '').toLowerCase().includes(q) || (r.employee_name || '').toLowerCase().includes(q)) }
-  if (filterEntity.value) result = result.filter((r: any) => r.entity_id === filterEntity.value)
-  if (filterSalaryType.value) result = result.filter((r: any) => r.salary_type === filterSalaryType.value)
-  if (filterDepartment.value) result = result.filter((r: any) => r.department_label === filterDepartment.value)
-  if (filterStatus.value === 'active') result = result.filter((r: any) => r.active)
-  if (filterStatus.value === 'inactive') result = result.filter((r: any) => !r.active)
-  return result
-})
-const pagedRecords = computed(() => { const s = (page.value - 1) * pageSize.value; return filteredRecords.value.slice(s, s + pageSize.value) })
-const departmentOptions = computed(() => [...new Set(allRecords.value.map((r: any) => r.department_label).filter(Boolean))])
+const departmentOptions = computed(() => [...new Set(departments.value.map((d: any) => d.department_name_en || d.department_name_ja).filter(Boolean))])
 
-async function load() { loading.value = true; try { const res = await payrollJpApi.employees(); allRecords.value = res.data.data || [] } catch (e: any) { ElMessage.error(e.message) } finally { loading.value = false } }
+async function load() {
+  loading.value = true
+  try {
+    const params: Record<string, any> = { page: page.value, page_size: pageSize.value }
+    if (searchText.value.trim()) params.search = searchText.value.trim()
+    if (filterEntity.value) params.entity_id = filterEntity.value
+    if (filterSalaryType.value) params.salary_type = filterSalaryType.value
+    if (filterDepartment.value) params.department_label = filterDepartment.value
+    if (filterStatus.value !== 'all') params.status = filterStatus.value
+    const res = await payrollJpApi.employees(params)
+    allRecords.value = res.data.data || []
+    total.value = res.data.pagination?.total || 0
+  } catch (e: any) { ElMessage.error(e.message) } finally { loading.value = false }
+}
+function applyFilter() { page.value = 1; load() }
+function handlePageChange(p: number) { page.value = p; load() }
+function handleSizeChange(s: number) { pageSize.value = s; page.value = 1; load() }
 async function loadItemDefs() { try { const res = await payrollJpApi.itemDefinitions(); itemDefs.value = res.data.data || [] } catch (_) {} }
-async function loadDropdowns() { try { const [dr, tr] = await Promise.all([masterdataApi.departments(), masterdataApi.teams()]); departments.value = dr.data.data || dr.data.departments || []; teams.value = tr.data.data || tr.data.teams || [] } catch (_) {} }
-function entityLabelById(id: string) { const f = ddOptions(CAT.LEGAL_ENTITY).value.find((o: any) => o.value === id); return f ? f.label : id }
-function salaryTypeLabel(st: string): string { const f = salaryTypes.find(s => s.value === st); return f ? t(f.label) : st }
+async function loadDropdowns() { try { const [dr, tr, er] = await Promise.all([masterdataApi.departments(), masterdataApi.teams(), payrollJpApi.entities()]); departments.value = dr.data.data || dr.data.departments || []; teams.value = tr.data.data || tr.data.teams || []; entities.value = (er.data?.data || er.data || []) as any[] } catch (_) {} }
+function entityLabelById(id: string) { const f = entities.value.find((e: any) => e.entity_id === id || e.entity_code === id); return f ? `${f.entity_code || id} - ${f.entity_name_en || f.entity_name || ''}` : id }
+function salaryTypeLabel(st: string): string { const f = ddOptions(CAT.SALARY_TYPE).value.find((o: any) => o.value === st); return f ? f.label : (st || '—') }
 
 function openDetail(row: any) { drawerRecord.value = row; drawerForm.value = { ...row }; drawerVisible.value = true }
 async function saveDrawer() { drawerSaving.value = true; try { await payrollJpApi.saveEmployee(drawerForm.value); drawerVisible.value = false; ElMessage.success(t('action.saved')); await load() } catch (e: any) { ElMessage.error(e.message) } finally { drawerSaving.value = false } }
@@ -115,7 +114,7 @@ async function confirmToggle() {
   } catch (e: any) { ElMessage.error(e.message) }
 }
 
-onMounted(() => { load(); loadItemDefs(); loadDropdowns(); loadOptions([CAT.SALARY_TYPE, CAT.BANK_ACCOUNT, CAT.CURRENCY, CAT.LEGAL_ENTITY]) })
+onMounted(() => { load(); loadItemDefs(); loadDropdowns(); loadOptions([CAT.SALARY_TYPE, CAT.BANK_ACCOUNT, CAT.CURRENCY]) })
 </script>
 
 <template>
@@ -130,17 +129,17 @@ onMounted(() => { load(); loadItemDefs(); loadDropdowns(); loadOptions([CAT.SALA
 
     <!-- Filters -->
     <div class="fiori-filters">
-      <el-input v-model="searchText" :placeholder="t('action.search')" clearable style="width:200px" @input="page=1" />
-      <el-select v-model="filterEntity" :placeholder="t('field.entity_id')" clearable style="width:260px" @change="page=1">
-        <el-option v-for="e in ddOptions(CAT.LEGAL_ENTITY).value" :key="e.value" :label="e.label" :value="e.value" />
+      <el-input v-model="searchText" placeholder="搜索员工编号、姓名…" clearable style="width:220px" @keyup.enter="applyFilter" @clear="applyFilter" />
+      <el-select v-model="filterEntity" :placeholder="t('field.entity_id')" clearable style="width:260px" @change="applyFilter">
+        <el-option v-for="e in entities" :key="e.entity_id" :label="entityLabelById(e.entity_id)" :value="e.entity_id" />
       </el-select>
-      <el-select v-model="filterDepartment" :placeholder="t('field.department')" clearable style="width:150px" @change="page=1">
+      <el-select v-model="filterDepartment" :placeholder="t('field.department')" clearable style="width:150px" @change="applyFilter">
         <el-option v-for="d in departmentOptions" :key="d" :label="d" :value="d" />
       </el-select>
-      <el-select v-model="filterSalaryType" :placeholder="t('field.salary_type_label')" clearable style="width:180px" @change="page=1">
-        <el-option v-for="st in salaryTypes" :key="st.value" :label="t(st.label)" :value="st.value" />
+      <el-select v-model="filterSalaryType" :placeholder="t('field.salary_type_label')" clearable style="width:180px" @change="applyFilter">
+        <el-option v-for="o in ddOptions(CAT.SALARY_TYPE).value" :key="o.value" :label="o.label" :value="o.value" />
       </el-select>
-      <el-select v-model="filterStatus" style="width:120px" @change="page=1">
+      <el-select v-model="filterStatus" style="width:120px" @change="applyFilter">
         <el-option :label="t('status.all')" value="all" />
         <el-option :label="t('status.active')" value="active" />
         <el-option :label="t('status.inactive')" value="inactive" />
@@ -149,7 +148,7 @@ onMounted(() => { load(); loadItemDefs(); loadDropdowns(); loadOptions([CAT.SALA
 
     <!-- Table -->
     <div class="fiori-card">
-      <el-table :data="pagedRecords" v-loading="loading" border stripe size="small" class="fiori-table">
+      <el-table :data="allRecords" v-loading="loading" border stripe size="small" class="fiori-table">
         <el-table-column type="index" min-width="45" fixed="left" />
         <el-table-column prop="employee_number" :label="t('field.employee_number')" min-width="120" fixed="left">
           <template #default="{row}"><span class="emp-num">{{ row.employee_number || '-' }}</span></template>
@@ -164,6 +163,9 @@ onMounted(() => { load(); loadItemDefs(); loadDropdowns(); loadOptions([CAT.SALA
         <el-table-column prop="department_label" :label="t('field.department')" min-width="120" show-overflow-tooltip />
         <el-table-column prop="team_label" :label="t('field.team')" min-width="120" show-overflow-tooltip />
         <el-table-column prop="email" :label="t('field.email')" min-width="200" show-overflow-tooltip />
+        <el-table-column prop="date_of_birth" :label="t('field.profile__date_of_birth')" min-width="110" align="center">
+          <template #default="{row}"><span :style="{color: row.date_of_birth ? '#1d2a3a' : '#9ca3af'}">{{ row.date_of_birth || '—' }}</span></template>
+        </el-table-column>
         <el-table-column prop="payroll_currency" :label="t('field.payroll_currency')" min-width="80" align="center" />
         <el-table-column :label="t('field.active')" min-width="70" align="center">
           <template #default="{row}"><span class="dot" :class="row.active?'dot-on':'dot-off'" /></template>
@@ -269,16 +271,17 @@ onMounted(() => { load(); loadItemDefs(); loadDropdowns(); loadOptions([CAT.SALA
       </el-table>
 
       <div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px;padding:0 4px">
-        <span class="helper-text">{{ filteredRecords.length }} {{ t('action.records_total') }}</span>
+        <span class="helper-text">{{ total }} {{ t('action.records_total') }}</span>
         <el-pagination
           v-model:current-page="page"
           v-model:page-size="pageSize"
           :page-sizes="[10, 20, 50, 100]"
-          :total="filteredRecords.length"
+          :total="total"
           layout="total, sizes, prev, pager, next, jumper"
           background
           small
-          @size-change="(s:number)=>{pageSize=s;page=1}"
+          @current-change="handlePageChange"
+          @size-change="handleSizeChange"
         />
       </div>
     </div>
@@ -292,20 +295,21 @@ onMounted(() => { load(); loadItemDefs(); loadDropdowns(); loadOptions([CAT.SALA
         </div>
       </template>
       <div class="drawer-body" v-if="drawerRecord">
-        <!-- Card 1: Basic -->
-        <div class="fi-card"><div class="fi-card-head"><span>📋</span> {{ t('payroll.jp.tab_basic') }}</div>
+        <!-- Card 1: Basic Info (synced from Employee Admin) -->
+        <div class="fi-card"><div class="fi-card-head"><span>📋</span> {{ t('payroll.jp.tab_basic') }}<span class="sync-badge">从員工管理同步</span></div>
           <el-row :gutter="16">
-            <el-col :span="12"><label>{{ t('field.email') }}</label><el-input v-model="drawerForm.email" size="small" /></el-col>
+            <el-col :span="12"><label>{{ t('field.profile__date_of_birth') }}</label><el-input :model-value="drawerForm.date_of_birth || '—'" size="small" disabled><template #suffix><span style="color:#9ca3af;font-size:11px;">同步</span></template></el-input></el-col>
+            <el-col :span="12"><label>{{ t('field.email') }}</label><el-input v-model="drawerForm.email" size="small" disabled /></el-col>
+            <el-col :span="12"><label>{{ t('field.department') }}</label><el-input :model-value="drawerForm.department_label || '—'" size="small" disabled /></el-col>
+            <el-col :span="12"><label>{{ t('field.team') }}</label><el-input :model-value="drawerForm.team_label || '—'" size="small" disabled /></el-col>
             <el-col :span="12"><label>{{ t('field.payroll_currency') }}</label><el-select v-model="drawerForm.payroll_currency" size="small" style="width:100%"><el-option v-for="c in ddOptions(CAT.CURRENCY).value" :key="c.value" :label="c.label" :value="c.value" /></el-select></el-col>
-            <el-col :span="12"><label>{{ t('field.department') }}</label><el-select v-model="drawerForm.department_label" size="small" style="width:100%" allow-create filterable clearable><el-option v-for="d in departments" :key="d.department_id" :label="d.department_name_en||d.department_name_ja" :value="d.department_name_en||d.department_name_ja" /></el-select></el-col>
-            <el-col :span="12"><label>{{ t('field.team') }}</label><el-select v-model="drawerForm.team_label" size="small" style="width:100%" allow-create filterable clearable><el-option v-for="tm in teams" :key="tm.team_id" :label="tm.team_name_en||tm.team_name_ja" :value="tm.team_name_en||tm.team_name_ja" /></el-select></el-col>
             <el-col :span="12"><label>{{ t('field.active') }}</label><div><el-switch v-model="drawerForm.active" size="small" /></div></el-col>
           </el-row>
         </div>
         <!-- Card 2: Salary -->
         <div class="fi-card"><div class="fi-card-head"><span>💰</span> {{ t('payroll.jp.tab_salary') }}</div>
           <el-row :gutter="16">
-            <el-col :span="12"><label>{{ t('field.salary_type_label') }}</label><el-select v-model="drawerForm.salary_type" size="small" style="width:100%"><el-option v-for="st in salaryTypes" :key="st.value" :label="t(st.label)" :value="st.value" /></el-select></el-col>
+            <el-col :span="12"><label>{{ t('field.salary_type_label') }}</label><el-select v-model="drawerForm.salary_type" size="small" style="width:100%"><el-option v-for="o in ddOptions(CAT.SALARY_TYPE).value" :key="o.value" :label="o.label" :value="o.value" /></el-select></el-col>
             <el-col :span="12"><label>{{ t('field.standard_work_hours') }}</label><el-input-number v-model="drawerForm.standard_work_hours" :min="0" :precision="1" size="small" style="width:100%" /></el-col>
             <el-col :span="12"><label>{{ t('field.standard_monthly_hours') }}</label><el-input-number v-model="drawerForm.standard_monthly_hours" :min="0" :precision="1" size="small" style="width:100%" /></el-col>
           </el-row>
@@ -363,8 +367,8 @@ onMounted(() => { load(); loadItemDefs(); loadDropdowns(); loadOptions([CAT.SALA
     <!-- Import Dialog -->
     <el-dialog v-model="importDialog" :title="t('payroll.jp.import_employeeadmin')" width="750px" top="2vh">
       <div class="fiori-filters" style="margin-bottom:12px">
-        <el-input v-model="importSearch" :placeholder="t('action.search')" clearable style="width:180px" />
-        <el-select v-model="importFilterEntity" :placeholder="t('field.entity_id')" clearable style="width:220px"><el-option v-for="e in ddOptions(CAT.LEGAL_ENTITY).value" :key="e.value" :label="e.label" :value="e.value" /></el-select>
+        <el-input v-model="importSearch" placeholder="搜索员工编号、姓名…" clearable style="width:200px" />
+        <el-select v-model="importFilterEntity" :placeholder="t('field.entity_id')" clearable style="width:220px"><el-option v-for="e in entities" :key="e.entity_id" :label="entityLabelById(e.entity_id)" :value="e.entity_id" /></el-select>
         <el-select v-model="importFilterDept" :placeholder="t('field.department')" clearable style="width:160px"><el-option v-for="d in departments" :key="d.department_id" :label="d.department_name_en||d.department_name_ja" :value="d.department_name_en||d.department_name_ja" /></el-select>
       </div>
       <el-table :data="filteredImportable" max-height="400" @selection-change="(rows:any[])=>selectedImportIds=rows.map((r:any)=>r.employee_id)" border stripe size="small">
@@ -408,6 +412,7 @@ onMounted(() => { load(); loadItemDefs(); loadDropdowns(); loadOptions([CAT.SALA
 
 .fi-card { background:#fff; border:1px solid #e5e7eb; border-radius:10px; padding:16px; margin-bottom:14px; }
 .fi-card-head { display:flex; align-items:center; gap:8px; font-weight:700; font-size:.95rem; color:#1d2a3a; margin-bottom:14px; padding-bottom:10px; border-bottom:1px solid #e5e7eb; }
+.sync-badge { font-weight:400; font-size:.72rem; color:#1B6CB2; background:#eff6ff; padding:2px 8px; border-radius:10px; margin-left:auto; }
 .fi-card label { display:block; font-size:.75rem; font-weight:700; color:#374151; text-transform:uppercase; margin-bottom:2px; letter-spacing:.02em; }
 .fi-card .el-col { margin-bottom:10px; }
 </style>

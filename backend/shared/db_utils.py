@@ -450,7 +450,9 @@ def _serialize_for_db(val: Any) -> Any:
     if isinstance(val, Decimal):
         return val
     if isinstance(val, (datetime, date)):
-        return val  # psycopg2 natively adapts these
+        return val
+    if isinstance(val, str):
+        return val
     if isinstance(val, (dict, list)):
         return json.dumps(val, ensure_ascii=False, default=str)
     # Unknown type — stringify with a warning for debugging

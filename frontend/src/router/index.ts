@@ -98,18 +98,73 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/modules/payroll/PayrollLanding.vue'),
         meta: { requiresAuth: true, permission: 'payroll.access', titleKey: 'nav.payroll' },
       },
+      // SG Payroll
+      {
+        path: 'payroll/sg',
+        name: 'SgPayrollLanding',
+        component: () => import('@/modules/payroll/sg/SgLanding.vue'),
+        meta: { requiresAuth: true, permission: 'tacaipay_sg.access', titleKey: 'payroll.sg.title', parent: 'PayrollLanding' },
+      },
+      {
+        path: 'payroll/sg/item-definitions',
+        name: 'SgItemDefinitions',
+        component: () => import('@/modules/payroll/PayrollItemDefinitions.vue'),
+        
+        props: { countryCode: 'sg' },meta: { requiresAuth: true, permission: 'payroll.access', titleKey: 'payroll.jp.item_definitions', parent: 'SgPayrollLanding' },
+      },
+      {
+        path: 'payroll/sg/employees',
+        name: 'SgEmployees',
+        component: () => import('@/modules/payroll/sg/SgEmployees.vue'),
+        meta: { requiresAuth: true, permission: 'payroll.access', titleKey: 'payroll.sg.salary_master', parent: 'SgPayrollLanding' },
+      },
+      {
+        path: 'payroll/sg/batches',
+        name: 'SgPayrollBatches',
+        component: () => import('@/modules/payroll/PayrollBatches.vue'),
+        
+        props: { countryCode: 'sg' },meta: { requiresAuth: true, permission: 'payroll.access', titleKey: 'payroll.sg.batches', parent: 'SgPayrollLanding' },
+      },
+      {
+        path: 'payroll/sg/batches/:id',
+        name: 'SgPayrollBatchDetail',
+        component: () => import('@/modules/payroll/sg/SgPayrollBatchDetail.vue'),
+        meta: { requiresAuth: true, permission: 'payroll.access', titleKey: 'payroll.sg.batch_detail', parent: 'SgPayrollBatches' },
+      },
+      {
+        path: 'payroll/sg/payslips',
+        name: 'SgPayslips',
+        component: () => import('@/modules/payroll/PayrollPayslips.vue'),
+        
+        props: { countryCode: 'sg' },meta: { requiresAuth: true, permission: 'payroll.access', titleKey: 'payroll.sg.payslips', parent: 'SgPayrollLanding' },
+      },
+      {
+        path: 'payroll/sg/email-settings',
+        name: 'SgEmailSettings',
+        component: () => import('@/modules/payroll/PayrollEmailSettings.vue'),
+        
+        props: { countryCode: 'sg' },meta: { requiresAuth: true, permission: 'payroll.access', titleKey: 'payroll.jp.email_settings', parent: 'SgPayrollLanding' },
+      },
       // JP Payroll
       {
         path: 'payroll/jp',
         name: 'JpPayrollLanding',
-        component: () => import('@/modules/payroll/PayrollLanding.vue'),
+        component: () => import('@/modules/payroll/jp/JpLanding.vue'),
         meta: { requiresAuth: true, permission: 'tacaipay_jp.view', titleKey: 'payroll.jp.title', parent: 'PayrollLanding' },
+      },
+      // CN Payroll
+      {
+        path: 'payroll/cn',
+        name: 'CnPayrollLanding',
+        component: () => import('@/modules/payroll/UnderDevelopment.vue'),
+        meta: { requiresAuth: true, permission: 'payroll.access', titleKey: 'payroll.cn.title', parent: 'PayrollLanding' },
       },
       {
         path: 'payroll/jp/item-definitions',
         name: 'JpItemDefinitions',
-        component: () => import('@/modules/payroll/jp/ItemDefinitions.vue'),
-        meta: { requiresAuth: true, permission: 'tacaipay_jp.view', titleKey: 'payroll.jp.item_definitions', parent: 'JpPayrollLanding' },
+        component: () => import('@/modules/payroll/PayrollItemDefinitions.vue'),
+        
+        props: { countryCode: 'jp' },meta: { requiresAuth: true, permission: 'tacaipay_jp.view', titleKey: 'payroll.jp.item_definitions', parent: 'JpPayrollLanding' },
       },
       {
         path: 'payroll/jp/parameters',
@@ -126,8 +181,9 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'payroll/jp/batches',
         name: 'JpPayrollBatches',
-        component: () => import('@/modules/payroll/jp/JpPayrollBatches.vue'),
-        meta: { requiresAuth: true, permission: 'tacaipay_jp.view', titleKey: 'payroll.jp.batches', parent: 'JpPayrollLanding' },
+        component: () => import('@/modules/payroll/PayrollBatches.vue'),
+        
+        props: { countryCode: 'jp' },meta: { requiresAuth: true, permission: 'tacaipay_jp.view', titleKey: 'payroll.jp.batches', parent: 'JpPayrollLanding' },
       },
       {
         path: 'payroll/jp/batches/:id',
@@ -138,8 +194,15 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'payroll/jp/payslips',
         name: 'JpPayslips',
-        component: () => import('@/modules/payroll/jp/JpPayslips.vue'),
-        meta: { requiresAuth: true, permission: 'tacaipay_jp.view', titleKey: 'payroll.jp.payslips', parent: 'JpPayrollLanding' },
+        component: () => import('@/modules/payroll/PayrollPayslips.vue'),
+        
+        props: { countryCode: 'jp' },meta: { requiresAuth: true, permission: 'tacaipay_jp.view', titleKey: 'payroll.jp.payslips', parent: 'JpPayrollLanding' },
+      },
+      {
+        path: 'payroll/jp/email-settings',
+        name: 'JpEmailSettings',
+        component: () => import('@/modules/payroll/jp/JpEmailSettings.vue'),
+        meta: { requiresAuth: true, permission: 'tacaipay_jp.manage', titleKey: 'payroll.jp.email_settings', parent: 'JpPayrollLanding' },
       },
       // ── Invoice Management ──
       {
