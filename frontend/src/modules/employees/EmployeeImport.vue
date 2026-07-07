@@ -12,7 +12,7 @@ const result = ref<{ success: boolean; created: number; total_rows: number; erro
 const error = ref('')
 
 function downloadTemplate() {
-  window.open('http://127.0.0.1:8004/exports/employees-import-template.csv', '_blank')
+  window.open('/api/employees/export-template', '_blank')
 }
 
 async function handleUpload() {

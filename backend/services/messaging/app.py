@@ -1761,7 +1761,7 @@ class TacaiMsgHandler(BaseHTTPRequestHandler):
 
     def _send_json(self, data: Any, status: int = 200) -> None:
         """Delegate to api_utils for standard CORS + security headers."""
-        from config import internal_url
+        from config import internal_url, INTERNAL_HOST
         from api_utils import send_json as _send
         _send(self, data, status)
 
@@ -1817,7 +1817,7 @@ class TacaiMsgHandler(BaseHTTPRequestHandler):
 
     def _is_localhost(self) -> bool:
         client = (self.client_address[0] if self.client_address else "")
-        return client in ("127.0.0.1", "::1", "localhost")
+        return client in ("127.0.0.1", "::1", "localhost", INTERNAL_HOST)
 
     def _handle_internal_api(self, path: str, query: dict[str, list[str]]) -> None:
         """Handle internal API calls from other TACAI services (no auth)."""

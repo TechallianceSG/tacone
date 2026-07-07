@@ -54,40 +54,6 @@ export function parseJpAuditValue(v: any): string {
   } catch { return String(v).substring(0, 150) }
 }
 
-// ── Insurance Rate Type Labels ──
-export const JP_RATE_TYPE_LABELS: Record<string, string> = {
-  pension: '健康保険',
-  health_insurance: '健康保険',
-  pension_insurance: '厚生年金保険',
-  nursing_care: '介護保険',
-  employment: '雇用保険',
-  employment_insurance: '雇用保険',
-  child_allowance: '児童手当拠出金',
-  care_insurance: '介護保険',
-}
-
-// ── Parameter Types ──
-export const JP_PARAM_TYPES = {
-  SOCIAL_INSURANCE_RATE: 'social_insurance_rate',
-  WITHHOLDING_TAX_BRACKET: 'withholding_tax_bracket',
-  STANDARD_REMUNERATION_GRADE: 'standard_remuneration_grade',
-  ACCIDENT_INSURANCE_RATE: 'accident_insurance_rate',
-} as const
-
-// ── Item Definition Labels ──
-export const JP_ITEM_CATEGORY_LABELS: Record<string, string> = {
-  earning: '支給 (Earning)',
-  deduction: '控除 (Deduction)',
-  employer_cost: '会社負担 (Employer Cost)',
-}
-
-export const JP_ITEM_SUBCATEGORY_LABELS: Record<string, string> = {
-  base: '基本',
-  overtime: '残業',
-  allowance: '手当',
-  manual: '手動入力',
-  statutory: '法定',
-  attendance: '勤怠',
-}
-
-export const JP_ITEM_CATEGORIES = ['earning', 'deduction', 'employer_cost'] as const
+// ── Reference data (item categories, rate types, parameter types, salary types) ──
+// Moved to backend API: GET /api/payroll/jp/constants
+// Use usePayrollJpConstants() composable instead of importing from here.

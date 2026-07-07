@@ -5,9 +5,10 @@ import { payrollJpApi } from '@/api/client'
 import { useDictOptions } from '@/composables/useDictOptions'
 import { ElMessage } from 'element-plus'
 import { prefectures, prefectureLabel } from '@/constants/prefectures'
-import { JP_RATE_TYPE_LABELS, JP_PARAM_TYPES } from '@/constants/payrollJp'
+import { usePayrollJpConstants } from '@/composables/usePayrollJpConstants'
 
 const { t } = useI18n()
+const { rateTypeLabelMap, parameterTypes, init: initConstants } = usePayrollJpConstants()
 
 // ── Tab state ──
 const activeTab = ref('social-insurance')
@@ -39,7 +40,7 @@ const siPageSize = ref(20)
 
 const socialInsuranceData = computed(() =>
   allParams.value.filter((p: any) =>
-    p.param_type === JP_PARAM_TYPES.SOCIAL_INSURANCE_RATE || p.rate_type !== undefined
+    p.param_type === parameterTypes.value.SOCIAL_INSURANCE_RATE || p.rate_type !== undefined
   )
 )
 
@@ -58,7 +59,7 @@ const tbPageSize = ref(20)
 
 const taxBracketData = computed(() =>
   allParams.value.filter((p: any) =>
-    p.param_type === JP_PARAM_TYPES.WITHHOLDING_TAX_BRACKET || (p.table_type && p.min_salary !== undefined)
+    p.param_type === parameterTypes.value.WITHHOLDING_TAX_BRACKET || (p.table_type && p.min_salary !== undefined)
   )
 )
 
@@ -77,7 +78,7 @@ const rgPageSize = ref(20)
 
 const remunerationGradeData = computed(() =>
   allParams.value.filter((p: any) =>
-    p.param_type === JP_PARAM_TYPES.STANDARD_REMUNERATION_GRADE || p.grade_type !== undefined
+    p.param_type === parameterTypes.value.STANDARD_REMUNERATION_GRADE || p.grade_type !== undefined
   )
 )
 
@@ -96,7 +97,7 @@ const aiPageSize = ref(20)
 
 const accidentInsuranceData = computed(() =>
   allParams.value.filter((p: any) =>
-    p.param_type === JP_PARAM_TYPES.ACCIDENT_INSURANCE_RATE || p.industry_code !== undefined
+    p.param_type === parameterTypes.value.ACCIDENT_INSURANCE_RATE || p.industry_code !== undefined
   )
 )
 
@@ -131,7 +132,7 @@ function fmtPermille(val: any): string {
 // ── Social Insurance CRUD ──
 function openSiCreate() {
   siForm.value = {
-    param_type: JP_PARAM_TYPES.SOCIAL_INSURANCE_RATE,
+    param_type: parameterTypes.value.SOCIAL_INSURANCE_RATE,
     rate_type: 'health_insurance',
     prefecture: '',
     employee_rate: 0,
@@ -161,7 +162,7 @@ async function saveSi() {
 // ── Tax Bracket CRUD ──
 function openTbCreate() {
   tbForm.value = {
-    param_type: JP_PARAM_TYPES.WITHHOLDING_TAX_BRACKET,
+    param_type: parameterTypes.value.WITHHOLDING_TAX_BRACKET,
     table_type: 'monthly',
     min_salary: 0,
     max_salary: 0,
@@ -191,7 +192,7 @@ async function saveTb() {
 // ── Remuneration Grade CRUD ──
 function openRgCreate() {
   rgForm.value = {
-    param_type: JP_PARAM_TYPES.STANDARD_REMUNERATION_GRADE,
+    param_type: parameterTypes.value.STANDARD_REMUNERATION_GRADE,
     grade_type: '',
     grade_number: 0,
     min_monthly_amount: 0,
@@ -221,7 +222,7 @@ async function saveRg() {
 // ── Accident Insurance CRUD ──
 function openAiCreate() {
   aiForm.value = {
-    param_type: JP_PARAM_TYPES.ACCIDENT_INSURANCE_RATE,
+    param_type: parameterTypes.value.ACCIDENT_INSURANCE_RATE,
     industry_code: '',
     industry_name_en: '',
     industry_name_ja: '',
@@ -247,7 +248,7 @@ async function saveAi() {
   finally { aiSaving.value = false }
 }
 
-onMounted(() => { load(); loadOptions([CAT.TAX_TABLE]) })
+onMounted(() => { initConstants(); load(); loadOptions([CAT.TAX_TABLE]) })
 </script>
 
 <template>
@@ -264,7 +265,7 @@ onMounted(() => { load(); loadOptions([CAT.TAX_TABLE]) })
         </div>
         <el-table :data="siPaged" v-loading="loading" border stripe size="small" style="width:100%">
           <el-table-column :label="t('field.rate_type')" min-width="180">
-            <template #default="{row}">{{ JP_RATE_TYPE_LABELS[row.rate_type] || row.rate_type }}</template>
+            <template #default="{row}">{{ rateTypeLabelMap[row.rate_type] || row.rate_type }}</template>
           </el-table-column>
           <el-table-column :label="t('field.prefecture')" min-width="220">
             <template #default="{row}">{{ prefectureLabel(row.prefecture) }}</template>
@@ -298,7 +299,7 @@ onMounted(() => { load(); loadOptions([CAT.TAX_TABLE]) })
           <el-form :model="siForm" label-width="160px">
             <el-form-item :label="t('field.rate_type')">
               <el-select v-model="siForm.rate_type" style="width:100%">
-                <el-option v-for="(label, key) in JP_RATE_TYPE_LABELS" :key="key" :label="label" :value="key" />
+                <el-option v-for="(label, key) in rateTypeLabelMap" :key="key" :label="label" :value="key" />
               </el-select>
             </el-form-item>
             <el-form-item :label="t('field.prefecture')">

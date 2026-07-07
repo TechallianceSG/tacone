@@ -26,7 +26,7 @@ import db_utils as _db
 from auth_utils import validate_session, has_permission, is_system_admin
 from cors_middleware import add_cors_headers, handle_preflight
 from api_utils import send_json, success, error, paginated
-from config import internal_url
+from config import internal_url, INTERNAL_HOST
 
 MODULE_NAME = "tacai-employee-admin"
 DEFAULT_PORT = 8004
@@ -135,7 +135,7 @@ class EmployeeAdminHandler(BaseHTTPRequestHandler):
 
     def _is_localhost(self) -> bool:
         client = (self.client_address[0] if self.client_address else "")
-        return client in ("127.0.0.1", "::1", "localhost")
+        return client in ("127.0.0.1", "::1", "localhost", INTERNAL_HOST)
 
     def do_GET(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
@@ -211,7 +211,7 @@ class EmployeeAdminHandler(BaseHTTPRequestHandler):
                 for r in rows:
                     r.pop("payroll", None)
 
-            success(self, {"employees": rows})
+            send_json(self, {"employees": rows})
             return
 
         # GET /api/internal/employees/{employee_id}
@@ -227,7 +227,7 @@ class EmployeeAdminHandler(BaseHTTPRequestHandler):
                 emp = rows[0]
                 if not include_payroll:
                     emp.pop("payroll", None)
-                success(self, {"employee": emp})
+                send_json(self, {"employee": emp})
             else:
                 error(self, "Not found", 404)
             return

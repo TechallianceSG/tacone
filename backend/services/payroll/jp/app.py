@@ -40,7 +40,7 @@ except Exception:
 from auth_utils import validate_session, has_permission, is_system_admin
 from cors_middleware import add_cors_headers, handle_preflight
 from api_utils import send_json, success, error, paginated
-from config import internal_url
+from config import internal_url, INTERNAL_HOST
 
 
 def parse_json_body(handler):
@@ -738,7 +738,7 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
         # Trust Portal gateway — auth already validated by Portal before proxying.
         # Portal forwards requests from localhost; skip redundant session validation.
         client_host = self.client_address[0] if self.client_address else ""
-        if client_host in ("127.0.0.1", "localhost", "::1"):
+        if client_host in ("127.0.0.1", "localhost", "::1", INTERNAL_HOST):
             return {"user": {"email": "portal-gateway", "roles": ["system_admin"]}, "permissions": ["tacaipay_jp.access", "tacaipay_jp.manage", "tacaipay_jp.calculate", "tacaipay_jp.approve"]}
         # Direct access (non-localhost) — validate session with User_admin
         user = self._get_session()
@@ -772,12 +772,14 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
             self._list_item_definitions()
         elif path == "/api/payroll/jp/rate-type-labels":
             self._list_rate_type_labels()
+        elif path == "/api/payroll/jp/constants":
+            self._get_constants()
         elif path == "/api/payroll/jp/parameters":
             self._list_parameters()
         elif path == "/api/payroll/jp/employees/importable":
             self._list_importable_employees()
         elif path == "/api/payroll/jp/employees":
-            self._list("pay_jp_salary_master")
+            self._list_employees()
         elif path == "/api/payroll/jp/batches":
             self._list("pay_jp_payroll_batches")
         elif path == "/api/payroll/jp/payslips":
@@ -940,6 +942,55 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
         except Exception as e:
             error(self, f"Database error: {str(e)}", 500)
 
+    def _list_employees(self):
+        """List salary master employees with optional filters + pagination."""
+        if not _PG_AVAILABLE:
+            error(self, "Database not available", 503)
+            return
+        try:
+            search = get_query_param(self, "search", "").strip()
+            entity_id = get_query_param(self, "entity_id", "").strip()
+            salary_type = get_query_param(self, "salary_type", "").strip()
+            department_label = get_query_param(self, "department_label", "").strip()
+            status = get_query_param(self, "status", "all").strip()
+            page = int(get_query_param(self, "page", "1"))
+            page_size = int(get_query_param(self, "page_size", "20"))
+
+            conditions = []
+            params = []
+            if search:
+                conditions.append("(employee_number ILIKE %s OR employee_name ILIKE %s)")
+                params.extend([f"%{search}%", f"%{search}%"])
+            if entity_id:
+                conditions.append("entity_id = %s")
+                params.append(entity_id)
+            if salary_type:
+                conditions.append("salary_type = %s")
+                params.append(salary_type)
+            if department_label:
+                conditions.append("department_label = %s")
+                params.append(department_label)
+            if status == "active":
+                conditions.append("active = true")
+            elif status == "inactive":
+                conditions.append("active = false")
+
+            where = " AND ".join(conditions) if conditions else None
+            rows = _db.load_table(
+                "pay_jp_salary_master",
+                where=where,
+                params=tuple(params) if params else None,
+                order_by="created_at DESC",
+            )
+
+            total = len(rows)
+            start = (page - 1) * page_size
+            page_data = rows[start:start + page_size]
+
+            paginated(self, page_data, page, page_size, total)
+        except Exception as e:
+            error(self, f"Database error: {str(e)}", 500)
+
     def _list_md_table(self, table: str, order_col: str):
         """Read master data via masterdata internal API."""
         endpoint_map = {
@@ -1010,6 +1061,70 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
         except Exception as e:
             error(self, f"Database error: {str(e)}", 500)
 
+    def _get_constants(self):
+        """Return all JP payroll reference/enum data in one call.
+
+        Used by the frontend to populate dropdowns (categories, subcategories,
+        salary types, rate types, parameter types) instead of hardcoding them.
+        Falls back to hardcoded defaults when DB is unavailable.
+        """
+        # Default fallback values
+        result = {
+            "item_categories": ["earning", "deduction", "employer_cost"],
+            "item_category_labels": {
+                "earning": "支給 (Earning)",
+                "deduction": "控除 (Deduction)",
+                "employer_cost": "会社負担 (Employer Cost)",
+            },
+            "item_subcategory_labels": {
+                "base": "基本", "overtime": "残業", "allowance": "手当",
+                "manual": "手動入力", "statutory": "法定", "attendance": "勤怠",
+            },
+            "salary_type_labels": SALARY_TYPE_LABELS,
+            "rate_type_labels": [],
+            "parameter_types": {
+                "SOCIAL_INSURANCE_RATE": "social_insurance_rate",
+                "WITHHOLDING_TAX_BRACKET": "withholding_tax_bracket",
+                "STANDARD_REMUNERATION_GRADE": "standard_remuneration_grade",
+                "ACCIDENT_INSURANCE_RATE": "accident_insurance_rate",
+            },
+        }
+
+        if _PG_AVAILABLE:
+            try:
+                # Derive unique categories/subcategories from item definitions
+                items = _db.load_table("pay_jp_payroll_item_definitions") or []
+                cats = sorted(set(i.get("category", "") for i in items if i.get("category")))
+                if cats:
+                    result["item_categories"] = cats
+
+                # Build subcategory labels from item definitions' labels field
+                subcat_labels: dict = {}
+                seen_subcats: set = set()
+                for it in items:
+                    sc = (it.get("sub_category") or "").strip()
+                    if not sc or sc in seen_subcats:
+                        continue
+                    seen_subcats.add(sc)
+                    labels = it.get("labels", {}) or {}
+                    if isinstance(labels, str):
+                        try:
+                            labels = json.loads(labels)
+                        except Exception:
+                            labels = {}
+                    subcat_labels[sc] = (labels.get("ja") or labels.get("en") or sc).strip()
+                if subcat_labels:
+                    result["item_subcategory_labels"] = subcat_labels
+
+                # Rate type labels from DB
+                rate_rows = _db.load_table("pay_jp_rate_type_labels", order_by="display_order") or []
+                if rate_rows:
+                    result["rate_type_labels"] = rate_rows
+            except Exception:
+                pass  # DB unavailable — use fallback defaults
+
+        success(self, result)
+
     def _list_parameters(self):
         """UNION all 4 parameter tables into one unified response."""
         if not _PG_AVAILABLE:
@@ -1057,8 +1172,39 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
             if table == "pay_jp_payroll_batches":
                 batch_id = data.get("batch_id", pk_val)
                 records = _db.load_table("pay_jp_monthly_salary_records",
-                    where={"batch_id": batch_id}, order_by="employee_number ASC")
-                data["records"] = records or []
+                    where={"batch_id": batch_id}, order_by="employee_number ASC") or []
+                data["records"] = records
+
+                # ── Defensive recalculation: derive batch totals from actual records ──
+                # This ensures frontend always sees accurate totals even if the batch
+                # table has stale/inconsistent data (e.g. from a partial calculation).
+                if records:
+                    data["employee_count"] = len(records)
+                    data["gross_total"] = sum(float(r.get("gross_pay") or 0) for r in records)
+                    data["deduction_total"] = sum(float(r.get("deduction_total") or 0) for r in records)
+                    data["net_total"] = sum(float(r.get("net_pay") or 0) for r in records)
+                    data["employer_cost_total"] = sum(float(r.get("employer_cost_total") or 0) for r in records)
+
+                    # Auto-correct batch status inconsistency:
+                    # If batch is still "draft" but records have been calculated
+                    # (gross_pay > 0), promote to "calculated".
+                    # A "draft" batch with records that have gross_pay=0 is valid
+                    # (records pre-populated at creation but not yet calculated).
+                    if data.get("status") == "draft" and data["gross_total"] > 0:
+                        now_iso = datetime.now(timezone.utc).isoformat()
+                        _db.update_record("pay_jp_payroll_batches", "batch_id", batch_id, {
+                            "status": "calculated",
+                            "employee_count": len(records),
+                            "gross_total": data["gross_total"],
+                            "deduction_total": data["deduction_total"],
+                            "net_total": data["net_total"],
+                            "employer_cost_total": data["employer_cost_total"],
+                            "updated_at": now_iso,
+                        })
+                        data["status"] = "calculated"
+                        data["updated_at"] = now_iso
+                        print(f"[{MODULE_NAME}] Auto-corrected batch {batch_id}: draft → calculated "
+                              f"(records={len(records)}, gross={data['gross_total']})", file=sys.stderr)
 
             success(self, data)
         except Exception as e:
@@ -1814,7 +1960,71 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
             }
             _db.insert_record("pay_jp_payroll_batches", batch)
 
-            result = {"batch_id": batch_id, "entity_id": entity_id, "payroll_month": payroll_month, "status": "draft"}
+            # ── Pre-populate salary records from salary master ──
+            # This matches the monolith behavior: batch creation also creates
+            # draft records for each active employee. Records are raw (uncalculated)
+            # until the user clicks "Calculate".
+            employee_count = 0
+            if entity_id:
+                employees = _db.load_table("pay_jp_salary_master",
+                    where="entity_id = %s AND active = true",
+                    params=(entity_id,)) or []
+                working_days = int(body.get("working_days_in_month", 22) or 22)
+                for emp in employees:
+                    record_id = f"JPR-{uuid.uuid4().hex[:12].upper()}"
+                    rec = {
+                        "record_id": record_id,
+                        "batch_id": batch_id,
+                        "sheet_id": batch_id,
+                        "payroll_month": payroll_month,
+                        "country_code": "JP",
+                        "entity_id": entity_id,
+                        "employee_id": emp.get("employee_id", ""),
+                        "employee_number": emp.get("employee_number", ""),
+                        "employee_name": emp.get("employee_name", ""),
+                        "email": emp.get("email", ""),
+                        "department_label": emp.get("department_label", ""),
+                        "salary_type": emp.get("salary_type", "monthly"),
+                        "basic_salary": float(emp.get("basic_salary") or 0),
+                        "hourly_rate": float(emp.get("hourly_rate") or 0),
+                        "daily_rate": float(emp.get("daily_rate") or 0),
+                        "standard_work_days": float(emp.get("standard_work_days") or working_days),
+                        "standard_work_hours": float(emp.get("standard_work_hours") or 176),
+                        "standard_monthly_hours": float(emp.get("standard_monthly_hours") or 160),
+                        "actual_work_days": float(emp.get("standard_work_days") or working_days),
+                        "actual_work_hours": float(emp.get("standard_work_hours") or 176),
+                        "absence_days": 0,
+                        "commute_allowance": float(emp.get("commute_allowance") or 0),
+                        "housing_allowance": float(emp.get("housing_allowance") or 0),
+                        "family_allowance": float(emp.get("family_allowance") or 0),
+                        "position_allowance": float(emp.get("position_allowance") or 0),
+                        "fixed_allowance": float(emp.get("fixed_allowance") or 0),
+                        "transport_allowance": float(emp.get("transport_allowance") or 0),
+                        "phone_allowance": float(emp.get("phone_allowance") or 0),
+                        "performance_bonus": float(emp.get("performance_bonus") or 0),
+                        "project_bonus": float(emp.get("project_bonus") or 0),
+                        "social_insurance_eligible": emp.get("social_insurance_eligible", True),
+                        "employment_insurance_eligible": emp.get("employment_insurance_eligible", True),
+                        "dependents_count": int(emp.get("dependents_count") or 0),
+                        "monthly_resident_tax": float(emp.get("monthly_resident_tax") or 0),
+                        "prefecture_code": emp.get("prefecture_code", "13"),
+                        "status": "draft",
+                        "created_at": now_iso,
+                        "updated_at": now_iso,
+                    }
+                    _db.insert_record("pay_jp_monthly_salary_records", rec)
+                    employee_count += 1
+
+                # Update batch with employee count
+                if employee_count > 0:
+                    _db.update_record("pay_jp_payroll_batches", "batch_id", batch_id, {
+                        "employee_count": employee_count,
+                        "updated_at": now_iso,
+                    })
+                    batch["employee_count"] = employee_count
+
+            result = {"batch_id": batch_id, "entity_id": entity_id, "payroll_month": payroll_month,
+                      "status": "draft", "employee_count": employee_count}
             if voided_count > 0:
                 result["auto_voided"] = voided_count
             success(self, result)
@@ -1869,18 +2079,12 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
                 eid = emp.get("employee_id", "")
                 salary_type = emp.get("salary_type") or "monthly"
 
-                # Merge existing record inputs (absence_days, actual_hours, etc.) if present
+                # Always use the latest salary master data for calculation.
+                # Per-record attendance inputs (absence_days, actual_work_hours,
+                # etc.) also come from salary master — they are refreshed on each
+                # import from EmployeeAdmin.
                 existing = existing_by_emp.get(eid, {})
-
                 calc_emp = {**emp}
-                for k in ["absence_days", "actual_work_days", "actual_work_hours",
-                           "overtime_hours", "paid_leave_days", "sick_leave_days",
-                           "commute_allowance", "housing_allowance", "family_allowance",
-                           "position_allowance", "fixed_allowance", "transport_allowance",
-                           "phone_allowance", "performance_bonus", "project_bonus",
-                           "other_allowance", "other_deduction"]:
-                    if k in existing and existing[k] is not None:
-                        calc_emp[k] = existing[k]
 
                 actual_hours = float(calc_emp.get("actual_work_hours") or 0)
                 actual_days = float(calc_emp.get("actual_work_days") or 0)
@@ -2017,7 +2221,10 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
                 "recalculate_count": current_recalc_count + (1 if is_recalc else 0),
                 "updated_at": now_iso,
             }
-            _db.update_record("pay_jp_payroll_batches", "batch_id", batch_id, update_batch)
+            updated = _db.update_record("pay_jp_payroll_batches", "batch_id", batch_id, update_batch)
+            if not updated:
+                print(f"[{MODULE_NAME}] WARNING: Batch update returned 0 rows affected for {batch_id}. "
+                      f"Batch may be in an inconsistent state.", file=sys.stderr)
 
             # ── Audit log ──
             action = "RECALCULATE" if is_recalc else "CALCULATE"
@@ -2227,11 +2434,10 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
 
     # ── New: Delete batch ──
     def _delete_batch(self, session, batch_id):
-        """Permanently delete a voided batch and its monthly salary records.
+        """Permanently delete a batch and its monthly salary records.
 
-        Only batches with status 'voided' can be deleted (hard delete).
-        Draft batches should use void first, then delete.
-        Calculated/confirmed batches cannot be deleted — rollback first.
+        Any batch that is NOT confirmed can be deleted (hard delete).
+        Confirmed batches cannot be deleted — rollback first.
         Writes audit log for the delete action against the batch.
         """
         if not _PG_AVAILABLE:
@@ -2249,8 +2455,8 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
                 return
 
             batch_status = batch_list[0].get("status", "")
-            if batch_status != "voided":
-                error(self, f"Only voided batches can be deleted (current status: {batch_status}). Use 'void' first.", 400)
+            if batch_status == "confirmed":
+                error(self, "Cannot delete confirmed batches. Rollback first.", 400)
                 return
 
             # Capture before snapshot for audit
@@ -2258,7 +2464,15 @@ class PayrollJPHandler(BaseHTTPRequestHandler):
                                if k in ("batch_id", "entity_id", "payroll_month", "status",
                                          "employee_count", "gross_total", "net_total", "created_by")}
 
-            # Delete associated monthly salary records first
+            # Delete associated payslips first (if any)
+            payslips = _db.load_table("pay_jp_payslips", where={"batch_id": batch_id}) or []
+            for ps in payslips:
+                try:
+                    _db.delete_record("pay_jp_payslips", "record_id", ps.get("record_id", ""))
+                except Exception:
+                    pass
+
+            # Delete associated monthly salary records
             records = _db.load_table("pay_jp_monthly_salary_records", where={"batch_id": batch_id}) or []
             deleted_record_count = 0
             for rec in records:

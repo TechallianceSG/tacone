@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "start": "vite",
     "dev": "vite",
     "dev:stg": "vite --mode staging",
     "dev:prd": "vite --mode production",

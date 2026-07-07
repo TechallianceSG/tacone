@@ -3,9 +3,10 @@ import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { payrollJpApi } from '@/api/client'
 import { ElMessage } from 'element-plus'
-import { JP_ITEM_CATEGORY_LABELS, JP_ITEM_SUBCATEGORY_LABELS, JP_ITEM_CATEGORIES } from '@/constants/payrollJp'
+import { usePayrollJpConstants } from '@/composables/usePayrollJpConstants'
 
 const { t } = useI18n()
+const { itemCategoryLabels, itemSubcategoryLabels, init: initConstants } = usePayrollJpConstants()
 const loading = ref(false)
 const items = ref<any[]>([])
 const page = ref(1)
@@ -26,7 +27,7 @@ function handleSizeChange(s: number) { pageSize.value = s; page.value = 1 }
 async function load() { loading.value = true; try { const res = await payrollJpApi.itemDefinitions(); items.value = res.data.data || [] } catch (e: any) { ElMessage.error(e.message) } finally { loading.value = false } }
 function openEdit(row: any) { form.value = { ...row }; dialogVisible.value = true }
 async function save() { saving.value = true; try { await payrollJpApi.saveItemDefinition(form.value); dialogVisible.value = false; ElMessage.success(t('action.saved')); await load() } catch (e: any) { ElMessage.error(e.message) } finally { saving.value = false } }
-onMounted(load)
+onMounted(() => { initConstants(); load() })
 </script>
 
 <template>
@@ -54,11 +55,11 @@ onMounted(load)
         </el-table-column>
         <el-table-column :label="t('field.category')" min-width="150">
           <template #default="{row}">
-            <el-tag size="small" :type="row.category==='earning'?'success':row.category==='deduction'?'danger':'warning'">{{ JP_ITEM_CATEGORY_LABELS[row.category] || row.category }}</el-tag>
+            <el-tag size="small" :type="row.category==='earning'?'success':row.category==='deduction'?'danger':'warning'">{{ itemCategoryLabels[row.category] || row.category }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column :label="t('field.sub_category')" min-width="110">
-          <template #default="{row}"><span class="muted-text">{{ JP_ITEM_SUBCATEGORY_LABELS[row.sub_category] || row.sub_category }}</span></template>
+          <template #default="{row}"><span class="muted-text">{{ itemSubcategoryLabels[row.sub_category] || row.sub_category }}</span></template>
         </el-table-column>
         <el-table-column :label="t('field.taxable')" min-width="70" align="center">
           <template #default="{row}"><el-tag :type="row.taxable?'warning':'info'" size="small">{{ row.taxable?t('field.yes'):t('field.no') }}</el-tag></template>
