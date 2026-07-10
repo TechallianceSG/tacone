@@ -13,9 +13,13 @@ function loadLang(): SupportedLang {
   }
   // Detect browser language
   const nav = navigator.language || ''
-  if (nav.startsWith('ja')) return 'ja'
-  if (nav.startsWith('zh')) return 'zh'
-  return 'en'
+  let detected: SupportedLang
+  if (nav.startsWith('ja')) detected = 'ja'
+  else if (nav.startsWith('zh')) detected = 'zh'
+  else detected = 'en'
+  // Persist so that API client (client.ts) sees the same language
+  saveLang(detected)
+  return detected
 }
 
 function saveLang(lang: SupportedLang) {

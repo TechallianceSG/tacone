@@ -123,14 +123,14 @@ npm run dev
 | [frontend/src/styles/variables.css](frontend/src/styles/variables.css) | CSS 变量（颜色、圆角、阴影） |
 | [frontend/src/styles/base.css](frontend/src/styles/base.css) | 全局基础样式 |
 
-### 2.2 原始 Portal 登录（旧，完整保留）
+### 2.2 后端 API 服务
 
 | 项目 | 说明 |
 |------|------|
-| URL | `http://localhost:3000` |
-| 技术栈 | Python 标准库 http.server（无依赖） |
-| 登录方式 | 传统 HTML form POST → Cookie Session |
-| 页面渲染 | 服务端 HTML 字符串拼接 |
+| URL | `http://localhost:8000` (DEV) |
+| 技术栈 | FastAPI (Uvicorn) — 单进程 monolith |
+| 认证方式 | Session Cookie → `dependencies.get_current_user` |
+| API 文档 | `http://localhost:8000/docs` (Swagger UI) |
 
 ```
 用户打开 :3000 → Portal 检查 session
@@ -224,18 +224,18 @@ npm run dev
 |------|------|------|
 | [TACAI-Core/cors_middleware.py](TACAI-Core/cors_middleware.py) | 62 | 为所有 Python 后端提供 CORS 支持 |
 
-**使用方式**（各模块 backend/app.py 中）：
+**使用方式**（`backend/app.py` 中统一配置）：
 
 ```python
-from cors_middleware import add_cors_headers, handle_preflight
+from fastapi.middleware.cors import CORSMiddleware
 
-class MyHandler(BaseHTTPRequestHandler):
-    def do_OPTIONS(self):
-        handle_preflight(self)
-
-    def send_response(self, status):
-        super().send_response(status)
-        add_cors_headers(self)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allow_headers=["Content-Type", "Authorization", "Cookie", "Accept", "Accept-Language"],
+)
 ```
 
 ---
@@ -472,14 +472,12 @@ cd frontend && npm run build
 ### 使用方式
 
 ```python
-# 在任何 TACAI-Core 子模块或通过 sys.path 访问 TACAI-Core 的模块中:
-from tacai_config import (
+# 在 backend/ 中:
+from config import (
     ALLOWED_PORTS,        # 所有有效本地端口集合
     ALLOWED_HOSTS,         # 所有允许的主机名集合
     get_portal_port,       # 当前环境的 Portal 端口
     get_auth_port,         # 当前环境的 User_admin 端口
-    get_service_url,       # 获取指定服务的 URL
-    SHARED_SERVICES,       # 共享服务定义
 )
 ```
 

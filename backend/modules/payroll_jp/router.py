@@ -61,10 +61,15 @@ async def jp_teams(user: dict = Depends(get_current_user)):
 
 # ── Item Definitions ────────────────────────────────────────────────────
 
+# Shared item-definitions catalog (all countries in one table, keyed by country_code)
+ITEM_DEF_TABLE = "pay_payroll_item_definitions"
+ITEM_DEF_COUNTRY = "jp"
+
+
 @router.get("/api/payroll/jp/item-definitions")
 async def list_item_definitions(user: dict = Depends(get_current_user)):
     _check_access(user)
-    rows = _db.load_table(f"{PREFIX}_payroll_item_definitions") or []
+    rows = _db.load_table(ITEM_DEF_TABLE, {"country_code": ITEM_DEF_COUNTRY}) or []
     rows.sort(key=lambda r: r.get("display_order", 0))
     return success_response(rows)
 
@@ -73,18 +78,19 @@ async def list_item_definitions(user: dict = Depends(get_current_user)):
 async def save_item_definition(request: Request, user: dict = Depends(get_current_user)):
     _check_access(user, "tacaipay_jp.manage")
     body = await request.json()
-    rows = _db.load_table(f"{PREFIX}_payroll_item_definitions") or []
+    body["country_code"] = ITEM_DEF_COUNTRY
     item_id = body.get("id")
     if item_id:
-        for r in rows:
-            if r.get("id") == item_id:
-                r.update({k: v for k, v in body.items() if k != "id"})
-                _db.save_table(f"{PREFIX}_payroll_item_definitions", rows)
-                return success_response(r)
-    new_id = max([r.get("id", 0) for r in rows], default=0) + 1
-    body["id"] = new_id
-    rows.append(body)
-    _db.save_table(f"{PREFIX}_payroll_item_definitions", rows)
+        existing = _db.load_table(ITEM_DEF_TABLE, {"id": item_id})
+        if existing and existing[0].get("country_code") == ITEM_DEF_COUNTRY:
+            # Only update columns that actually exist on the row (ignore country_code / timestamps)
+            updates = {k: v for k, v in body.items()
+                       if k in existing[0] and k not in ("id", "country_code", "created_at", "updated_at")}
+            _db.update_record(ITEM_DEF_TABLE, "id", item_id, updates)
+            return success_response(body)
+    all_rows = _db.load_table(ITEM_DEF_TABLE) or []
+    body["id"] = max([r.get("id", 0) for r in all_rows], default=0) + 1
+    _db.insert_record(ITEM_DEF_TABLE, body)
     return success_response(body)
 
 

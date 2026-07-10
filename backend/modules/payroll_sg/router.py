@@ -138,17 +138,6 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _next_id(records: list, field: str, prefix: str, width: int = 4) -> str:
-    max_n = 0
-    for r in records:
-        val = str(r.get(field, ""))
-        if val.startswith(prefix):
-            try:
-                max_n = max(max_n, int(val[len(prefix):]))
-            except ValueError:
-                pass
-    return f"{prefix}{max_n + 1:0{width}d}"
-
 
 # ── Master Data ─────────────────────────────────────────────────────────
 
@@ -172,10 +161,16 @@ async def sg_teams(user: dict = Depends(get_current_user)):
 
 # ── Item Definitions ────────────────────────────────────────────────────
 
+# Shared item-definitions catalog (all countries in one table, keyed by country_code)
+ITEM_DEF_TABLE = "pay_payroll_item_definitions"
+ITEM_DEF_COUNTRY = "sg"
+
+
 @router.get("/api/payroll/sg/item-definitions")
 async def sg_item_defs(user: dict = Depends(get_current_user)):
     _check_access(user)
-    rows = _db.load_table(f"{PREFIX}_payroll_item_definitions") or []
+    rows = _db.load_table(ITEM_DEF_TABLE, {"country_code": ITEM_DEF_COUNTRY}) or []
+    rows.sort(key=lambda r: r.get("display_order", 0))
     return success_response(rows)
 
 
@@ -183,17 +178,19 @@ async def sg_item_defs(user: dict = Depends(get_current_user)):
 async def sg_save_item_def(request: Request, user: dict = Depends(get_current_user)):
     _check_access(user, "tacaipay_sg.manage")
     body = await request.json()
-    rows = _db.load_table(f"{PREFIX}_payroll_item_definitions") or []
+    body["country_code"] = ITEM_DEF_COUNTRY
     item_id = body.get("id")
     if item_id:
-        for r in rows:
-            if r.get("id") == item_id:
-                r.update({k: v for k, v in body.items() if k != "id"})
-                _db.save_table(f"{PREFIX}_payroll_item_definitions", rows)
-                return success_response(r)
-    body["id"] = max([r.get("id", 0) for r in rows], default=0) + 1
-    rows.append(body)
-    _db.save_table(f"{PREFIX}_payroll_item_definitions", rows)
+        existing = _db.load_table(ITEM_DEF_TABLE, {"id": item_id})
+        if existing and existing[0].get("country_code") == ITEM_DEF_COUNTRY:
+            updates = {k: v for k, v in body.items()
+                       if k in existing[0] and k not in ("id", "country_code", "created_at", "updated_at")}
+            _db.update_record(ITEM_DEF_TABLE, "id", item_id, updates)
+            return success_response(body)
+    # Auto-generate id for new items
+    all_rows = _db.load_table(ITEM_DEF_TABLE) or []
+    body["id"] = max([r.get("id", 0) for r in all_rows], default=0) + 1
+    _db.insert_record(ITEM_DEF_TABLE, body)
     return success_response(body)
 
 
@@ -229,7 +226,10 @@ async def sg_list_employees(
     if salary_type:
         rows = [r for r in rows if r.get("salary_type") == salary_type]
     if status:
-        rows = [r for r in rows if r.get("status") == status]
+        if status == "active":
+            rows = [r for r in rows if r.get("active") not in (False, "false", 0, "0", None)]
+        elif status == "inactive":
+            rows = [r for r in rows if r.get("active") in (False, "false", 0, "0")]
     total = len(rows)
     start = (page - 1) * page_size
     return paginated_response(rows[start:start + page_size], page, page_size, total)
@@ -282,30 +282,31 @@ async def sg_import_employees(request: Request, user: dict = Depends(get_current
 @router.get("/api/payroll/sg/employees/{emp_id}")
 async def sg_get_employee(emp_id: str, user: dict = Depends(get_current_user)):
     _check_access(user)
-    rows = _db.load_table(f"{PREFIX}_salary_master") or []
-    for r in rows:
-        if str(r.get("id") or r.get("employee_id", "")) == emp_id:
-            return success_response(r)
-    raise HTTPException(status_code=404, detail="Not found")
+    rows = _db.load_table(f"{PREFIX}_salary_master", {"employee_id": emp_id})
+    if not rows:
+        raise HTTPException(status_code=404, detail="Not found")
+    return success_response(rows[0])
 
 
 @router.post("/api/payroll/sg/employees")
 async def sg_save_employee(request: Request, user: dict = Depends(get_current_user)):
     _check_access(user, "tacaipay_sg.manage")
     body = await request.json()
-    rows = _db.load_table(f"{PREFIX}_salary_master") or []
     emp_id = body.get("id") or body.get("employee_id")
     if emp_id:
-        for i, r in enumerate(rows):
-            if str(r.get("id") or r.get("employee_id", "")) == str(emp_id):
-                r.update({k: v for k, v in body.items() if k not in ("id", "employee_id")})
-                rows[i] = r
-                _db.save_table(f"{PREFIX}_salary_master", rows)
-                return success_response(r)
-    body["id"] = _next_id(rows, "id", "SM-")
+        # Check if employee exists in salary master
+        existing = _db.load_table(f"{PREFIX}_salary_master", {"employee_id": str(emp_id)})
+        if existing:
+            updates = {k: v for k, v in body.items() if k not in ("id", "employee_id", "salary_master_id", "created_at")}
+            updates["updated_at"] = _now()
+            _db.update_record(f"{PREFIX}_salary_master", "employee_id", str(emp_id), updates)
+            updated = _db.load_table(f"{PREFIX}_salary_master", {"employee_id": str(emp_id)})
+            return success_response(updated[0] if updated else body)
+    # Create new record
+    body["employee_id"] = str(emp_id) if emp_id else str(body.get("employee_id", ""))
     body["created_at"] = _now()
-    rows.append(body)
-    _db.save_table(f"{PREFIX}_salary_master", rows)
+    body["updated_at"] = _now()
+    _db.insert_record(f"{PREFIX}_salary_master", body)
     return success_response(body)
 
 
@@ -314,42 +315,51 @@ async def sg_save_employee(request: Request, user: dict = Depends(get_current_us
 @router.post("/api/payroll/sg/employees/{emp_id}/deactivate")
 async def sg_deactivate_employee(emp_id: str, request: Request, user: dict = Depends(get_current_user)):
     _check_access(user, "tacaipay_sg.manage")
-    rows = _db.load_table(f"{PREFIX}_salary_master") or []
-    for r in rows:
-        if str(r.get("id") or r.get("employee_id", "")) == emp_id:
-            r["status"] = "inactive"; r["updated_at"] = _now()
-            _db.save_table(f"{PREFIX}_salary_master", rows)
-            return success_response(r)
-    raise HTTPException(status_code=404, detail="Not found")
+    body = await request.json()
+    updates = {
+        "active": False,
+        "deactivation_reason": body.get("reason", ""),
+        "deactivated_at": _now(),
+        "deactivated_by": user.get("display_name", "system"),
+        "updated_at": _now(),
+    }
+    ok = _db.update_record(f"{PREFIX}_salary_master", "employee_id", emp_id, updates)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Not found")
+    return success_response({"employee_id": emp_id, **updates})
 
 
 @router.post("/api/payroll/sg/employees/{emp_id}/activate")
 async def sg_activate_employee(emp_id: str, user: dict = Depends(get_current_user)):
     _check_access(user, "tacaipay_sg.manage")
-    rows = _db.load_table(f"{PREFIX}_salary_master") or []
-    for r in rows:
-        if str(r.get("id") or r.get("employee_id", "")) == emp_id:
-            r["status"] = "active"; r["updated_at"] = _now()
-            _db.save_table(f"{PREFIX}_salary_master", rows)
-            return success_response(r)
-    raise HTTPException(status_code=404, detail="Not found")
+    updates = {
+        "active": True,
+        "deactivation_reason": None,
+        "deactivated_at": None,
+        "deactivated_by": None,
+        "updated_at": _now(),
+    }
+    ok = _db.update_record(f"{PREFIX}_salary_master", "employee_id", emp_id, updates)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Not found")
+    return success_response({"employee_id": emp_id, **updates})
 
 
 @router.get("/api/payroll/sg/employees/{emp_id}/calc-preview")
 async def sg_calc_preview(emp_id: str, user: dict = Depends(get_current_user)):
     _check_access(user)
-    rows = _db.load_table(f"{PREFIX}_salary_master") or []
-    for r in rows:
-        if str(r.get("id") or r.get("employee_id", "")) == emp_id:
-            try:
-                from modules.payroll_sg.service import calc_salary_by_type
-                result = calc_salary_by_type(r, r.get("salary_type", "monthly"),
-                    float(r.get("actual_days") or 0),
-                    float(r.get("working_days_in_month") or 22))
-                return success_response(result)
-            except Exception as e:
-                return error_response(f"Calculation failed: {e}")
-    raise HTTPException(status_code=404, detail="Not found")
+    rows = _db.load_table(f"{PREFIX}_salary_master", {"employee_id": emp_id})
+    if not rows:
+        raise HTTPException(status_code=404, detail="Not found")
+    r = rows[0]
+    try:
+        from modules.payroll_sg.service import calc_salary_by_type
+        result = calc_salary_by_type(r, r.get("salary_type", "monthly"),
+            float(r.get("actual_days") or 0),
+            float(r.get("working_days_in_month") or 22))
+        return success_response(result)
+    except Exception as e:
+        return error_response(f"Calculation failed: {e}")
 
 
 # ── Batches ─────────────────────────────────────────────────────────────
@@ -575,21 +585,17 @@ async def sg_rollback_batch(batch_id: str, request: Request, user: dict = Depend
 async def sg_void_batch(batch_id: str, request: Request, user: dict = Depends(get_current_user)):
     _check_access(user, "tacaipay_sg.manage")
     body = await request.json()
-    rows = _db.load_table(f"{PREFIX}_payroll_batches") or []
-    for r in rows:
-        if str(r.get("id") or r.get("batch_id", "")) == batch_id:
-            r["status"] = "voided"; r["void_reason"] = body.get("reason", ""); r["updated_at"] = _now()
-            _db.save_table(f"{PREFIX}_payroll_batches", rows)
-            return success_response(r)
-    raise HTTPException(status_code=404, detail="Not found")
+    updates = {"status": "voided", "notes": body.get("reason", ""), "updated_at": _now()}
+    ok = _db.update_record(f"{PREFIX}_payroll_batches", "batch_id", batch_id, updates)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Not found")
+    return success_response({"batch_id": batch_id, **updates})
 
 
 @router.delete("/api/payroll/sg/batches/{batch_id}")
 async def sg_delete_batch(batch_id: str, user: dict = Depends(get_current_user)):
     _check_access(user, "tacaipay_sg.manage")
-    rows = _db.load_table(f"{PREFIX}_payroll_batches") or []
-    rows = [r for r in rows if str(r.get("id") or r.get("batch_id", "")) != batch_id]
-    _db.save_table(f"{PREFIX}_payroll_batches", rows)
+    _db.delete_record(f"{PREFIX}_payroll_batches", "batch_id", batch_id)
     return success_response({"message": f"Batch {batch_id} deleted"})
 
 
@@ -603,14 +609,12 @@ async def sg_recalculate_record(batch_id: str, record_id: str, user: dict = Depe
 async def sg_edit_record(batch_id: str, record_id: str, request: Request, user: dict = Depends(get_current_user)):
     _check_access(user, "tacaipay_sg.manage")
     body = await request.json()
-    records = _db.load_table(f"{PREFIX}_monthly_salary_records") or []
-    for r in records:
-        if str(r.get("id") or r.get("record_id", "")) == record_id:
-            r.update({k: v for k, v in body.items() if k not in ("id", "record_id")})
-            r["updated_at"] = _now()
-            _db.save_table(f"{PREFIX}_monthly_salary_records", records)
-            return success_response(r)
-    raise HTTPException(status_code=404, detail="Not found")
+    updates = {k: v for k, v in body.items() if k not in ("id", "record_id", "batch_id")}
+    updates["updated_at"] = _now()
+    ok = _db.update_record(f"{PREFIX}_monthly_salary_records", "record_id", record_id, updates)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Not found")
+    return success_response({"record_id": record_id, **updates})
 
 
 @router.get("/api/payroll/sg/batches/{batch_id}/audit-logs")
@@ -647,11 +651,10 @@ async def sg_list_payslips(
 @router.get("/api/payroll/sg/payslips/{payslip_id}")
 async def sg_get_payslip(payslip_id: str, user: dict = Depends(get_current_user)):
     _check_access(user)
-    rows = _db.load_table(f"{PREFIX}_payslips") or []
-    for r in rows:
-        if str(r.get("id") or r.get("payslip_id", "")) == payslip_id:
-            return success_response(r)
-    raise HTTPException(status_code=404, detail="Not found")
+    rows = _db.load_table(f"{PREFIX}_payslips", {"record_id": payslip_id})
+    if not rows:
+        raise HTTPException(status_code=404, detail="Not found")
+    return success_response(rows[0])
 
 
 @router.get("/api/payroll/sg/payslips/{payslip_id}/html")
@@ -719,16 +722,16 @@ async def sg_get_email_settings(user: dict = Depends(get_current_user)):
 async def sg_save_email_settings(request: Request, user: dict = Depends(get_current_user)):
     _check_access(user, "tacaipay_sg.manage")
     body = await request.json()
-    rows = _db.load_table(f"{PREFIX}_email_settings") or []
-    for i, r in enumerate(rows):
-        if r.get("country_code") == "SG":
-            r.update({k: v for k, v in body.items() if k != "id"}); r["updated_at"] = _now()
-            rows[i] = r
-            _db.save_table(f"{PREFIX}_email_settings", rows)
-            return success_response(r)
-    body.update({"country_code": "SG", "created_at": _now(), "updated_at": _now()})
-    rows.append(body)
-    _db.save_table(f"{PREFIX}_email_settings", rows)
+    existing = _db.load_table(f"{PREFIX}_email_settings", {"country_code": "SG"})
+    if existing:
+        updates = {k: v for k, v in body.items() if k not in ("id", "country_code", "created_at")}
+        updates["updated_at"] = _now()
+        pk_col = _db._detect_pk(f"{PREFIX}_email_settings") or "country_code"
+        pk_val = existing[0].get(pk_col, "SG")
+        _db.update_record(f"{PREFIX}_email_settings", pk_col, pk_val, updates)
+    else:
+        body.update({"country_code": "SG", "created_at": _now(), "updated_at": _now()})
+        _db.insert_record(f"{PREFIX}_email_settings", body)
     return success_response(body)
 
 
@@ -738,10 +741,112 @@ async def sg_test_email_settings(request: Request, user: dict = Depends(get_curr
     return success_response({"message": "Test email sent"})
 
 
+# ── Email helpers (matches JP _resolve_email_subject / _resolve_email_body) ──
+
+def _resolve_email_subject(settings: dict, payslip: dict, default_subject: str) -> str:
+    """Resolve email subject from template settings or use the default."""
+    template = (settings.get("email_subject_template") or "").strip()
+    if not template or "{{default_subject}}" in template:
+        return default_subject
+    subject = template
+    subject = subject.replace("{{employee_name}}", str(payslip.get("employee_name", "")))
+    subject = subject.replace("{{payroll_month}}", str(payslip.get("payroll_month", "")))
+    subject = subject.replace("{{entity_name}}", str(payslip.get("entity_label", payslip.get("entity_id", ""))))
+    return subject
+
+
+def _resolve_email_body(settings: dict, payslip_html: str) -> str:
+    """Wrap payslip HTML in the custom body template if configured.
+    If the template contains {{payslip_html}}, the payslip is inserted there.
+    Otherwise, the payslip HTML is appended after the template."""
+    template = (settings.get("email_body_template") or "").strip()
+    if not template:
+        return payslip_html
+    if "{{payslip_html}}" in template:
+        return template.replace("{{payslip_html}}", payslip_html)
+    return template + "\n" + payslip_html
+
+
+def _generate_sample_payslip(entity_label_text: str = "") -> tuple:
+    """Generate a sample payslip HTML for preview — matches JP _generate_sample_payslip."""
+    emp_name = "Tan Ah Kow"
+    payroll_month = "2026-07"
+    entity_name = entity_label_text or "TASG - Tech Alliance Consultancy Service Pte. Ltd (Singapore)"
+
+    sample_record = {
+        "employee_name": emp_name,
+        "employee_number": "EMP-0001",
+        "payroll_month": payroll_month,
+        "salary_type": "monthly",
+        "entity_id": "ENT-0001",
+        "basic_salary": 4500,
+        "gross_pay": 5000,
+        "deduction_total": 1000,
+        "net_pay": 4000,
+        "cpf_employee": 1000,
+        "cpf_employer": 850,
+        "sdl": 12,
+    }
+
+    html = _generate_payslip_html(sample_record, {}, entity_name)
+    return html, emp_name, payroll_month, entity_name
+
+
 @router.post("/api/payroll/sg/email-settings/preview")
 async def sg_preview_email_template(request: Request, user: dict = Depends(get_current_user)):
-    _check_access(user)
-    return success_response({"html": "<p>SG Email preview</p>"})
+    """Preview how an email will look with the current template settings applied.
+    Uses _generate_payslip_html() with sample data so the preview matches
+    what real payslips look like. Matches JP _preview_email_template pattern."""
+    _check_access(user, "tacaipay_sg.manage")
+    try:
+        body = await request.json()
+        subject_template = body.get("email_subject_template", "").strip()
+        body_template = body.get("email_body_template", "").strip()
+        payslip_id = body.get("payslip_id", "").strip()
+
+        entity_label_text = "TASG - Tech Alliance Consultancy Service Pte. Ltd (Singapore)"
+
+        # Get payslip data — use real payslip if specified, otherwise generate sample
+        if payslip_id:
+            ps_list = _db.load_table(f"{PREFIX}_payslips", {"record_id": payslip_id}) or []
+            if ps_list:
+                ps = ps_list[0]
+                payslip_html = _generate_payslip_html(ps, {}, entity_label_text)
+                employee_name = ps.get("employee_name", "Tan Ah Kow")
+                payroll_month = ps.get("payroll_month", "2026-07")
+                entity_name = entity_label_text
+            else:
+                payslip_html, employee_name, payroll_month, entity_name = _generate_sample_payslip(entity_label_text)
+        else:
+            payslip_html, employee_name, payroll_month, entity_name = _generate_sample_payslip(entity_label_text)
+
+        # Build pseudo settings for the resolver functions
+        settings = {
+            "email_subject_template": subject_template,
+            "email_body_template": body_template,
+        }
+
+        # Resolve subject
+        default_subject = f"Payslip / 工资单 — {payroll_month} — {employee_name}"
+        subject = _resolve_email_subject(settings, {
+            "employee_name": employee_name,
+            "payroll_month": payroll_month,
+            "entity_label": entity_name,
+        }, default_subject)
+
+        # Resolve body
+        html_body = _resolve_email_body(settings, payslip_html)
+
+        return success_response({
+            "subject": subject,
+            "html": html_body,
+            "employee_name": employee_name,
+            "payroll_month": payroll_month,
+            "entity_name": entity_name,
+            "is_sample": not payslip_id,
+        })
+    except Exception as e:
+        return error_response(f"Preview template failed: {e}")
 
 
 @router.get("/api/payroll/sg/email-logs")

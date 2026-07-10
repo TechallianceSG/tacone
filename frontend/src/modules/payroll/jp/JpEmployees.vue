@@ -5,6 +5,7 @@ import { payrollJpApi, masterdataApi, employeeApi } from '@/api/client'
 import { useDictOptions } from '@/composables/useDictOptions'
 import { ElMessage } from 'element-plus'
 import { prefectures, prefectureLabel } from '@/constants/prefectures'
+import EmployeeImportDialog from '@/modules/payroll/EmployeeImportDialog.vue'
 
 const { t } = useI18n()
 
@@ -28,13 +29,7 @@ const drawerRecord = ref<any>(null)
 const drawerForm = ref<Record<string, any>>({})
 const drawerSaving = ref(false)
 
-const importDialog = ref(false)
-const importableEmployees = ref<any[]>([])
-const selectedImportIds = ref<string[]>([])
-const importing = ref(false)
-const importFilterEntity = ref('')
-const importFilterDept = ref('')
-const importSearch = ref('')
+const importDialogVisible = ref(false)
 
 const toggleDialog = ref(false)
 const toggleId = ref('')
@@ -96,9 +91,20 @@ function salaryTypeLabel(st: string): string { const f = ddOptions(CAT.SALARY_TY
 function openDetail(row: any) { drawerRecord.value = row; drawerForm.value = { ...row }; drawerVisible.value = true }
 async function saveDrawer() { drawerSaving.value = true; try { await payrollJpApi.saveEmployee(drawerForm.value); drawerVisible.value = false; ElMessage.success(t('action.saved')); await load() } catch (e: any) { ElMessage.error(e.message) } finally { drawerSaving.value = false } }
 
-async function openImport() { importDialog.value = true; selectedImportIds.value = []; importFilterEntity.value = ''; importFilterDept.value = ''; importSearch.value = ''; try { const res = await payrollJpApi.importableEmployees(); importableEmployees.value = res.data.data || [] } catch { try { const res = await employeeApi.list(); importableEmployees.value = (res.data.data || res.data.employees || []).filter((e: any) => e.country_code === 'JP' || !e.country_code) } catch { importableEmployees.value = [] } } }
-const filteredImportable = computed(() => { let result = importableEmployees.value; if (importFilterEntity.value) result = result.filter((e: any) => e.entity_id === importFilterEntity.value); if (importFilterDept.value) result = result.filter((e: any) => (e.department_name || e.department || '') === importFilterDept.value); if (importSearch.value) { const q = importSearch.value.toLowerCase(); result = result.filter((e: any) => (e.employee_number || e.employee_no || '').toLowerCase().includes(q) || (e.employee_name || '').toLowerCase().includes(q)) } return result })
-async function importSelected() { if (!selectedImportIds.value.length) return; importing.value = true; try { await payrollJpApi.importEmployees({ employee_ids: selectedImportIds.value }); importDialog.value = false; ElMessage.success(t('payroll.jp.import_success', { count: selectedImportIds.value.length })); await load() } catch (e: any) { ElMessage.error(e.message) } finally { importing.value = false } }
+async function loadImportableEmployees(): Promise<any[]> {
+  try {
+    const res = await payrollJpApi.importableEmployees()
+    return res.data.data || []
+  } catch {
+    try {
+      const res = await employeeApi.list()
+      return ((res.data.data || res.data.employees || []) as any[]).filter((e: any) => e.country_code === 'JP' || !e.country_code)
+    } catch {
+      return []
+    }
+  }
+}
+function onImported() { load() }
 
 function openToggle(row: any) { toggleId.value = row.employee_id; toggleName.value = row.employee_name || row.employee_number || ''; toggleActive.value = !row.active; toggleReason.value = ''; toggleDialog.value = true }
 async function confirmToggle() {
@@ -124,7 +130,7 @@ onMounted(() => { load(); loadItemDefs(); loadDropdowns(); loadOptions([CAT.SALA
       <div class="toolbar-left">
         <h2>{{ t('payroll.jp.employees') }}</h2>
       </div>
-      <el-button @click="openImport" size="default">{{ t('payroll.jp.import_employeeadmin') }}</el-button>
+      <el-button @click="importDialogVisible = true" size="default">{{ t('payroll.jp.import_employeeadmin') }}</el-button>
     </div>
 
     <!-- Filters -->
@@ -365,18 +371,16 @@ onMounted(() => { load(); loadItemDefs(); loadDropdowns(); loadOptions([CAT.SALA
     </el-drawer>
 
     <!-- Import Dialog -->
-    <el-dialog v-model="importDialog" :title="t('payroll.jp.import_employeeadmin')" width="750px" top="2vh">
-      <div class="fiori-filters" style="margin-bottom:12px">
-        <el-input v-model="importSearch" placeholder="搜索员工编号、姓名…" clearable style="width:200px" />
-        <el-select v-model="importFilterEntity" :placeholder="t('field.entity_id')" clearable style="width:220px"><el-option v-for="e in entities" :key="e.entity_id" :label="entityLabelById(e.entity_id)" :value="e.entity_id" /></el-select>
-        <el-select v-model="importFilterDept" :placeholder="t('field.department')" clearable style="width:160px"><el-option v-for="d in departments" :key="d.department_id" :label="d.department_name_en||d.department_name_ja" :value="d.department_name_en||d.department_name_ja" /></el-select>
-      </div>
-      <el-table :data="filteredImportable" max-height="400" @selection-change="(rows:any[])=>selectedImportIds=rows.map((r:any)=>r.employee_id)" border stripe size="small">
-        <el-table-column type="selection" min-width="45" /><el-table-column prop="employee_number" :label="t('field.employee_number')" min-width="130" /><el-table-column prop="employee_name" :label="t('field.employee_name')" min-width="160" /><el-table-column :label="t('field.entity_id')" min-width="220"><template #default="{row}">{{ entityLabelById(row.entity_id) }}</template></el-table-column><el-table-column :label="t('field.department')" min-width="140"><template #default="{row}">{{ row.department_name||row.department||'-' }}</template></el-table-column>
-      </el-table>
-      <div class="helper-text" style="margin-top:8px">{{ filteredImportable.length }} {{ t('action.records_total') }}</div>
-      <template #footer><el-button @click="importDialog=false">{{ t('action.cancel') }}</el-button><el-button type="primary" :loading="importing" :disabled="!selectedImportIds.length" @click="importSelected">{{ t('action.import') }} ({{ selectedImportIds.length }})</el-button></template>
-    </el-dialog>
+    <EmployeeImportDialog
+      v-model="importDialogVisible"
+      country-code="jp"
+      :api="payrollJpApi"
+      :entities="entities"
+      :departments="departments"
+      :entity-resolver="entityLabelById"
+      :load-fn="loadImportableEmployees"
+      @imported="onImported"
+    />
 
     <!-- Activate / Deactivate Dialog -->
     <el-dialog v-model="toggleDialog" :title="toggleActive ? t('action.activate') : t('action.deactivate')" width="420px">

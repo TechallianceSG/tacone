@@ -99,6 +99,7 @@ from modules.employees.router import router as employees_router
 from modules.datadict.router import router as datadict_router
 from modules.payroll_jp.router import router as payroll_jp_router
 from modules.payroll_sg.router import router as payroll_sg_router
+from modules.payroll_cn.router import router as payroll_cn_router
 from modules.invoice.router import router as invoice_router
 from modules.messaging.router import router as messaging_router
 
@@ -108,6 +109,7 @@ app.include_router(employees_router)
 app.include_router(datadict_router)
 app.include_router(payroll_jp_router)
 app.include_router(payroll_sg_router)
+app.include_router(payroll_cn_router)
 app.include_router(invoice_router)
 app.include_router(messaging_router)
 

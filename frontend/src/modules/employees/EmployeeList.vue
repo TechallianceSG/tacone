@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, reactive, computed } from 'vue'
+import { ref, onMounted, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useI18nStore } from '@/stores/i18n'
@@ -203,8 +203,6 @@ function entityDisp(e: Employee) { return [e.employment?.entity_code, e.employme
 function deptDisp(e: Employee) { return e.employment?.department_name || e.employment?.department || '-' }
 function teamDisp(e: Employee) { return e.employment?.team_name || e.employment?.team || '-' }
 
-const countLabel = computed(() => filtered.value ? t('employee.showing_filtered', { shown: total.value, total: totalAll.value }) : t('employee.total_count', { count: total.value }))
-
 onMounted(() => {
   // Load everything in parallel — employee list is NOT blocked by dropdown/DD loading.
   // Filters have no default selections, so the list can render immediately with raw IDs
@@ -339,8 +337,7 @@ onMounted(() => {
         </el-table-column>
       </el-table>
 
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px">
-        <span class="muted">{{ countLabel }}</span>
+      <div style="display:flex;justify-content:flex-end;align-items:center;margin-top:16px">
         <el-pagination
           v-model:current-page="page" v-model:page-size="pageSize"
           :page-sizes="[10, 20, 50, 100]" :total="total"

@@ -156,8 +156,44 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'payroll/cn',
         name: 'CnPayrollLanding',
-        component: () => import('@/modules/payroll/UnderDevelopment.vue'),
-        meta: { requiresAuth: true, permission: 'payroll.access', titleKey: 'payroll.cn.title', parent: 'PayrollLanding' },
+        component: () => import('@/modules/payroll/cn/CnLanding.vue'),
+        meta: { requiresAuth: true, permission: 'tacaipay_cn.view', titleKey: 'payroll.cn.title', parent: 'PayrollLanding' },
+      },
+      {
+        path: 'payroll/cn/item-definitions',
+        name: 'CnItemDefinitions',
+        component: () => import('@/modules/payroll/PayrollItemDefinitions.vue'),
+        props: { countryCode: 'cn' },meta: { requiresAuth: true, permission: 'tacaipay_cn.view', titleKey: 'payroll.cn.item_definitions', parent: 'CnPayrollLanding' },
+      },
+      {
+        path: 'payroll/cn/employees',
+        name: 'CnEmployees',
+        component: () => import('@/modules/payroll/cn/CnEmployees.vue'),
+        meta: { requiresAuth: true, permission: 'tacaipay_cn.view', titleKey: 'payroll.cn.employees', parent: 'CnPayrollLanding' },
+      },
+      {
+        path: 'payroll/cn/batches',
+        name: 'CnPayrollBatches',
+        component: () => import('@/modules/payroll/PayrollBatches.vue'),
+        props: { countryCode: 'cn' },meta: { requiresAuth: true, permission: 'tacaipay_cn.view', titleKey: 'payroll.cn.batches', parent: 'CnPayrollLanding' },
+      },
+      {
+        path: 'payroll/cn/batches/:id',
+        name: 'CnPayrollBatchDetail',
+        component: () => import('@/modules/payroll/cn/CnPayrollBatchDetail.vue'),
+        meta: { requiresAuth: true, permission: 'tacaipay_cn.view', titleKey: 'payroll.cn.batch_detail', parent: 'CnPayrollBatches' },
+      },
+      {
+        path: 'payroll/cn/payslips',
+        name: 'CnPayslips',
+        component: () => import('@/modules/payroll/PayrollPayslips.vue'),
+        props: { countryCode: 'cn' },meta: { requiresAuth: true, permission: 'tacaipay_cn.view', titleKey: 'payroll.cn.payslips', parent: 'CnPayrollLanding' },
+      },
+      {
+        path: 'payroll/cn/email-settings',
+        name: 'CnEmailSettings',
+        component: () => import('@/modules/payroll/PayrollEmailSettings.vue'),
+        props: { countryCode: 'cn' },meta: { requiresAuth: true, permission: 'tacaipay_cn.manage', titleKey: 'payroll.jp.email_settings', parent: 'CnPayrollLanding' },
       },
       {
         path: 'payroll/jp/item-definitions',
@@ -256,8 +292,31 @@ const router = createRouter({
 })
 
 // ── Navigation guard ──
+
+// ⚠️ TEMPORARY: 跳过认证用于开发测试，测试完成后改 false 并删除 client.ts 对应 if 块
+const SKIP_AUTH_FOR_DEV = true
+if (typeof window !== 'undefined' && SKIP_AUTH_FOR_DEV) {
+  sessionStorage.setItem('tacai_skip_auth', '1')
+}
+
 router.beforeEach(async (to, _from, next) => {
   const auth = useAuthStore()
+
+  if (SKIP_AUTH_FOR_DEV) {
+    if (!auth.user) {
+      auth.$patch({
+        user: {
+          email: 'dev@test.com', display_name: 'Dev Test',
+          permissions: ['tacaipay_cn.view','tacaipay_cn.manage','tacaipay_cn.calculate','tacaipay_cn.approve',
+                        'tacaipay_jp.view','tacaipay_sg.view','payroll.access','system_admin'],
+          roles: ['system_admin'],
+        },
+        initialized: true,
+      } as any)
+    }
+    next()
+    return
+  }
 
   // Initialize auth state on first navigation
   if (!auth.initialized) {
@@ -291,6 +350,7 @@ router.beforeEach(async (to, _from, next) => {
 
 // ── Session expiry handler (SPA navigation, no hard reload) ──
 window.addEventListener('tacai:session-expired', async () => {
+  if (SKIP_AUTH_FOR_DEV) return
   const auth = useAuthStore()
   await auth.logout()
   // Only redirect if not already on the login page
