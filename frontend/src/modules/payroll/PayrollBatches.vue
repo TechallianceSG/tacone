@@ -42,7 +42,7 @@ function toggleAuditDetail(idx: number) {
 }
 
 // ── Auto working days calculation (Japan Mon-Fri) ──
-function calcJpWorkingDays(yearMonth: string): number {
+function calcWorkingDays(yearMonth: string): number {
   if (!yearMonth || !/^\d{4}-\d{2}$/.test(yearMonth)) return 22
   const [y, m] = yearMonth.split('-').map(Number)
   const daysInMonth = new Date(y, m, 0).getDate()
@@ -54,10 +54,31 @@ function calcJpWorkingDays(yearMonth: string): number {
   return count
 }
 
-// Auto-update working days when month changes
+const workingDaysManuallySet = ref(false)
+let _skipWorkingDaysWatch = false
+
+// Reset manual-set flag when dialog opens & auto-calc for current month
+watch(createDialog, (open) => {
+  if (open) {
+    workingDaysManuallySet.value = false
+    _skipWorkingDaysWatch = true
+    createForm.value.working_days_in_month = calcWorkingDays(createForm.value.payroll_month)
+    _skipWorkingDaysWatch = false
+  }
+})
+
+// Auto-update working days when month changes (only if user hasn't manually set it)
 watch(() => createForm.value.payroll_month, (newMonth) => {
-  if (newMonth) {
-    createForm.value.working_days_in_month = calcJpWorkingDays(newMonth)
+  if (newMonth && !workingDaysManuallySet.value) {
+    createForm.value.working_days_in_month = calcWorkingDays(newMonth)
+  }
+})
+
+// Track manual edits to working_days_in_month (skip programmatic changes)
+watch(() => createForm.value.working_days_in_month, (newVal, oldVal) => {
+  if (_skipWorkingDaysWatch) return
+  if (oldVal !== undefined && newVal !== oldVal) {
+    workingDaysManuallySet.value = true
   }
 })
 

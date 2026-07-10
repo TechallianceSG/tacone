@@ -35,6 +35,7 @@ DB_CONFIG = {
     "dbname": os.environ.get("DB_NAME", ""),
     "user": os.environ.get("DB_USER", ""),
     "password": os.environ.get("DB_PASS", ""),
+    "connect_timeout": int(os.environ.get("DB_CONNECT_TIMEOUT", "5")),
 }
 
 DB_ENABLED = os.environ.get("TACAI_DB_ENABLED", "true").lower() in ("true", "1", "yes")

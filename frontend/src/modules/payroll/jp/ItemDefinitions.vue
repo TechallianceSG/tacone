@@ -44,13 +44,13 @@ onMounted(() => { initConstants(); load() })
       <el-table :data="paged" v-loading="loading" border stripe size="small" style="width:100%">
         <el-table-column prop="display_order" label="#" min-width="45" align="center" />
         <el-table-column prop="code" :label="t('field.code')" min-width="130" />
-        <el-table-column label="日本語" min-width="160" show-overflow-tooltip>
+        <el-table-column :label="t('language.ja')" min-width="160" show-overflow-tooltip>
           <template #default="{row}">{{ getLabel(row, 'ja') }}</template>
         </el-table-column>
         <el-table-column label="English" min-width="180" show-overflow-tooltip>
           <template #default="{row}">{{ getLabel(row, 'en') }}</template>
         </el-table-column>
-        <el-table-column label="中文" min-width="140" show-overflow-tooltip>
+        <el-table-column :label="t('language.zh')" min-width="140" show-overflow-tooltip>
           <template #default="{row}">{{ getLabel(row, 'zh') }}</template>
         </el-table-column>
         <el-table-column :label="t('field.category')" min-width="150">
@@ -99,13 +99,13 @@ onMounted(() => { initConstants(); load() })
         <el-form-item :label="t('field.item_id')"><el-input v-model="form.item_id" disabled /></el-form-item>
         <el-form-item :label="t('field.code')"><el-input v-model="form.code" disabled /></el-form-item>
         <el-descriptions :column="1" border size="small" style="margin-bottom:16px">
-          <el-descriptions-item label="日本語">{{ getLabel(form, 'ja') }}</el-descriptions-item>
+          <el-descriptions-item :label="t('language.ja')">{{ getLabel(form, 'ja') }}</el-descriptions-item>
           <el-descriptions-item label="English">{{ getLabel(form, 'en') }}</el-descriptions-item>
-          <el-descriptions-item label="中文">{{ getLabel(form, 'zh') }}</el-descriptions-item>
+          <el-descriptions-item :label="t('language.zh')">{{ getLabel(form, 'zh') }}</el-descriptions-item>
         </el-descriptions>
         <el-form-item :label="t('field.taxable')"><el-switch v-model="form.taxable" /></el-form-item>
-        <el-form-item label="社会保険算定基礎"><el-switch v-model="form.social_insurance_base" /></el-form-item>
-        <el-form-item label="雇用保険算定基礎"><el-switch v-model="form.employment_insurance_base" /></el-form-item>
+        <el-form-item :label="t('payroll.jp.social_insurance_calc_base')"><el-switch v-model="form.social_insurance_base" /></el-form-item>
+        <el-form-item :label="t('payroll.jp.employment_insurance_calc_base')"><el-switch v-model="form.employment_insurance_base" /></el-form-item>
         <el-form-item :label="t('field.payslip_visible')"><el-switch v-model="form.payslip_visible" /></el-form-item>
       </el-form>
       <template #footer><el-button @click="dialogVisible=false">{{ t('action.cancel') }}</el-button><el-button type="primary" :loading="saving" @click="save">{{ t('action.save') }}</el-button></template>

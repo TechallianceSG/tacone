@@ -14,7 +14,12 @@ const client: AxiosInstance = axios.create({
 
 // Request interceptor — attach language
 client.interceptors.request.use((config: InternalAxiosRequestConfig) => {
-  const lang = localStorage.getItem('tacai_lang') || 'ja'
+  const lang = localStorage.getItem('tacai_lang') || (() => {
+    const nav = navigator.language || ''
+    if (nav.startsWith('ja')) return 'ja'
+    if (nav.startsWith('zh')) return 'zh'
+    return 'en'
+  })()
   if (config.url) {
     const separator = config.url.includes('?') ? '&' : '?'
     if (!config.url.includes('lang=') && !config.params?.lang) {
@@ -44,6 +49,11 @@ client.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
     if (error.response?.status === 401) {
+      // ⚠️ TEMPORARY: 开发测试跳过认证，测试完成后删除此 if 块
+      if (typeof window !== 'undefined' && sessionStorage.getItem('tacai_skip_auth') === '1') {
+        return Promise.reject(error)
+      }
+
       const url = error.config?.url || ''
       const isAuthEndpoint = url.includes('/api/auth/')
 
@@ -271,6 +281,61 @@ export const payrollSgApi = {
   getBatchAuditLogs: (batchId: string) => client.get(`/api/payroll/sg/batches/${batchId}/audit-logs`),
   // Constants (reference/enum data for dropdowns)
   constants: () => client.get('/api/payroll/sg/constants'),
+}
+
+// ── CN Payroll API ──
+export const payrollCnApi = {
+  // Master Data
+  entities: () => client.get('/api/payroll/cn/entities'),
+  departments: () => client.get('/api/payroll/cn/departments'),
+  teams: () => client.get('/api/payroll/cn/teams'),
+  // Item Definitions
+  itemDefinitions: (params?: Record<string, any>) => client.get('/api/payroll/cn/item-definitions', { params }),
+  saveItemDefinition: (data: Record<string, any>) => client.post('/api/payroll/cn/item-definitions', data),
+  // Parameters
+  parameters: (params?: Record<string, any>) => client.get('/api/payroll/cn/parameters', { params }),
+  saveParameter: (data: Record<string, any>) => client.post('/api/payroll/cn/parameters', data),
+  // Employees (Salary Master)
+  employees: (params?: Record<string, any>) => client.get('/api/payroll/cn/employees', { params }),
+  saveEmployee: (data: Record<string, any>) => client.post('/api/payroll/cn/employees', data),
+  getEmployee: (id: string) => client.get(`/api/payroll/cn/employees/${id}`),
+  deactivateEmployee: (id: string, data: Record<string, any>) => client.post(`/api/payroll/cn/employees/${id}/deactivate`, data),
+  activateEmployee: (id: string) => client.post(`/api/payroll/cn/employees/${id}/activate`),
+  calcPreview: (id: string, params?: Record<string, any>) => client.get(`/api/payroll/cn/employees/${id}/calc-preview`, { params }),
+  importableEmployees: (params?: Record<string, any>) => client.get('/api/payroll/cn/employees/importable', { params }),
+  importEmployees: (data: { employee_ids: string[] }) => client.post('/api/payroll/cn/employees/import', data),
+  // Batches
+  batches: (params?: Record<string, any>) => client.get('/api/payroll/cn/batches', { params }),
+  getBatch: (id: string) => client.get(`/api/payroll/cn/batches/${id}`),
+  createBatch: (data: Record<string, any>) => client.post('/api/payroll/cn/batches', data),
+  calculateBatch: (batchId: string) => client.post(`/api/payroll/cn/batches/${batchId}/calculate`, {}),
+  confirmBatch: (batchId: string) => client.post(`/api/payroll/cn/batches/${batchId}/confirm`, {}),
+  rollbackBatch: (batchId: string, data: { reason: string }) => client.post(`/api/payroll/cn/batches/${batchId}/rollback`, data),
+  voidBatch: (batchId: string, data: { reason: string }) => client.post(`/api/payroll/cn/batches/${batchId}/void`, data),
+  voidSheet: (batchId: string, data: { reason: string }) => client.post(`/api/payroll/cn/batches/${batchId}/void`, data),
+  deleteBatch: (batchId: string) => client.delete(`/api/payroll/cn/batches/${batchId}`),
+  deleteSheet: (batchId: string) => client.delete(`/api/payroll/cn/batches/${batchId}`),
+  // Records
+  recalculateSingleRecord: (batchId: string, recordId: string) => client.post(`/api/payroll/cn/batches/${batchId}/records/${recordId}/recalculate`, {}),
+  editRecord: (batchId: string, recordId: string, data: Record<string, any>) => client.put(`/api/payroll/cn/batches/${batchId}/records/${recordId}`, data),
+  // Payslips
+  payslips: (params?: Record<string, any>) => client.get('/api/payroll/cn/payslips', { params }),
+  viewPayslipHtml: (recordId: string) => client.get(`/api/payroll/cn/payslips/${recordId}/html`),
+  sendSinglePayslip: (recordId: string) => client.post(`/api/payroll/cn/payslips/${recordId}/send`, {}),
+  sendPayslipsSelected: (data: { record_ids: string[] }) => client.post('/api/payroll/cn/payslips/send-selected', data),
+  sendPayslipsAll: (data: Record<string, any>) => client.post('/api/payroll/cn/payslips/send-all', data),
+  // Audit
+  auditLogs: (params?: Record<string, any>) => client.get('/api/payroll/cn/audit-logs', { params }),
+  getBatchAuditLogs: (batchId: string) => client.get(`/api/payroll/cn/batches/${batchId}/audit-logs`),
+  // Email Settings
+  smtpStatus: () => client.get('/api/payroll/cn/smtp-status'),
+  emailSettings: (params?: Record<string, any>) => client.get('/api/payroll/cn/email-settings', { params }),
+  saveEmailSettings: (data: Record<string, any>) => client.post('/api/payroll/cn/email-settings', data),
+  testEmailSettings: (data: Record<string, any>) => client.post('/api/payroll/cn/email-settings/test', data),
+  previewEmailTemplate: (data: Record<string, any>) => client.post('/api/payroll/cn/email-settings/preview', data),
+  emailLogs: (params?: Record<string, any>) => client.get('/api/payroll/cn/email-logs', { params }),
+  // Constants
+  constants: () => client.get('/api/payroll/cn/constants'),
 }
 
 // ── Data Dictionary API (2-level: categories + entries) ──

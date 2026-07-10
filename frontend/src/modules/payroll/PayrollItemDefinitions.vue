@@ -5,8 +5,9 @@ import { usePayroll } from '@/composables/usePayroll'
 import { ElMessage } from 'element-plus'
 import { usePayrollJpConstants } from '@/composables/usePayrollJpConstants'
 
-const props = defineProps<{ countryCode: 'jp' | 'sg' }>()
+const props = defineProps<{ countryCode: 'jp' | 'sg' | 'cn' }>()
 const { t } = useI18n()
+const titleKey = computed(() => `payroll.${props.countryCode}.item_definitions`)
 const { api, ITEM_CATEGORIES, ITEM_SUBCATEGORIES, ITEM_CATEGORY_LABELS, ITEM_SUBCATEGORY_LABELS } = usePayroll(props.countryCode)
 const { itemCategoryLabels, itemSubcategoryLabels, init: initConstants } = usePayrollJpConstants()
 const loading = ref(false)
@@ -36,9 +37,9 @@ onMounted(() => { initConstants(); load() })
   <div class="fiori-page">
     <div class="fiori-toolbar">
       <div class="toolbar-left">
-        <h2>{{ t('payroll.jp.item_definitions') }}</h2>
+        <h2>{{ t(titleKey) }}</h2>
       </div>
-      <el-tooltip content="工资项目暂由系统预定义，后续版本开放" placement="left">
+      <el-tooltip :content="t('payroll.item.predefined_hint')" placement="left">
         <el-button type="primary" disabled>{{ t('action.create') }}</el-button>
       </el-tooltip>
     </div>
@@ -46,13 +47,13 @@ onMounted(() => { initConstants(); load() })
       <el-table :data="paged" v-loading="loading" border stripe size="small" style="width:100%">
         <el-table-column prop="display_order" label="#" min-width="45" align="center" />
         <el-table-column prop="code" :label="t('field.code')" min-width="130" />
-        <el-table-column label="日本語" min-width="160" show-overflow-tooltip>
+        <el-table-column :label="t('language.ja')" min-width="160" show-overflow-tooltip>
           <template #default="{row}">{{ getLabel(row, 'ja') }}</template>
         </el-table-column>
         <el-table-column label="English" min-width="180" show-overflow-tooltip>
           <template #default="{row}">{{ getLabel(row, 'en') }}</template>
         </el-table-column>
-        <el-table-column label="中文" min-width="140" show-overflow-tooltip>
+        <el-table-column :label="t('language.zh')" min-width="140" show-overflow-tooltip>
           <template #default="{row}">{{ getLabel(row, 'zh') }}</template>
         </el-table-column>
         <el-table-column :label="t('field.category')" min-width="150">
@@ -101,13 +102,13 @@ onMounted(() => { initConstants(); load() })
         <el-form-item :label="t('field.item_id')"><el-input v-model="form.item_id" disabled /></el-form-item>
         <el-form-item :label="t('field.code')"><el-input v-model="form.code" disabled /></el-form-item>
         <el-descriptions :column="1" border size="small" style="margin-bottom:16px">
-          <el-descriptions-item label="日本語">{{ getLabel(form, 'ja') }}</el-descriptions-item>
+          <el-descriptions-item :label="t('language.ja')">{{ getLabel(form, 'ja') }}</el-descriptions-item>
           <el-descriptions-item label="English">{{ getLabel(form, 'en') }}</el-descriptions-item>
-          <el-descriptions-item label="中文">{{ getLabel(form, 'zh') }}</el-descriptions-item>
+          <el-descriptions-item :label="t('language.zh')">{{ getLabel(form, 'zh') }}</el-descriptions-item>
         </el-descriptions>
         <el-form-item :label="t('field.taxable')"><el-switch v-model="form.taxable" /></el-form-item>
-        <el-form-item label="社会保険算定基礎"><el-switch v-model="form.social_insurance_base" /></el-form-item>
-        <el-form-item label="雇用保険算定基礎"><el-switch v-model="form.employment_insurance_base" /></el-form-item>
+        <el-form-item :label="t('field.social_insurance_base')"><el-switch v-model="form.social_insurance_base" /></el-form-item>
+        <el-form-item :label="t('field.employment_insurance_base')"><el-switch v-model="form.employment_insurance_base" /></el-form-item>
         <el-form-item :label="t('field.payslip_visible')"><el-switch v-model="form.payslip_visible" /></el-form-item>
       </el-form>
       <template #footer><el-button @click="dialogVisible=false">{{ t('action.cancel') }}</el-button><el-button type="primary" :loading="saving" @click="save">{{ t('action.save') }}</el-button></template>

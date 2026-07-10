@@ -305,7 +305,7 @@ onMounted(() => { initConstants(); load(); loadOptions([CAT.TAX_TABLE]) })
             <el-form-item :label="t('field.prefecture')">
               <el-select v-model="siForm.prefecture" style="width:100%" clearable filterable :placeholder="t('field.prefecture')">
                 <el-option v-for="p in prefectures" :key="p.code" :label="`${p.code} - ${p.name_ja} (${p.name_en})`" :value="p.code" />
-                <el-option label="全国 - National (全国一律)" value="" />
+                <el-option :label="t('payroll.jp.national_rate')" value="" />
               </el-select>
             </el-form-item>
             <el-form-item :label="t('field.employee_rate')">
@@ -454,8 +454,8 @@ onMounted(() => { initConstants(); load(); loadOptions([CAT.TAX_TABLE]) })
           <el-form :model="rgForm" label-width="200px">
             <el-form-item :label="t('field.grade_type')">
               <el-select v-model="rgForm.grade_type" style="width:100%">
-                <el-option label="健康保険 (Health Insurance)" value="health_insurance" />
-                <el-option label="厚生年金保険 (Pension Insurance)" value="pension_insurance" />
+                <el-option :label="t('payroll.jp.health_insurance_label')" value="health_insurance" />
+                <el-option :label="t('payroll.jp.pension_insurance_label')" value="pension_insurance" />
               </el-select>
             </el-form-item>
             <el-form-item :label="t('field.grade_number')">

@@ -12,158 +12,82 @@
 
 ### 1.1 服务结构
 
-每个服务位于 `backend/services/<service_name>/`，标准目录：
+所有后端模块位于 `backend/modules/<module_name>/`，统一在 `backend/app.py`（FastAPI monolith）中注册：
 
 ```
-service_name/
-├── app.py              # 入口（必须），包含 RequestHandler
-├── README.md           # 服务说明
-└── tests/              # 测试（规划中）
+modules/<module_name>/
+├── __init__.py          # 空文件
+├── router.py            # FastAPI APIRouter，定义所有 API 端点
+└── service.py           # 业务逻辑（可选，复杂逻辑从 router 中提取）
 ```
 
-### 1.2 入口文件 `app.py` 模板
+### 1.2 Router 模板
 
-**必须使用以下模板创建新服务**（参考 `employee_admin/app.py` 和 `datadict/app.py`）：
+**必须使用以下模板创建新模块**（参考 `modules/payroll_jp/router.py` 和 `modules/payroll_cn/router.py`）：
 
 ```python
-#!/usr/bin/env python3
-"""TACAI <Module Name> — standalone JSON API service.
-
-Provides CRUD API for <table_name> (PostgreSQL).
-Accessed via Portal API Gateway at /api/<prefix>/* → port <PORT>.
-"""
+"""<Module Name> router — <description>."""
 
 from __future__ import annotations
 
-import argparse, json, os, re, sys as _sys
 from datetime import datetime, timezone
-from http import HTTPStatus
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from typing import Any, Optional
 
-# ── Shared libraries (backend/shared/) ──
-_shared_path = Path(__file__).resolve().parents[2] / 'shared'
-if str(_shared_path) not in _sys.path:
-    _sys.path.insert(0, str(_shared_path))
-import db_utils as _db
-from auth_utils import validate_session, has_permission, is_system_admin
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
-# ── Constants ──
-MODULE_NAME = "tacai-<module>"
-DEFAULT_PORT = <PORT>
-TABLE_NAME = "<table_name>"
-REQUIRED_PERMISSION = "<module>.access"
+from dependencies import get_current_user
+from modules.auth.models import error_response, paginated_response, success_response
+from shared import db_utils as _db
 
-class <Module>Handler(BaseHTTPRequestHandler):
-    server_version = "TACAI<Module>/0.1"
+router = APIRouter()
+PREFIX = "<prefix>"  # 数据库表前缀，如 pay_jp, pay_sg, pay_cn
 
-    _CORS_ORIGINS = {
-        "http://localhost:5173", "http://127.0.0.1:5173",
-        "http://localhost:4173", "http://127.0.0.1:4173",
-        "http://localhost:3000", "http://127.0.0.1:3000",
-    }
 
-    def add_cors(self) -> None:
-        origin = self.headers.get("Origin", "")
-        allowed = origin if origin in self._CORS_ORIGINS else "http://localhost:5173"
-        self.send_header("Access-Control-Allow-Origin", allowed)
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
-        self.send_header("Access-Control-Allow-Credentials", "true")
+def _check_access(user: dict, perm: str = "<module>.view") -> None:
+    perms = user.get("permissions") or []
+    if perm not in perms and "system_admin" not in (user.get("roles") or []):
+        raise HTTPException(status_code=403, detail="Forbidden")
 
-    def send_json(self, data: dict | list, status: int = 200) -> None:
-        body = json.dumps(data, ensure_ascii=False, default=str).encode("utf-8")
-        self.send_response(status)
-        self.add_cors()
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
 
-    def send_error_json(self, message: str, status: int = 400) -> None:
-        self.send_json({"error": message}, status)
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
-    def log_message(self, format: str, *args) -> None:
-        return  # suppress default logging
 
-    def _current_user(self) -> dict | None:
-        return validate_session(self.headers.get("Cookie", ""))
+# ── Example: list endpoint ──
 
-    def _require_user(self) -> dict | None:
-        user = self._current_user()
-        if not user:
-            self.send_error_json("Unauthorized — invalid or expired session", 401)
-            return None
-        if not has_permission(user, REQUIRED_PERMISSION) and not is_system_admin(user):
-            self.send_error_json("Forbidden — insufficient permissions", 403)
-            return None
-        return user
+@router.get("/api/<prefix>/items")
+async def list_items(
+    search: Optional[str] = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+    user: dict = Depends(get_current_user),
+):
+    _check_access(user)
+    rows = _db.load_table(f"{PREFIX}_items") or []
+    # ... filtering ...
+    total = len(rows)
+    start = (page - 1) * page_size
+    return paginated_response(rows[start:start + page_size], page, page_size, total)
 
-    def do_OPTIONS(self) -> None:
-        self.send_response(HTTPStatus.NO_CONTENT)
-        self.add_cors()
-        self.end_headers()
 
-    def do_GET(self) -> None:
-        parsed = urlparse(self.path)
-        path = parsed.path.rstrip("/") or "/"
-        params = parse_qs(parsed.query, keep_blank_values=True)
+# ── Example: create/update endpoint ──
 
-        if path == "/health":
-            self.send_json({"status": "ok", "module": MODULE_NAME})
-            return
-
-        user = self._require_user()
-        if not user:
-            return
-
-        # Route to handlers...
-        self.send_error_json("Not Found", 404)
-
-    def do_POST(self) -> None:
-        user = self._require_user()
-        if not user:
-            return
-        length = int(self.headers.get("Content-Length", "0") or "0")
-        body = json.loads(self.rfile.read(length)) if length else {}
-        # Route to handlers...
-        self.send_error_json("Not Found", 404)
-
-    def do_DELETE(self) -> None:
-        user = self._require_user()
-        if not user:
-            return
-        # Route to handlers...
-        self.send_error_json("Not Found", 404)
-
-# ── Main ──
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="TACAI <Module>")
-    parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=int(os.environ.get("PORT", str(DEFAULT_PORT))))
-    return parser.parse_args()
-
-def main() -> None:
-    args = parse_args()
-    server = ThreadingHTTPServer((args.host, args.port), <Module>Handler)
-    print(f"TACAI <Module> running on http://{args.host}:{args.port}")
-    try:
-        server.serve_forever()
-    except KeyboardInterrupt:
-        print(f"\nStopping TACAI <Module>")
-    finally:
-        server.server_close()
-
-if __name__ == "__main__":
-    main()
+@router.post("/api/<prefix>/items")
+async def save_item(request: Request, user: dict = Depends(get_current_user)):
+    _check_access(user, "<module>.manage")
+    body = await request.json()
+    rows = _db.load_table(f"{PREFIX}_items") or []
+    # ... upsert logic ...
+    _db.save_table(f"{PREFIX}_items", rows)
+    return success_response(body)
 ```
 
 **关键规则:**
-- 每个服务 **必须** 是 `backend/services/<name>/app.py` 下的独立文件
-- 每个服务 **必须** 有自己的端口、自己的表前缀、自己的权限 key
-- **禁止** 将新功能嵌入到现有服务的 app.py 中（如把字典塞进 masterdata）
-- Handler 方法命名: `_handle_list`, `_handle_get_one`, `_handle_create`, `_handle_update`, `_handle_delete`
+- 每个模块 **必须** 是 `backend/modules/<name>/` 下的独立目录
+- 每个模块 **必须** 有自己的表前缀（`PREFIX`）、自己的权限 key
+- **禁止** 将新功能嵌入到现有模块的 router.py 中
+- 所有响应使用 `success_response()` / `paginated_response()` / `error_response()`（从 `modules.auth.models` 导入）
+- 权限检查使用 `_check_access(user, perm)` 函数
 
 ### 1.3 数据库操作
 
@@ -525,42 +449,38 @@ def _normalize_invoice(body: dict) -> dict:
 
 ### 4.1 后端（必须按顺序执行）
 
-1. 创建目录 `backend/services/<module_name>/`
-2. 创建 `app.py`，**严格按 §1.2 模板**编写（含 auth_utils、CORS、CRUD handler）
-3. 分配端口（下一个可用端口，见 CLAUDE.md 端口表）
-4. 在 `backend/shared/config.py` 中：
-   - `SHARED_PORT` 添加端口映射
-   - `GATEWAY_ROUTES` 添加 `/api/<prefix>/` → 端口
-   - `SHARED_SERVICES` 添加 ServiceInfo 注册
-5. 在 `start_tacai_lan.sh` 的 `SHARED_SERVICES` 数组中添加启动条目
-6. 创建数据库迁移 `database/migrations/<NNN>_<module>.sql`（下一个序号）
-7. 如需要新权限，在 `ua_permissions` 表中添加并分配给对应角色
-8. 验证：`python3 -m py_compile app.py` → 启动服务 → `curl /health`
+1. 创建目录 `backend/modules/<module_name>/`
+2. 创建 `__init__.py`（空文件）和 `router.py`，**严格按 §1.2 模板**编写
+3. 定义表前缀 `PREFIX` 和权限 key（如 `tacaipay_cn.view`）
+4. 在 `backend/app.py` 中添加：
+   ```python
+   from modules.<module_name>.router import router as <module>_router
+   app.include_router(<module>_router)
+   ```
+5. 创建数据库迁移 `database/migrations/<NNN>_<module>.sql`（下一个序号）
+6. 如需要新权限，在 `ua_permissions` 表中添加并分配给对应角色
+7. 验证：`python3 -c "from modules.<module_name>.router import router; print('OK')"` → 启动服务 → `curl /health`
 
 ### 4.2 前端（必须按顺序执行）
 
 1. 创建目录 `frontend/src/modules/<module_name>/`
-2. 创建页面组件（List 页含 toolbar + table + dialog + pagination）
+2. 创建页面组件（遵循现有 fiori-page / fiori-card / el-table 样式规范）
 3. 在 `src/api/client.ts` 添加 API 对象（命名：`<module>Api`）
 4. 在 `src/router/index.ts` 添加路由（含 `permission` 和 `titleKey` meta）
-5. 在 Dashboard.vue 的 `allModules` 数组中添加入口卡片
-6. 在 `src/i18n/` 三语文件同时添加翻译 key（`nav.<module>`, `module.<module>`, `<module>.*`）
-7. 运行 `npx vue-tsc --noEmit` 验证类型
+5. 在 `src/constants/` 添加模块常量文件（status config, workflow, action labels 等）
+6. 在 `src/composables/usePayroll.ts` 添加国家支持（如适用）
+7. 在 `src/i18n/` 三语文件同时添加翻译 key
+8. 运行 `npx vue-tsc --noEmit` 验证类型
 
-### 4.3 启动脚本
-
-在 `start_tacai_lan.sh` 的 `SHARED_SERVICES` 数组中添加新服务（格式：`"<name>|<port>|<dir>|<command>"`）。
-
-### 4.4 检查清单
+### 4.3 检查清单
 
 新增模块必须满足以下所有条件才能合并：
 
-- [ ] 独立的 `backend/services/<name>/app.py` 文件（非嵌入现有服务）
-- [ ] 独立的数据库表前缀
-- [ ] 独立的权限 key（`<module>.access`）
-- [ ] 在 config.py 中完整注册（SHARED_PORT + GATEWAY_ROUTES + SHARED_SERVICES）
-- [ ] 在 start_tacai_lan.sh 中添加启动条目
-- [ ] 前端 API client、router、Dashboard、i18n 三语文件全部更新
+- [ ] 独立的 `backend/modules/<name>/` 目录（含 router.py + service.py）
+- [ ] 在 `backend/app.py` 中注册 router
+- [ ] 独立的数据库表前缀（`PREFIX`）
+- [ ] 独立的权限 key（`<module>.view` / `<module>.manage`）
+- [ ] 前端 API client、router、constants、i18n 三语文件全部更新
 - [ ] `python3 -m py_compile` 和 `npx vue-tsc --noEmit` 通过
 
 ---

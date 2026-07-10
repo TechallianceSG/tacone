@@ -1,4 +1,4 @@
-import { createApp } from 'vue'
+import { createApp, watch } from 'vue'
 import { createPinia } from 'pinia'
 import { createI18n } from 'vue-i18n'
 import ElementPlus from 'element-plus'
@@ -36,8 +36,11 @@ app.use(router)
 app.use(i18n)
 app.use(ElementPlus)
 
-// Sync i18n store locale with vue-i18n locale
+// Sync i18n store locale ⇄ vue-i18n (reactive, both directions)
 const i18nStore = useI18nStore()
 i18n.global.locale.value = i18nStore.locale as SupportedLang
+watch(() => i18nStore.locale, (newLocale) => {
+  i18n.global.locale.value = newLocale as SupportedLang
+})
 
 app.mount('#app')

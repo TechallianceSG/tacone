@@ -16,15 +16,15 @@ export function sgStatusIndex(s: string): number {
 }
 
 export const SG_ACTION_LABELS: Record<string, { icon: string; label: string; color: string }> = {
-  CALCULATE:   { icon: '🧮', label: 'Calculate', color: '#409EFF' },
-  CONFIRM:     { icon: '✅', label: 'Confirm', color: '#67C23A' },
-  ROLLBACK:    { icon: '↩️', label: 'Rollback', color: '#E6A23C' },
-  EDIT_RECORD: { icon: '✏️', label: 'Edit Record', color: '#909399' },
-  VOID:        { icon: '🚫', label: 'Void', color: '#F56C6C' },
-  DELETE:      { icon: '🗑️', label: 'Delete', color: '#F56C6C' },
-  EMAIL_SENT:  { icon: '📧', label: 'Email Sent', color: '#67C23A' },
-  ACTIVATE:    { icon: '🔄', label: 'Activate', color: '#67C23A' },
-  DEACTIVATE:  { icon: '⏸️', label: 'Deactivate', color: '#E6A23C' },
+  CALCULATE:   { icon: '🧮', label: 'payroll.sg.action_calculate', color: '#409EFF' },
+  CONFIRM:     { icon: '✅', label: 'payroll.sg.action_confirm', color: '#67C23A' },
+  ROLLBACK:    { icon: '↩️', label: 'payroll.sg.action_rollback', color: '#E6A23C' },
+  EDIT_RECORD: { icon: '✏️', label: 'payroll.sg.action_edit_record', color: '#909399' },
+  VOID:        { icon: '🚫', label: 'payroll.sg.action_void', color: '#F56C6C' },
+  DELETE:      { icon: '🗑️', label: 'payroll.sg.action_delete', color: '#F56C6C' },
+  EMAIL_SENT:  { icon: '📧', label: 'payroll.sg.action_email_sent', color: '#67C23A' },
+  ACTIVATE:    { icon: '🔄', label: 'payroll.sg.action_activate', color: '#67C23A' },
+  DEACTIVATE:  { icon: '⏸️', label: 'payroll.sg.action_deactivate', color: '#E6A23C' },
 }
 
 export function sgActionLabel(action: string) {

@@ -5,9 +5,10 @@ import { payrollSgApi } from '@/api/client'
 import { useDictOptions } from '@/composables/useDictOptions'
 import { ElMessage } from 'element-plus'
 import { usePayrollSgConstants } from '@/composables/usePayrollSgConstants'
+import EmployeeImportDialog from '@/modules/payroll/EmployeeImportDialog.vue'
 
 const { t } = useI18n()
-const { cpfAgeRanges, salaryTypes, init: initConstants } = usePayrollSgConstants()
+const { init: initConstants } = usePayrollSgConstants()
 const CAT = { SALARY_TYPE: 'salary_type', BANK_ACCOUNT: 'bank_account_type', CURRENCY: 'currency' }
 const { loadOptions, getOptions, getValues } = useDictOptions()
 const ddOptions = getOptions
@@ -30,10 +31,7 @@ const drawerForm = ref<Record<string, any>>({})
 const drawerSaving = ref(false)
 
 // Import dialog
-const importDialog = ref(false)
-const importableEmployees = ref<any[]>([])
-const selectedImportIds = ref<string[]>([])
-const importing = ref(false)
+const importDialogVisible = ref(false)
 
 // Toggle active/inactive
 const toggleDialog = ref(false)
@@ -44,6 +42,7 @@ const toggleReason = ref('')
 
 // Dropdowns
 const entities = ref<any[]>([])
+const departments = ref<any[]>([])
 
 // ── Load ──
 async function load() {
@@ -65,8 +64,12 @@ function handleSizeChange(s: number) { pageSize.value = s; page.value = 1; load(
 
 async function loadDropdowns() {
   try {
-    const er = await payrollSgApi.entities()
+    const [er, dr] = await Promise.all([
+      payrollSgApi.entities(),
+      payrollSgApi.departments(),
+    ])
     entities.value = (er.data?.data || er.data || []) as any[]
+    departments.value = (dr.data?.data || dr.data || []) as any[]
   } catch (_) {}
 }
 
@@ -97,23 +100,7 @@ async function saveDrawer() {
 }
 
 // ── Import ──
-async function openImport() {
-  importDialog.value = true
-  selectedImportIds.value = []
-  try {
-    const res = await payrollSgApi.importableEmployees()
-    importableEmployees.value = (res.data?.data || res.data || []) as any[]
-  } catch (e: any) { ElMessage.error('Failed to load importable employees') }
-}
-async function doImport() {
-  if (selectedImportIds.value.length === 0) return
-  importing.value = true
-  try {
-    const res = await payrollSgApi.importEmployees({ employee_ids: selectedImportIds.value })
-    ElMessage.success(t('payroll.sg.imported', { count: (res.data || res).imported }))
-    importDialog.value = false; load()
-  } catch (e: any) { ElMessage.error(e.message) } finally { importing.value = false }
-}
+function onImported() { load() }
 
 // ── Toggle ──
 function openToggle(row: any) {
@@ -148,12 +135,12 @@ const fmt = (v: number) => v ? `SGD ${Number(v).toLocaleString(undefined, { mini
       <div class="toolbar-left">
         <h2>{{ t('payroll.sg.salary_master') }}</h2>
       </div>
-      <el-button @click="openImport" size="default">{{ t('payroll.sg.import_employeeadmin') }}</el-button>
+      <el-button @click="importDialogVisible = true" size="default">{{ t('payroll.sg.import_employeeadmin') }}</el-button>
     </div>
 
     <!-- Filters -->
     <div class="fiori-filters">
-      <el-input v-model="searchText" placeholder="搜索员工编号、姓名…" clearable style="width:220px" @keyup.enter="applyFilter" @clear="applyFilter" />
+      <el-input v-model="searchText" :placeholder="t('field.search_employee_placeholder')" clearable style="width:220px" @keyup.enter="applyFilter" @clear="applyFilter" />
       <el-select v-model="filterEntity" :placeholder="t('field.entity_id')" clearable style="width:260px" @change="applyFilter">
         <el-option v-for="e in entities" :key="e.entity_id" :label="entityLabelById(e.entity_id)" :value="e.entity_id" />
       </el-select>
@@ -161,7 +148,7 @@ const fmt = (v: number) => v ? `SGD ${Number(v).toLocaleString(undefined, { mini
         <el-option v-for="o in ddOptions(CAT.SALARY_TYPE).value" :key="o.value" :label="o.label" :value="o.value" />
       </el-select>
       <el-select v-model="filterStatus" style="width:120px" @change="applyFilter">
-        <el-option :label="'All'" value="all" />
+        <el-option :label="t('common.all')" value="all" />
         <el-option :label="t('entity.status.active')" value="active" />
         <el-option :label="t('entity.status.inactive')" value="inactive" />
       </el-select>
@@ -233,8 +220,7 @@ const fmt = (v: number) => v ? `SGD ${Number(v).toLocaleString(undefined, { mini
         </el-table-column>
       </el-table>
 
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px;padding:0 4px">
-        <span class="helper-text">{{ total }} {{ t('action.records_total') }}</span>
+      <div style="display:flex;justify-content:flex-end;align-items:center;margin-top:16px;padding:0 4px">
         <el-pagination
           v-model:current-page="page"
           v-model:page-size="pageSize"
@@ -256,7 +242,7 @@ const fmt = (v: number) => v ? `SGD ${Number(v).toLocaleString(undefined, { mini
         <div class="drawer-meta">{{ drawerRecord?.employee_number }} · {{ entityLabelById(drawerRecord?.entity_id) }}</div>
       </div>
       <el-form :model="drawerForm" label-width="150px" size="small" class="drawer-form">
-        <h4>Basic Info / 基本信息</h4>
+        <h4>{{ t('payroll.sg.sec_basic_info') }}</h4>
         <el-form-item :label="t('field.employee_id')"><el-input v-model="drawerForm.employee_id" disabled /></el-form-item>
         <el-form-item :label="t('field.employee_number')"><el-input v-model="drawerForm.employee_number" /></el-form-item>
         <el-form-item :label="t('field.employee_name')"><el-input v-model="drawerForm.employee_name" /></el-form-item>
@@ -264,7 +250,7 @@ const fmt = (v: number) => v ? `SGD ${Number(v).toLocaleString(undefined, { mini
         <el-form-item :label="t('field.entity')"><el-input v-model="drawerForm.entity_id" /></el-form-item>
         <el-form-item :label="t('field.department')"><el-input v-model="drawerForm.department_label" /></el-form-item>
 
-        <h4>Salary / 工资</h4>
+        <h4>{{ t('payroll.sg.sec_salary') }}</h4>
         <el-form-item :label="t('field.salary_type')">
           <el-select v-model="drawerForm.salary_type">
             <el-option v-for="o in ddOptions(CAT.SALARY_TYPE).value" :key="o.value" :label="o.label" :value="o.value" />
@@ -280,30 +266,12 @@ const fmt = (v: number) => v ? `SGD ${Number(v).toLocaleString(undefined, { mini
           <el-input-number v-model="drawerForm.standard_work_days" :min="1" :max="31" style="width:150px" />
         </el-form-item>
 
-        <h4>Allowances / 津贴</h4>
-        <el-form-item label="Fixed Allowance"><el-input-number v-model="drawerForm.fixed_allowance" :min="0" style="width:200px" /></el-form-item>
-        <el-form-item label="Performance Bonus"><el-input-number v-model="drawerForm.performance_bonus" :min="0" style="width:200px" /></el-form-item>
-        <el-form-item label="Other Allowance"><el-input-number v-model="drawerForm.other_allowance" :min="0" style="width:200px" /></el-form-item>
+        <h4>{{ t('payroll.sg.sec_allowances') }}</h4>
+        <el-form-item :label="t('field.fixed_allowance')"><el-input-number v-model="drawerForm.fixed_allowance" :min="0" style="width:200px" /></el-form-item>
+        <el-form-item :label="t('field.performance_bonus')"><el-input-number v-model="drawerForm.performance_bonus" :min="0" style="width:200px" /></el-form-item>
+        <el-form-item :label="t('field.other_allowance')"><el-input-number v-model="drawerForm.other_allowance" :min="0" style="width:200px" /></el-form-item>
 
-        <h4>CPF Settings / CPF设置</h4>
-        <el-form-item label="CPF Applicable"><el-switch v-model="drawerForm.cpf_applicable" /></el-form-item>
-        <el-form-item label="CPF Mode">
-          <el-radio-group v-model="drawerForm.cpf_input_mode">
-            <el-radio value="auto">Auto</el-radio>
-            <el-radio value="manual">Manual</el-radio>
-          </el-radio-group>
-        </el-form-item>
-        <template v-if="drawerForm.cpf_input_mode === 'manual'">
-          <el-form-item label="CPF EE (Manual)"><el-input-number v-model="drawerForm.cpf_employee_manual" :min="0" style="width:200px" /></el-form-item>
-          <el-form-item label="CPF ER (Manual)"><el-input-number v-model="drawerForm.cpf_employer_manual" :min="0" style="width:200px" /></el-form-item>
-        </template>
-        <el-form-item label="Age Range">
-          <el-select v-model="drawerForm.employee_age_range">
-            <el-option v-for="r in cpfAgeRanges" :key="r.value" :label="r.label" :value="r.value" />
-          </el-select>
-        </el-form-item>
-
-        <h4>Bank Info / 银行信息</h4>
+        <h4>{{ t('payroll.sg.sec_bank') }}</h4>
         <el-form-item :label="t('field.bank_name')"><el-input v-model="drawerForm.bank_name" /></el-form-item>
         <el-form-item :label="t('field.bank_branch_name')"><el-input v-model="drawerForm.bank_branch_name" /></el-form-item>
         <el-form-item :label="t('field.bank_account_type')"><el-input v-model="drawerForm.bank_account_type" /></el-form-item>
@@ -318,28 +286,15 @@ const fmt = (v: number) => v ? `SGD ${Number(v).toLocaleString(undefined, { mini
     </el-drawer>
 
     <!-- Import Dialog -->
-    <el-dialog v-model="importDialog" :title="t('payroll.sg.import_employeeadmin')" width="720px">
-      <div class="fiori-filters" style="margin-bottom:12px">
-        <el-input v-model="searchText" placeholder="搜索员工编号、姓名…" clearable style="width:200px" />
-      </div>
-      <el-table :data="importableEmployees" max-height="420" size="small" @selection-change="(rows: any[]) => selectedImportIds = rows.map((r: any) => r.employee_id)">
-        <el-table-column type="selection" min-width="45" />
-        <el-table-column prop="employee_number" :label="t('field.employee_number')" min-width="130" />
-        <el-table-column prop="employee_name" :label="t('field.employee_name')" min-width="160" />
-        <el-table-column :label="t('field.entity_id')" min-width="220">
-          <template #default="{row}">{{ entityLabelById(row.entity_id) }}</template>
-        </el-table-column>
-        <el-table-column :label="t('field.department')" min-width="140">
-          <template #default="{row}">{{ row.department_name || row.department || '-' }}</template>
-        </el-table-column>
-      </el-table>
-      <template #footer>
-        <el-button @click="importDialog = false">{{ t('common.cancel') }}</el-button>
-        <el-button type="primary" @click="doImport" :loading="importing" :disabled="selectedImportIds.length === 0">
-          {{ t('action.import') }} ({{ selectedImportIds.length }})
-        </el-button>
-      </template>
-    </el-dialog>
+    <EmployeeImportDialog
+      v-model="importDialogVisible"
+      country-code="sg"
+      :api="payrollSgApi"
+      :entities="entities"
+      :departments="departments"
+      :entity-resolver="entityLabelById"
+      @imported="onImported"
+    />
 
     <!-- Toggle (Deactivate/Activate) Dialog -->
     <el-dialog v-model="toggleDialog" :title="toggleActive ? t('action.deactivate') : t('action.activate')" width="420px">

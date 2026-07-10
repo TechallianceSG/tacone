@@ -101,45 +101,40 @@ Before any task:
 
 ## Current workspace state
 
-Monorepo with unified frontend (Vue 3 SPA) and backend services under `backend/services/`.
+Monorepo with unified frontend (Vue 3 SPA) and a **FastAPI monolith** backend at `backend/app.py`.
 
-Active services:
-- [backend/services/user_admin/](backend/services/user_admin/) — User management & auth (port 3001/4001/6001)
-- [backend/services/portal/](backend/services/portal/) — Unified entry point (port 3000/4000/6000)
-- [backend/services/masterdata/](backend/services/masterdata/) — Master data management (port 8007)
-- [backend/services/messaging/](backend/services/messaging/) — Message center & workflow (port 8012)
+Backend modules (FastAPI routers under `backend/modules/`):
+- [backend/modules/auth/](backend/modules/auth/) — User management & authentication
+- [backend/modules/masterdata/](backend/modules/masterdata/) — Master data management
+- [backend/modules/employees/](backend/modules/employees/) — Employee administration
+- [backend/modules/datadict/](backend/modules/datadict/) — Data dictionary
+- [backend/modules/payroll_jp/](backend/modules/payroll_jp/) — Japan payroll (prefix: `pay_jp`)
+- [backend/modules/payroll_sg/](backend/modules/payroll_sg/) — Singapore payroll (prefix: `pay_sg`)
+- [backend/modules/payroll_cn/](backend/modules/payroll_cn/) — China payroll (prefix: `pay_cn`)
+- [backend/modules/invoice/](backend/modules/invoice/) — Invoice management
+- [backend/modules/messaging/](backend/modules/messaging/) — Message center & workflow
 
-Shared libraries: `backend/shared/` (db_utils, api_utils, config, cors_middleware)
+Shared libraries: `backend/shared/` (db_utils, auth_utils, config, cors_middleware)
+
+**Shared payroll item catalog:** `pay_payroll_item_definitions` is ONE cross-country table (keyed by `country_code` = `jp`/`sg`/`cn`) holding the wage-type/工资项目 catalog for all three payroll modules. Each module's `/api/payroll/{cc}/item-definitions` endpoint reads/writes this shared table filtered by `country_code`. Do NOT resurrect the per-country `pay_{jp,sg,cn}_payroll_item_definitions` tables — they are legacy, kept only for rollback. Payroll calculation engines (`service.py`) do NOT read item definitions, so changing this catalog never affects salary calculation. Migration: `database/migrations/008_payroll_shared_item_definitions.sql`.
 
 Frontend: `frontend/` — Vue 3 + Element Plus + TypeScript + Vite
 
 ## Commands
 
-### Core services
+### Backend (FastAPI monolith)
 
 ```bash
-# User_admin (auth)
-cd backend/services/user_admin
-python3 app.py --host 127.0.0.1 --port 3001
-
-# Portal
-cd backend/services/portal
-python3 app.py --host 127.0.0.1 --port 3000
-
-# Masterdata
-cd backend/services/masterdata
-python3 app.py --host 127.0.0.1 --port 8007
-
-# Messaging
-cd backend/services/messaging
-python3 app.py --host 127.0.0.1 --port 8012
+cd backend
+python3 app.py --host 127.0.0.1 --port 8000
+# or: uvicorn app:app --host 127.0.0.1 --port 8000 --reload
 ```
 
 ### Frontend
 
 ```bash
 cd frontend
-npm run dev          # Dev server on :3000
+npm run dev          # Dev server on :5173
 npm run build        # Production build
 npx vue-tsc --noEmit # Type check
 ```
@@ -173,16 +168,10 @@ All API communication between frontend and backend uses **flat dot-notation keys
 
 ## Local port convention
 
-| Service | DEV | STG | PRD |
-|---------|-----|-----|-----|
-| Portal | 3000 | 4000 | 6000 |
-| User_admin | 3001 | 4001 | 6001 |
-| Employee Admin | 8004 | 8004 | 8004 |
-| Data Dictionary | 8005 | 8005 | 8005 |
-| Masterdata | 8007 | 8007 | 8007 |
-| Messaging | 8012 | 8012 | 8012 |
-| Payroll JP | 8013 | 8013 | 8013 |
-| Invoice | 8019 | 8019 | 8019 |
+| Service | DEV |
+|---------|-----|
+| Backend API (FastAPI monolith) | 8000 |
+| Frontend (Vite dev server) | 5173 |
 
 
 
