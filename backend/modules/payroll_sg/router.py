@@ -217,6 +217,7 @@ async def sg_list_employees(
 ):
     _check_access(user)
     rows = _db.load_table(f"{PREFIX}_salary_master") or []
+    rows.sort(key=lambda r: str(r.get("employee_number", "")).lower())
     if search:
         sl = search.lower()
         rows = [r for r in rows if sl in str(r.get("employee_name", "")).lower()
@@ -260,11 +261,15 @@ async def sg_import_employees(request: Request, user: dict = Depends(get_current
     body = await request.json()
     imported = 0
     emp_rows = _db.load_table("emp_employees") or []
+    salary_rows = _db.load_table(f"{PREFIX}_salary_master") or []
+    existing_ids = {str(r.get("employee_id", "")) for r in salary_rows}
+    existing_numbers = {str(r.get("employee_number", "")) for r in salary_rows if r.get("employee_number")}
     for eid in body.get("employee_ids", []):
-        if str(eid) in {str(r.get("employee_id", "")) for r in (_db.load_table(f"{PREFIX}_salary_master") or [])}:
-            continue
         emp = next((e for e in emp_rows if str(e.get("employee_id")) == str(eid)), None)
         if not emp:
+            continue
+        emp_no = str(emp.get("employee_number", ""))
+        if str(eid) in existing_ids or (emp_no and emp_no in existing_numbers):
             continue
         profile = emp.get("profile") or {}
         employment = emp.get("employment") or {}

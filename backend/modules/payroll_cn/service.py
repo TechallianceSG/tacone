@@ -141,23 +141,14 @@ def calc_salary(
     # ── Gross Pay ──
     gross_pay = attendance_pay + sick_leave_pay + full_attendance_bonus + transport_allowance + bonus + other_additions
 
-    # ── Social Insurance Base ──
-    si_base = float(emp.get("social_insurance_base", monthly_base))
-    si_base = max(si["si_floor"], min(si_base, si["si_ceiling"]))
-
     # ── Social Insurance (Employee) ──
-    si_employee = round(si_base * (
-        si["pension_employee"] +
-        si["medical_employee"] +
-        si["unemployment_employee"]
-    ), 2)
-
-    # ── Housing Fund Base ──
-    hf_base = float(emp.get("housing_fund_base", monthly_base))
-    hf_base = max(hf["hf_floor"], min(hf_base, hf["hf_ceiling"]))
+    # Always use the value from the record (copied from salary master).
+    # Never auto-calculate from rates — HR enters the amount manually.
+    si_employee = float(emp.get("social_insurance", 0))
 
     # ── Housing Fund (Employee) ──
-    hf_employee = round(hf_base * hf["employee_rate"], 2)
+    # Always use the value from the record (copied from salary master).
+    hf_employee = float(emp.get("housing_fund", 0))
 
     # ── IIT (个人所得税) ──
     # Taxable income = gross_pay - si_employee - hf_employee - standard_deduction(5000)
@@ -165,21 +156,35 @@ def calc_salary(
     taxable_income = gross_pay - si_employee - hf_employee - standard_deduction
     iit = calculate_iit(taxable_income, brackets)
 
+    # ── Absence Deduction (欠勤控除) ──
+    absence_deduction = float(emp.get("absence_deduction", 0))
+
     # ── Total Deductions ──
-    deduction_total = si_employee + hf_employee + iit + other_deductions
+    deduction_total = si_employee + hf_employee + iit + other_deductions + absence_deduction
 
     # ── Net Pay ──
     net_pay = round(gross_pay - deduction_total, 2)
 
     # ── Employer Contributions ──
-    employer_si = round(si_base * (
-        si["pension_employer"] +
-        si["medical_employer"] +
-        si["unemployment_employer"] +
-        si["work_injury_employer"] +
-        si["maternity_employer"]
-    ), 2)
-    employer_hf = round(hf_base * hf["employer_rate"], 2)
+    # Employer side still calculated from base if base is set
+    si_base_val = float(emp.get("social_insurance_base", 0) or 0)
+    hf_base_val = float(emp.get("housing_fund_base", 0) or 0)
+    if si_base_val > 0:
+        si_base_val = max(si["si_floor"], min(si_base_val, si["si_ceiling"]))
+        employer_si = round(si_base_val * (
+            si["pension_employer"] +
+            si["medical_employer"] +
+            si["unemployment_employer"] +
+            si["work_injury_employer"] +
+            si["maternity_employer"]
+        ), 2)
+    else:
+        employer_si = 0.0
+    if hf_base_val > 0:
+        hf_base_val = max(hf["hf_floor"], min(hf_base_val, hf["hf_ceiling"]))
+        employer_hf = round(hf_base_val * hf["employer_rate"], 2)
+    else:
+        employer_hf = 0.0
     employer_cost_total = employer_si + employer_hf
 
     return {
@@ -201,6 +206,7 @@ def calc_salary(
         "housing_fund": hf_employee,
         "iit": iit,
         "other_deductions": other_deductions,
+        "absence_deduction": absence_deduction,
         "deduction_total": round(deduction_total, 2),
         # Net
         "net_pay": net_pay,
@@ -209,8 +215,8 @@ def calc_salary(
         "employer_housing_fund": employer_hf,
         "employer_cost_total": round(employer_cost_total, 2),
         # Debug
-        "si_base": si_base,
-        "hf_base": hf_base,
+        "si_base": si_base_val,
+        "hf_base": hf_base_val,
         "taxable_income": round(taxable_income, 2),
         "standard_deduction": standard_deduction,
         "messages": [],

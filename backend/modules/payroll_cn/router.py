@@ -148,6 +148,7 @@ async def list_salary_employees(
 ):
     _check_access(user)
     rows = _db.load_table(f"{PREFIX}_salary_master") or []
+    rows.sort(key=lambda r: str(r.get("employee_number", "")).lower())
     if search:
         sl = search.lower()
         rows = [r for r in rows if sl in str(r.get("employee_name", "")).lower()
@@ -188,10 +189,16 @@ async def import_salary_employees(request: Request, user: dict = Depends(get_cur
     body = await request.json()
     imported = 0
     emp_rows = _db.load_table("emp_employees") or []
+    salary_rows = _db.load_table(f"{PREFIX}_salary_master") or []
+    existing_ids = {str(r.get("employee_id", "")) for r in salary_rows}
+    existing_numbers = {str(r.get("employee_number", "")) for r in salary_rows if r.get("employee_number")}
     for eid in body.get("employee_ids", []):
-        if str(eid) in {str(r.get("employee_id", "")) for r in (_db.load_table(f"{PREFIX}_salary_master") or [])}:
-            continue
         emp = next((e for e in emp_rows if str(e.get("employee_id")) == str(eid)), None)
+        if not emp:
+            continue
+        emp_no = str(emp.get("employee_number", ""))
+        if str(eid) in existing_ids or (emp_no and emp_no in existing_numbers):
+            continue
         if not emp:
             continue
         profile = emp.get("profile") or {}
@@ -360,19 +367,23 @@ async def create_batch(request: Request, user: dict = Depends(get_current_user))
             "employee_name": emp.get("employee_name", ""), "email": emp.get("email", ""),
             "department_label": emp.get("department_label", ""),
             "salary_type": emp.get("salary_type", "monthly"),
-            # Attendance
-            "full_attendance_days": float(emp.get("standard_work_days") or working_days),
-            "actual_attendance_days": float(emp.get("standard_work_days") or working_days),
+            # Attendance — use batch working_days, employee standard_work_days as override
+            "full_attendance_days": float(working_days),
+            "actual_attendance_days": float(working_days),
             "personal_leave_days": 0, "annual_leave_days": 0,
             "sick_leave_days": 0, "other_leave_days": 0,
-            # Earnings (populated by calculation)
+            # Earnings — copy from salary master
             "basic_salary": float(emp.get("basic_salary") or 0),
             "position_allowance": float(emp.get("position_allowance") or 0),
+            "full_attendance_bonus": float(emp.get("full_attendance_bonus") or 0),
+            "transport_allowance": float(emp.get("transport_allowance") or 0),
+            "bonus": float(emp.get("bonus") or 0),
             "attendance_pay": 0, "sick_leave_pay": 0,
-            "full_attendance_bonus": 0, "other_additions": 0,
-            "gross_pay": 0,
-            # Deductions
-            "social_insurance": 0, "housing_fund": 0,
+            "other_additions": 0, "gross_pay": 0,
+            # Deductions — copy from salary master (manual input)
+            "social_insurance": float(emp.get("social_insurance") or 0),
+            "housing_fund": float(emp.get("housing_fund") or 0),
+            "absence_deduction": float(emp.get("absence_deduction") or 0),
             "iit": 0, "other_deductions": 0,
             "deduction_total": 0,
             # Net
@@ -448,21 +459,21 @@ async def calculate_batch(batch_id: str, user: dict = Depends(get_current_user))
         net_total += float(result.get("net_pay", 0))
         employer_cost_total += float(result.get("employer_cost_total", 0))
 
-    # Save updated records
-    _db.save_table(f"{PREFIX}_monthly_salary_records", records)
+    # Save updated records (only modified records)
+    for rec in batch_records:
+        _db.update_record(f"{PREFIX}_monthly_salary_records", "record_id", rec["record_id"], rec)
 
-    # Update batch
-    batch["status"] = "calculated"
-    batch["gross_total"] = gross_total
-    batch["deduction_total"] = deduction_total
-    batch["net_total"] = net_total
-    batch["employer_cost_total"] = employer_cost_total
-    batch["updated_at"] = _now()
-    for i, b in enumerate(batches):
-        if b.get("batch_id") == batch_id:
-            batches[i] = batch
-            break
-    _db.save_table(f"{PREFIX}_payroll_batches", batches)
+    # Update batch status and totals
+    batch_updates = {
+        "status": "calculated",
+        "gross_total": gross_total,
+        "deduction_total": deduction_total,
+        "net_total": net_total,
+        "employer_cost_total": employer_cost_total,
+        "updated_at": _now(),
+    }
+    _db.update_record(f"{PREFIX}_payroll_batches", "batch_id", batch_id, batch_updates)
+    batch.update(batch_updates)
 
     # Audit log
     _log_audit("CALCULATE", batch_id, batch, user)
@@ -478,10 +489,9 @@ async def confirm_batch(batch_id: str, user: dict = Depends(get_current_user)):
         if b.get("batch_id") == batch_id:
             if b.get("status") != "calculated":
                 raise HTTPException(status_code=400, detail="Only calculated batches can be confirmed")
-            b["status"] = "confirmed"
-            b["confirmed_at"] = _now()
-            b["updated_at"] = _now()
-            _db.save_table(f"{PREFIX}_payroll_batches", batches)
+            updates = {"status": "confirmed", "confirmed_at": _now(), "updated_at": _now()}
+            _db.update_record(f"{PREFIX}_payroll_batches", "batch_id", batch_id, updates)
+            b.update(updates)
 
             # Generate payslips
             _generate_payslips(batch_id, b)
@@ -495,44 +505,34 @@ async def confirm_batch(batch_id: str, user: dict = Depends(get_current_user)):
 async def rollback_batch(batch_id: str, request: Request, user: dict = Depends(get_current_user)):
     _check_access(user, "tacaipay_cn.approve")
     body = await request.json()
-    batches = _db.load_table(f"{PREFIX}_payroll_batches") or []
-    for b in batches:
-        if b.get("batch_id") == batch_id:
-            b["status"] = "draft"
-            b["rollback_reason"] = body.get("reason", "")
-            b["updated_at"] = _now()
-            _db.save_table(f"{PREFIX}_payroll_batches", batches)
-            _log_audit("ROLLBACK", batch_id, b, user, body.get("reason", ""))
-            return success_response(b)
-    raise HTTPException(status_code=404, detail="Not found")
+    updates = {"status": "draft", "rollback_reason": body.get("reason", ""), "updated_at": _now()}
+    ok = _db.update_record(f"{PREFIX}_payroll_batches", "batch_id", batch_id, updates)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Not found")
+    _log_audit("ROLLBACK", batch_id, {"batch_id": batch_id, **updates}, user, body.get("reason", ""))
+    return success_response({"batch_id": batch_id, **updates})
 
 
 @router.post("/api/payroll/cn/batches/{batch_id}/void")
 async def void_batch(batch_id: str, request: Request, user: dict = Depends(get_current_user)):
     _check_access(user, "tacaipay_cn.manage")
     body = await request.json()
-    batches = _db.load_table(f"{PREFIX}_payroll_batches") or []
-    for b in batches:
-        if b.get("batch_id") == batch_id:
-            b["status"] = "voided"
-            b["void_reason"] = body.get("reason", "")
-            b["updated_at"] = _now()
-            _db.save_table(f"{PREFIX}_payroll_batches", batches)
-            _log_audit("VOID", batch_id, b, user, body.get("reason", ""))
-            return success_response(b)
-    raise HTTPException(status_code=404, detail="Not found")
+    updates = {"status": "voided", "void_reason": body.get("reason", ""), "updated_at": _now()}
+    ok = _db.update_record(f"{PREFIX}_payroll_batches", "batch_id", batch_id, updates)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Not found")
+    _log_audit("VOID", batch_id, {"batch_id": batch_id, **updates}, user, body.get("reason", ""))
+    return success_response({"batch_id": batch_id, **updates})
 
 
 @router.delete("/api/payroll/cn/batches/{batch_id}")
 async def delete_batch(batch_id: str, user: dict = Depends(get_current_user)):
     _check_access(user, "tacaipay_cn.manage")
-    batches = _db.load_table(f"{PREFIX}_payroll_batches") or []
-    batches = [b for b in batches if b.get("batch_id") != batch_id]
-    _db.save_table(f"{PREFIX}_payroll_batches", batches)
-    # Also delete associated records
-    records = _db.load_table(f"{PREFIX}_monthly_salary_records") or []
-    records = [r for r in records if r.get("batch_id") != batch_id]
-    _db.save_table(f"{PREFIX}_monthly_salary_records", records)
+    # Delete child records first to satisfy FK constraint
+    records = _db.load_table(f"{PREFIX}_monthly_salary_records", {"batch_id": batch_id}) or []
+    for r in records:
+        _db.delete_record(f"{PREFIX}_monthly_salary_records", "record_id", r["record_id"])
+    _db.delete_record(f"{PREFIX}_payroll_batches", "batch_id", batch_id)
     return success_response({"message": f"Batch {batch_id} deleted"})
 
 
@@ -575,24 +575,21 @@ async def recalculate_record(batch_id: str, record_id: str, user: dict = Depends
     rec["calculation_detail"] = result
     rec["updated_at"] = _now()
 
-    _db.save_table(f"{PREFIX}_monthly_salary_records", records)
+    _db.update_record(f"{PREFIX}_monthly_salary_records", "record_id", rec["record_id"], rec)
 
     # Recompute batch totals
-    batch_records = [r for r in records if r.get("batch_id") == batch_id]
-    gross_total = sum(float(r.get("gross_pay", 0)) for r in batch_records)
-    deduction_total = sum(float(r.get("deduction_total", 0)) for r in batch_records)
-    net_total = sum(float(r.get("net_pay", 0)) for r in batch_records)
-    employer_cost_total = sum(float(r.get("employer_cost_total", 0)) for r in batch_records)
+    updated_records = _db.load_table(f"{PREFIX}_monthly_salary_records", {"batch_id": batch_id}) or []
+    gross_total = sum(float(r.get("gross_pay", 0)) for r in updated_records)
+    deduction_total = sum(float(r.get("deduction_total", 0)) for r in updated_records)
+    net_total = sum(float(r.get("net_pay", 0)) for r in updated_records)
+    employer_cost_total = sum(float(r.get("employer_cost_total", 0)) for r in updated_records)
 
-    for b in batches:
-        if b.get("batch_id") == batch_id:
-            b["gross_total"] = gross_total
-            b["deduction_total"] = deduction_total
-            b["net_total"] = net_total
-            b["employer_cost_total"] = employer_cost_total
-            b["updated_at"] = _now()
-            break
-    _db.save_table(f"{PREFIX}_payroll_batches", batches)
+    batch_updates = {
+        "gross_total": gross_total, "deduction_total": deduction_total,
+        "net_total": net_total, "employer_cost_total": employer_cost_total,
+        "updated_at": _now(),
+    }
+    _db.update_record(f"{PREFIX}_payroll_batches", "batch_id", batch_id, batch_updates)
 
     return success_response(rec)
 
@@ -601,17 +598,14 @@ async def recalculate_record(batch_id: str, record_id: str, user: dict = Depends
 async def edit_record(batch_id: str, record_id: str, request: Request, user: dict = Depends(get_current_user)):
     _check_access(user, "tacaipay_cn.manage")
     body = await request.json()
-    records = _db.load_table(f"{PREFIX}_monthly_salary_records") or []
-    for r in records:
-        if r.get("record_id") == record_id:
-            before = dict(r)
-            r.update({k: v for k, v in body.items() if k not in ("id", "record_id", "batch_id")})
-            r["manually_edited"] = True
-            r["updated_at"] = _now()
-            _db.save_table(f"{PREFIX}_monthly_salary_records", records)
-            _log_audit("EDIT_RECORD", batch_id, {"record_id": record_id, "before": before, "after": r}, user)
-            return success_response(r)
-    raise HTTPException(status_code=404, detail="Not found")
+    updates = {k: v for k, v in body.items() if k not in ("id", "record_id", "batch_id")}
+    updates["manually_edited"] = True
+    updates["updated_at"] = _now()
+    ok = _db.update_record(f"{PREFIX}_monthly_salary_records", "record_id", record_id, updates)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Not found")
+    _log_audit("EDIT_RECORD", batch_id, {"record_id": record_id, **updates}, user)
+    return success_response({"record_id": record_id, **updates})
 
 
 @router.get("/api/payroll/cn/batches/{batch_id}/audit-logs")

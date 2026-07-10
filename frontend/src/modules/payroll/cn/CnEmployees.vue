@@ -21,12 +21,13 @@ const pageSize = ref(20)
 const search = ref('')
 const filterEntity = ref('')
 const filterSalaryType = ref('')
-const filterStatus = ref('')
+const filterStatus = ref('all')
 
 // Drawer
 const drawerVisible = ref(false)
 const editForm = ref<Record<string, any>>({})
 const isNew = ref(false)
+
 
 // Import
 const importDialogVisible = ref(false)
@@ -43,10 +44,10 @@ async function loadData() {
   loading.value = true
   try {
     const params: Record<string, any> = { page: page.value, page_size: pageSize.value }
-    if (search.value) params.search = search.value
+    if (search.value.trim()) params.search = search.value.trim()
     if (filterEntity.value) params.entity_id = filterEntity.value
     if (filterSalaryType.value) params.salary_type = filterSalaryType.value
-    if (filterStatus.value) params.status = filterStatus.value
+    if (filterStatus.value !== 'all') params.status = filterStatus.value
     const res = await payrollCnApi.employees(params)
     employees.value = res.data.data || []
     total.value = res.data.pagination?.total || 0
@@ -54,6 +55,9 @@ async function loadData() {
     ElMessage.error(e?.response?.data?.error || 'Failed to load employees')
   } finally { loading.value = false }
 }
+function applyFilter() { page.value = 1; loadData() }
+function handlePageChange(p: number) { page.value = p; loadData() }
+function handleSizeChange(s: number) { pageSize.value = s; page.value = 1; loadData() }
 
 async function loadDropdowns() {
   try {
@@ -74,12 +78,6 @@ async function loadItemDefs() {
 }
 
 // ── Actions ──
-function openCreate() {
-  isNew.value = true
-  editForm.value = { salary_type: 'monthly', status: 'active', city_code: '320100', housing_fund_city_code: '320100', basic_salary: 0, position_allowance: 0, transport_allowance: 0, bonus: 0, social_insurance_base: 0, housing_fund_base: 0, full_attendance_bonus: 200 }
-  drawerVisible.value = true
-}
-
 function openEdit(row: any) {
   isNew.value = false
   editForm.value = { ...row }
@@ -140,26 +138,23 @@ onMounted(() => { loadDropdowns(); loadItemDefs(); loadData() })
     <div class="fiori-toolbar">
       <div class="toolbar-left">
         <h2>{{ t('payroll.cn.employees') }}</h2>
-        <span class="count-chip">{{ total }}</span>
       </div>
-      <div class="toolbar-right">
-        <el-button type="primary" @click="openCreate">+ {{ t('payroll.cn.create_employee') }}</el-button>
-        <el-button @click="importDialogVisible = true">{{ t('payroll.cn.import_from_employees') }}</el-button>
-      </div>
+      <el-button @click="importDialogVisible = true" size="default">{{ t('payroll.cn.import_employeeadmin') }}</el-button>
     </div>
 
     <!-- Filters -->
     <div class="fiori-filters">
-      <el-input v-model="search" :placeholder="t('payroll.cn.search_placeholder')" clearable style="width:200px" @change="loadData" />
-      <el-select v-model="filterEntity" :placeholder="t('field.entity')" clearable style="width:240px" @change="loadData">
+      <el-input v-model="search" :placeholder="t('field.search_employee_placeholder')" clearable style="width:220px" @keyup.enter="applyFilter" @clear="applyFilter" />
+      <el-select v-model="filterEntity" :placeholder="t('field.entity_id')" clearable style="width:260px" @change="applyFilter">
         <el-option v-for="e in entities" :key="e.entity_id" :label="entityLabel(e.entity_id)" :value="e.entity_id" />
       </el-select>
-      <el-select v-model="filterSalaryType" :placeholder="t('payroll.cn.salary_type')" clearable style="width:130px" @change="loadData">
+      <el-select v-model="filterSalaryType" :placeholder="t('field.salary_type_label')" clearable style="width:180px" @change="applyFilter">
         <el-option v-for="st in salaryTypes" :key="st.value" :label="st.label" :value="st.value" />
       </el-select>
-      <el-select v-model="filterStatus" :placeholder="t('payroll.cn.status_label')" clearable style="width:110px" @change="loadData">
-        <el-option :label="t('payroll.cn.active')" value="active" />
-        <el-option :label="t('payroll.cn.inactive')" value="inactive" />
+      <el-select v-model="filterStatus" style="width:120px" @change="applyFilter">
+        <el-option :label="t('status.all')" value="all" />
+        <el-option :label="t('status.active')" value="active" />
+        <el-option :label="t('status.inactive')" value="inactive" />
       </el-select>
     </div>
 
@@ -182,12 +177,6 @@ onMounted(() => { loadDropdowns(); loadItemDefs(); loadData() })
         <el-table-column :label="t('payroll.cn.position_allowance')" min-width="120" align="right">
           <template #default="{ row }">{{ fmtCurrency(row.position_allowance) }}</template>
         </el-table-column>
-        <el-table-column :label="t('payroll.cn.social_insurance_base')" min-width="120" align="right">
-          <template #default="{ row }">{{ fmtCurrency(row.social_insurance_base) }}</template>
-        </el-table-column>
-        <el-table-column :label="t('payroll.cn.housing_fund_base')" min-width="120" align="right">
-          <template #default="{ row }">{{ fmtCurrency(row.housing_fund_base) }}</template>
-        </el-table-column>
         <el-table-column :label="t('payroll.cn.full_attendance_bonus')" min-width="90" align="right">
           <template #default="{ row }">{{ fmtCurrency(row.full_attendance_bonus) }}</template>
         </el-table-column>
@@ -196,6 +185,9 @@ onMounted(() => { loadDropdowns(); loadItemDefs(); loadData() })
         </el-table-column>
         <el-table-column :label="t('payroll.cn.bonus')" min-width="100" align="right">
           <template #default="{ row }">{{ fmtCurrency(row.bonus) }}</template>
+        </el-table-column>
+        <el-table-column :label="t('payroll.cn.recurring_deductions')" min-width="110" align="right">
+          <template #default="{ row }">{{ fmtCurrency(row.recurring_deductions) }}</template>
         </el-table-column>
         <el-table-column :label="t('payroll.cn.status_label')" min-width="70" align="center">
           <template #default="{ row }">
@@ -213,10 +205,21 @@ onMounted(() => { loadDropdowns(); loadItemDefs(); loadData() })
         </el-table-column>
       </el-table>
     </div>
-    <div class="helper-text" style="margin-top:8px">{{ total }} record(s) total</div>
+    <div style="margin-top:12px; display:flex; justify-content:flex-end">
+      <el-pagination
+        v-model:current-page="page"
+        v-model:page-size="pageSize"
+        :page-sizes="[20, 50, 100]"
+        :total="total"
+        layout="total, sizes, prev, pager, next"
+        small
+        @size-change="handleSizeChange"
+        @current-change="handlePageChange"
+      />
+    </div>
 
     <!-- Edit Drawer -->
-    <el-drawer v-model="drawerVisible" :title="isNew ? t('payroll.cn.new_employee_config') : t('payroll.cn.edit_employee_config')" direction="rtl" size="560px">
+    <el-drawer v-model="drawerVisible" :title="t('payroll.cn.edit_employee_config')" direction="rtl" size="560px">
       <div class="drawer-body">
         <!-- Basic Info -->
         <div class="fi-card">
@@ -260,6 +263,12 @@ onMounted(() => { loadDropdowns(); loadItemDefs(); loadData() })
             <el-form-item :label="t('payroll.cn.bonus')">
               <el-input-number v-model="editForm.bonus" :min="0" :precision="2" style="width:100%" />
             </el-form-item>
+            <el-form-item :label="t('payroll.cn.recurring_deductions')">
+              <el-input-number v-model="editForm.recurring_deductions" :min="0" :precision="2" style="width:100%" />
+            </el-form-item>
+            <el-form-item :label="t('payroll.cn.absence_deduction')">
+              <el-input-number v-model="editForm.absence_deduction" :min="0" :precision="2" style="width:100%" />
+            </el-form-item>
           </el-form>
         </div>
 
@@ -267,11 +276,13 @@ onMounted(() => { loadDropdowns(); loadItemDefs(); loadData() })
         <div class="fi-card">
           <div class="fi-card-head">{{ t('payroll.cn.section_social_insurance') }}</div>
           <el-form label-width="110px" size="small">
-            <el-form-item :label="t('payroll.cn.social_insurance_base')">
-              <el-input-number v-model="editForm.social_insurance_base" :min="0" :precision="2" style="width:100%" />
+            <el-form-item :label="t('payroll.cn.social_insurance')">
+              <el-input-number v-model="editForm.social_insurance" :min="0" :precision="2" style="width:100%" />
+              <div class="form-hint">{{ t('payroll.cn.social_insurance_hint') }}</div>
             </el-form-item>
-            <el-form-item :label="t('payroll.cn.housing_fund_base')">
-              <el-input-number v-model="editForm.housing_fund_base" :min="0" :precision="2" style="width:100%" />
+            <el-form-item :label="t('payroll.cn.housing_fund')">
+              <el-input-number v-model="editForm.housing_fund" :min="0" :precision="2" style="width:100%" />
+              <div class="form-hint">{{ t('payroll.cn.housing_fund_hint') }}</div>
             </el-form-item>
             <el-form-item :label="t('payroll.cn.insurance_city')">
               <el-select v-model="editForm.city_code" style="width:100%">
@@ -359,4 +370,5 @@ onMounted(() => { loadDropdowns(); loadItemDefs(); loadData() })
 .drawer-body { padding: 0 4px; display: flex; flex-direction: column; gap: 16px; }
 .fi-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px 20px; }
 .fi-card-head { font-weight: 700; color: #1d2a3a; margin-bottom: 12px; font-size: .95rem; }
+.form-hint { color: #9ca3af; font-size: .75rem; margin-top: 2px; }
 </style>
