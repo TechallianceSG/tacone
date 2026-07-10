@@ -25,7 +25,7 @@ function navigate(module: string) {
         <h1>{{ t('payroll.sg.title') }}</h1>
         <p>{{ t('payroll.sg.desc') }}</p>
       </div>
-      <span class="lp-badge">FY2026</span>
+      <span class="lp-badge">{{ t('payroll.sg.fy2026') }}</span>
     </header>
 
     <div class="lp-body">

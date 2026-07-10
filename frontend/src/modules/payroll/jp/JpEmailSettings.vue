@@ -38,10 +38,10 @@ const showPasswordInput = ref(false)
 
 // ── Validation rules ──
 const rules = {
-  sender_name: [{ required: true, message: '请输入发件人名称', trigger: 'blur' }],
+  sender_name: [{ required: true, message: t('payroll.email.validate_sender_name_required'), trigger: 'blur' }],
   sender_email: [
-    { required: true, message: '请输入发件人邮箱', trigger: 'blur' },
-    { type: 'email', message: '请输入有效的邮箱地址', trigger: 'blur' },
+    { required: true, message: t('payroll.email.validate_sender_email_required'), trigger: 'blur' },
+    { type: 'email', message: t('payroll.email.validate_sender_email_format'), trigger: 'blur' },
   ],
 }
 
@@ -185,8 +185,8 @@ async function load() {
 function addCc() {
   const email = newCcEmail.value.trim()
   if (!email) return
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { ElMessage.warning('邮箱格式不正确'); return }
-  if (form.value.cc_recipients.includes(email)) { ElMessage.warning('已在CC列表中'); return }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { ElMessage.warning(t('payroll.email.validate_email_format')); return }
+  if (form.value.cc_recipients.includes(email)) { ElMessage.warning(t('payroll.email.cc_duplicate')); return }
   form.value.cc_recipients.push(email)
   newCcEmail.value = ''
 }
@@ -201,20 +201,20 @@ function buildBodyTemplate(): string {
 
 async function save() {
   // Validate sender
-  if (!form.value.sender_name?.trim()) { ElMessage.warning('请输入发件人名称'); return }
-  if (!form.value.sender_email?.trim()) { ElMessage.warning('请输入发件人邮箱'); return }
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.value.sender_email.trim())) { ElMessage.warning('发件人邮箱格式不正确'); return }
+  if (!form.value.sender_name?.trim()) { ElMessage.warning(t('payroll.email.validate_sender_name_required')); return }
+  if (!form.value.sender_email?.trim()) { ElMessage.warning(t('payroll.email.validate_sender_email_required')); return }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.value.sender_email.trim())) { ElMessage.warning(t('payroll.email.validate_sender_email_invalid')); return }
 
   // SMTP must be configured — either via env vars or via override
   if (!smtpAvailable.value && !isSmtpOverrideActive()) {
-    ElMessage.warning('请先配置 SMTP。展开「SMTP 高级设置」填写服务器信息，或联系管理员配置环境变量。')
+    ElMessage.warning(t('payroll.email.validate_smtp_required'))
     smtpPanelOpen.value = true
     return
   }
   // If using SMTP override, validate required fields
   if (isSmtpOverrideActive()) {
-    if (!form.value.smtp_user?.trim()) { ElMessage.warning('SMTP 邮箱账号为必填'); smtpPanelOpen.value = true; return }
-    if (!form.value.smtp_password?.trim() && !form.value.smtp_password_set) { ElMessage.warning('SMTP 授权码为必填'); smtpPanelOpen.value = true; return }
+    if (!form.value.smtp_user?.trim()) { ElMessage.warning(t('payroll.email.validate_smtp_user_required')); smtpPanelOpen.value = true; return }
+    if (!form.value.smtp_password?.trim() && !form.value.smtp_password_set) { ElMessage.warning(t('payroll.email.validate_smtp_password_required')); smtpPanelOpen.value = true; return }
   }
 
   saving.value = true
@@ -243,7 +243,7 @@ async function save() {
 }
 
 async function sendTest() {
-  if (!testEmail.value.trim()) { ElMessage.warning('请输入收件人邮箱'); return }
+  if (!testEmail.value.trim()) { ElMessage.warning(t('payroll.email.validate_test_recipient_required')); return }
   // Persist test email
   try { localStorage.setItem('tacai_pay_jp_test_email', testEmail.value.trim()) } catch {}
 
@@ -310,17 +310,17 @@ onMounted(load)
           <span class="card-icon">👤</span>
           <div>
             <h3 class="card-title">{{ t('payroll.jp.sender_settings') }}</h3>
-            <p class="card-hint">发送工资单时显示的发件人信息。</p>
+            <p class="card-hint">{{ t('payroll.email.sender_info_hint') }}</p>
           </div>
         </div>
         <div class="form-row">
           <div class="form-group">
             <label><span class="required">*</span> {{ t('payroll.jp.sender_name') }}</label>
-            <el-input v-model="form.sender_name" maxlength="200" placeholder="例：TACAI Payroll JP" />
+            <el-input v-model="form.sender_name" maxlength="200" :placeholder="t('payroll.email.placeholder_sender_name')" />
           </div>
           <div class="form-group">
             <label><span class="required">*</span> {{ t('payroll.jp.sender_email') }}</label>
-            <el-input v-model="form.sender_email" maxlength="200" placeholder="例：payroll@yourcompany.com" />
+            <el-input v-model="form.sender_email" maxlength="200" :placeholder="t('payroll.email.placeholder_sender_email')" />
           </div>
         </div>
       </div>
@@ -331,17 +331,17 @@ onMounted(load)
           <span class="card-icon">📋</span>
           <div>
             <h3 class="card-title">{{ t('payroll.jp.cc_recipients') }}</h3>
-            <p class="card-hint">每封工资单邮件都会抄送到以下邮箱（HR、财务等需要留档的部门）。</p>
+            <p class="card-hint">{{ t('payroll.email.cc_hint') }}</p>
           </div>
         </div>
         <div style="display:flex;gap:8px;margin-bottom:10px;">
           <el-input v-model="newCcEmail" placeholder="email@example.com" style="flex:1" @keyup.enter="addCc" />
-          <el-button type="primary" plain @click="addCc">+ 添加</el-button>
+          <el-button type="primary" plain @click="addCc">{{ t('payroll.email.add_cc') }}</el-button>
         </div>
         <div v-if="form.cc_recipients.length" style="display:flex;flex-wrap:wrap;gap:6px;">
           <el-tag v-for="(email, idx) in form.cc_recipients" :key="idx" closable @close="removeCc(idx)" size="default">{{ email }}</el-tag>
         </div>
-        <div v-else style="color:#9ca3af;font-size:13px;">暂无抄送人，工资单仅发送给员工本人。</div>
+        <div v-else style="color:#9ca3af;font-size:13px;">{{ t('payroll.email.no_cc') }}</div>
       </div>
 
       <!-- ═══ 3. EMAIL TEMPLATE ═══ -->
@@ -349,45 +349,45 @@ onMounted(load)
         <div class="card-header">
           <span class="card-icon">✉️</span>
           <div style="flex:1;">
-            <h3 class="card-title">邮件模版</h3>
-            <p class="card-hint">设置邮件主题、正文顶部/底部内容，以及工资单上显示的项目。</p>
+            <h3 class="card-title">{{ t('payroll.email.email_template') }}</h3>
+            <p class="card-hint">{{ t('payroll.email.template_hint') }}</p>
           </div>
-          <el-button type="primary" plain size="small" @click="previewTemplate">👁️ 预览效果</el-button>
+          <el-button type="primary" plain size="small" @click="previewTemplate">{{ t('payroll.email.preview_button') }}</el-button>
         </div>
 
         <!-- Subject -->
         <div class="template-section">
-          <label class="section-label">📌 邮件主题</label>
-          <el-input v-model="form.email_subject_template" maxlength="500" placeholder="留空使用默认格式：給与明細 / Payslip — 月份 — 员工姓名" />
-          <div class="live-preview" v-if="form.email_subject_template">→ 预览：<strong>{{ subjectPreview }}</strong></div>
-          <button class="reset-link" @click="resetSubject" v-if="form.email_subject_template">恢复默认</button>
+          <label class="section-label">📌 {{ t('payroll.email.subject_label') }}</label>
+          <el-input v-model="form.email_subject_template" maxlength="500" placeholder="留空{{ t('payroll.email.using_default') }}格式：給与明細 / Payslip — 月份 — 员工姓名" />
+          <div class="live-preview" v-if="form.email_subject_template">{{ t('payroll.email.preview_label') }}<strong>{{ subjectPreview }}</strong></div>
+          <button class="reset-link" @click="resetSubject" v-if="form.email_subject_template">{{ t('payroll.email.reset_default') }}</button>
         </div>
 
         <!-- Header -->
         <div class="template-section">
-          <label class="section-label">📝 邮件顶部（可选 — 问候语、公司Logo等）</label>
+          <label class="section-label">{{ t('payroll.email.email_header_label') }}</label>
           <el-input v-model="form.email_header_html" type="textarea" :rows="2"
-            placeholder="例：&lt;p&gt;各位员工，请查收本月工资单。如有疑问请联系HR。&lt;/p&gt;" />
-          <button class="reset-link" @click="resetHeader" v-if="form.email_header_html">清空</button>
+            :placeholder="t('payroll.email.header_placeholder')" />
+          <button class="reset-link" @click="resetHeader" v-if="form.email_header_html">{{ t('payroll.email.clear') }}</button>
         </div>
 
         <!-- ── Payslip Items ── -->
         <div class="template-section">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-            <label class="section-label" style="margin-bottom:0;">📄 工资单显示项目</label>
+            <label class="section-label" style="margin-bottom:0;">📄 {{ t('payroll.email.payslip_items_label') }}</label>
             <div style="display:flex;gap:8px;align-items:center;">
-              <el-tag v-if="hasCustomOverrides()" size="small" type="warning">已自定义</el-tag>
-              <el-tag v-else size="small" type="info">使用默认</el-tag>
-              <button class="reset-link" @click="resetItemOverrides" v-if="hasCustomOverrides()">恢复默认</button>
+              <el-tag v-if="hasCustomOverrides()" size="small" type="warning">{{ t('payroll.email.customized') }}</el-tag>
+              <el-tag v-else size="small" type="info">{{ t('payroll.email.using_default') }}</el-tag>
+              <button class="reset-link" @click="resetItemOverrides" v-if="hasCustomOverrides()">{{ t('payroll.email.reset_default') }}</button>
             </div>
           </div>
           <p style="font-size:.8rem;color:#9ca3af;margin:0 0 10px;">
-            勾选要显示的项目。默认值来自<a href="/payroll/jp/item-definitions" target="_blank" style="color:#1B6CB2;">工资项目定义</a>。
+            {{ t('payroll.email.items_hint', { url: '/payroll/jp/item-definitions' }) }}<a href="/payroll/jp/item-definitions" target="_blank" style="color:#1B6CB2;">{{ t('payroll.email.items_hint', { url: '/payroll/jp/item-definitions' }) }}</a>。
           </p>
 
           <div class="items-grid">
             <div class="item-group" v-if="earningItems.length">
-              <div class="item-group-title">💰 支给项目</div>
+              <div class="item-group-title">💰 {{ t('payroll.email.earnings_group') }}</div>
               <label v-for="item in earningItems" :key="item.code" class="item-row">
                 <el-checkbox :model-value="!!visibleItems[item.code]" @change="() => toggleItem(item.code)" />
                 <span class="item-label">{{ getItemLabel(item) }}</span>
@@ -395,7 +395,7 @@ onMounted(load)
               </label>
             </div>
             <div class="item-group" v-if="deductionItems.length">
-              <div class="item-group-title">📉 控除项目</div>
+              <div class="item-group-title">📉 {{ t('payroll.email.deductions_group') }}</div>
               <label v-for="item in deductionItems" :key="item.code" class="item-row">
                 <el-checkbox :model-value="!!visibleItems[item.code]" @change="() => toggleItem(item.code)" />
                 <span class="item-label">{{ getItemLabel(item) }}</span>
@@ -403,7 +403,7 @@ onMounted(load)
               </label>
             </div>
             <div class="item-group" v-if="employerItems.length">
-              <div class="item-group-title">🏢 会社负担</div>
+              <div class="item-group-title">🏢 {{ t('payroll.email.employer_cost_group') }}</div>
               <label v-for="item in employerItems" :key="item.code" class="item-row">
                 <el-checkbox :model-value="!!visibleItems[item.code]" @change="() => toggleItem(item.code)" />
                 <span class="item-label">{{ getItemLabel(item) }}</span>
@@ -415,10 +415,10 @@ onMounted(load)
 
         <!-- Footer -->
         <div class="template-section">
-          <label class="section-label">📝 邮件底部（可选 — 签名、免责声明等）</label>
+          <label class="section-label">{{ t('payroll.email.email_footer_label') }}</label>
           <el-input v-model="form.email_footer_html" type="textarea" :rows="2"
-            placeholder="例：&lt;p style='color:#999;font-size:12px;'&gt;此邮件由系统自动发送。如有疑问请联系 HR。&lt;/p&gt;" />
-          <button class="reset-link" @click="resetFooter" v-if="form.email_footer_html">清空</button>
+            :placeholder="t('payroll.email.footer_placeholder')" />
+          <button class="reset-link" @click="resetFooter" v-if="form.email_footer_html">{{ t('payroll.email.clear') }}</button>
         </div>
       </div>
 
@@ -431,14 +431,14 @@ onMounted(load)
                 <span class="card-icon">🔧</span>
                 <div>
                   <h3 class="card-title" style="margin-bottom:0;">
-                    SMTP 设置
-                    <span v-if="!smtpAvailable && !isSmtpOverrideActive()" style="color:#dc2626;font-size:.8rem;">（必填 — 未配置则无法发送邮件）</span>
-                    <span v-else-if="smtpAvailable" style="color:#059669;font-size:.8rem;">（系统已配置 ✅）</span>
-                    <span v-else style="color:#1B6CB2;font-size:.8rem;">（已填写）</span>
+                    {{ t('payroll.email.smtp_settings') }}
+                    <span v-if="!smtpAvailable && !isSmtpOverrideActive()" style="color:#dc2626;font-size:.8rem;">{{ t('payroll.email.smtp_required_warning') }}</span>
+                    <span v-else-if="smtpAvailable" style="color:#059669;font-size:.8rem;">{{ t('payroll.email.system_configured') }}</span>
+                    <span v-else style="color:#1B6CB2;font-size:.8rem;">{{ t('payroll.email.password_filled') }}</span>
                   </h3>
                   <p class="card-hint" style="margin-bottom:0;">
-                    <template v-if="smtpAvailable">当前使用系统SMTP服务器发送邮件，一般无需修改。</template>
-                    <template v-else>系统SMTP未配置，请填写以下信息以启用邮件发送。</template>
+                    <template v-if="smtpAvailable">当前使用系统SMTP服务器发送邮件，一般无需{{ t('payroll.email.change_password') }}。</template>
+                    <template v-else>{{ t('payroll.email.smtp_not_configured') }}</template>
                   </p>
                 </div>
               </div>
@@ -446,40 +446,40 @@ onMounted(load)
             <div class="smtp-body">
               <div class="form-row">
                 <div class="form-group" style="flex:2;">
-                  <label>SMTP 服务器地址</label>
+                  <label>{{ t('payroll.email.smtp_server_addr') }}</label>
                   <el-input v-model="form.smtp_host" placeholder="smtp.qq.com / smtp.gmail.com / smtp.office365.com" />
-                  <span class="field-hint">邮件服务商的 SMTP 服务器域名。系统SMTP已配置时无需填写。</span>
+                  <span class="field-hint">{{ t('payroll.email.smtp_server_hint') }}</span>
                 </div>
                 <div class="form-group" style="max-width:130px;">
-                  <label>端口</label>
+                  <label>{{ t('payroll.email.smtp_port') }}</label>
                   <el-input-number v-model="form.smtp_port" :min="1" :max="65535" style="width:100%" />
-                  <span class="field-hint">通常是 587</span>
+                  <span class="field-hint">{{ t('payroll.email.smtp_port_hint') }}</span>
                 </div>
               </div>
               <div class="form-row" style="margin-top:12px;">
                 <div class="form-group">
-                  <label>邮箱账号</label>
+                  <label>{{ t('payroll.email.smtp_user') }}</label>
                   <el-input v-model="form.smtp_user" placeholder="notify@yourcompany.com" />
-                  <span class="field-hint">通常是发件邮箱地址</span>
+                  <span class="field-hint">{{ t('payroll.email.smtp_user_hint') }}</span>
                 </div>
                 <div class="form-group">
-                  <label>授权码 / 密码</label>
+                  <label>{{ t('payroll.email.smtp_password') }}</label>
                   <div style="display:flex;gap:8px;align-items:center;">
                     <template v-if="!showPasswordInput && form.smtp_password_set">
-                      <el-tag type="success" size="default">已设置</el-tag>
-                      <el-button text size="small" type="primary" @click="showPasswordInput = true">修改</el-button>
+                      <el-tag type="success" size="default">{{ t('payroll.email.password_set') }}</el-tag>
+                      <el-button text size="small" type="primary" @click="showPasswordInput = true">{{ t('payroll.email.change_password') }}</el-button>
                     </template>
-                    <el-input v-else v-model="form.smtp_password" type="password" show-password placeholder="邮箱授权码（非登录密码）" style="flex:1" />
+                    <el-input v-else v-model="form.smtp_password" type="password" show-password :placeholder="t('payroll.email.smtp_password_hint')" style="flex:1" />
                   </div>
-                  <span class="field-hint">QQ/Gmail等需要使用授权码，不是邮箱登录密码</span>
+                  <span class="field-hint">{{ t('payroll.email.password_hint') }}</span>
                 </div>
               </div>
               <div style="margin-top:12px;">
                 <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
                   <el-switch v-model="form.smtp_use_tls" size="small" />
-                  <span>TLS 加密</span>
+                  <span>{{ t('payroll.email.tls_encryption') }}</span>
                 </label>
-                <span class="field-hint" style="margin-left:44px;">端口 587 时通常开启，端口 465 时关闭（用SSL）</span>
+                <span class="field-hint" style="margin-left:44px;">{{ t('payroll.email.smtp_port') }} 587 时通常开启，{{ t('payroll.email.smtp_port') }} 465 时{{ t('payroll.payslip.close') }}（用SSL）</span>
               </div>
             </div>
           </el-collapse-item>
@@ -491,29 +491,29 @@ onMounted(load)
         <div class="card-header">
           <span class="card-icon">🧪</span>
           <div style="flex:1;">
-            <h3 class="card-title">发送测试邮件</h3>
-            <p class="card-hint">用当前设置发送一封测试邮件到指定邮箱，确认配置正确。</p>
+            <h3 class="card-title">{{ t('payroll.email.test_email_title') }}</h3>
+            <p class="card-hint">{{ t('payroll.email.test_email_hint') }}</p>
           </div>
         </div>
         <div style="display:flex;gap:8px;align-items:flex-end;">
           <div class="form-group" style="flex:1;margin-bottom:0;">
-            <label>收件人邮箱</label>
+            <label>{{ t('payroll.email.recipient_email') }}</label>
             <el-input v-model="testEmail" placeholder="your@email.com" @keyup.enter="sendTest" />
           </div>
-          <el-button type="warning" :loading="testing" :disabled="!testEmail.trim()" @click="sendTest">发送测试</el-button>
+          <el-button type="warning" :loading="testing" :disabled="!testEmail.trim()" @click="sendTest">{{ t('payroll.email.send_test') }}</el-button>
         </div>
-        <div v-if="testResult === 'success'" class="test-msg success">✅ 测试邮件已发送，请检查收件箱</div>
-        <div v-if="testResult === 'error'" class="test-msg error">❌ 发送失败，请检查SMTP配置</div>
+        <div v-if="testResult === 'success'" class="test-msg success">{{ t('payroll.email.test_sent') }}</div>
+        <div v-if="testResult === 'error'" class="test-msg error">{{ t('payroll.email.test_failed') }}</div>
       </div>
 
       <!-- Save -->
       <div style="text-align:center;margin-top:24px;padding-bottom:40px;">
-        <el-button type="primary" size="large" :loading="saving" @click="save">💾 保存设置</el-button>
+        <el-button type="primary" size="large" :loading="saving" @click="save">{{ t('payroll.email.save_settings') }}</el-button>
       </div>
     </div>
 
     <!-- ═══ Preview Dialog ═══ -->
-    <el-dialog v-model="previewDialog" title="📧 邮件预览" width="1000px" top="2vh" destroy-on-close class="preview-dialog">
+    <el-dialog v-model="previewDialog" title="📧 {{ t('payroll.email.preview') }}" width="1000px" top="2vh" destroy-on-close class="preview-dialog">
       <div v-loading="previewLoading" style="min-height:300px;">
         <template v-if="!previewLoading && previewData.html">
           <div class="preview-subject-line">
@@ -525,9 +525,9 @@ onMounted(load)
           </div>
           <iframe :srcdoc="previewData.html" class="preview-iframe" sandbox="allow-same-origin" />
         </template>
-        <div v-if="!previewLoading && !previewData.html" style="text-align:center;padding:60px;color:#9ca3af;"><p>无法加载预览</p></div>
+        <div v-if="!previewLoading && !previewData.html" style="text-align:center;padding:60px;color:#9ca3af;"><p>{{ t('payroll.email.preview_unavailable') }}</p></div>
       </div>
-      <template #footer><el-button @click="previewDialog = false">关闭</el-button></template>
+      <template #footer><el-button @click="previewDialog = false">{{ t('payroll.payslip.close') }}</el-button></template>
     </el-dialog>
   </div>
 </template>

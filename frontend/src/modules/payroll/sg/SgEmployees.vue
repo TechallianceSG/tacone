@@ -42,6 +42,7 @@ const toggleReason = ref('')
 
 // Dropdowns
 const entities = ref<any[]>([])
+const departments = ref<any[]>([])
 
 // ── Load ──
 async function load() {
@@ -63,8 +64,12 @@ function handleSizeChange(s: number) { pageSize.value = s; page.value = 1; load(
 
 async function loadDropdowns() {
   try {
-    const er = await payrollSgApi.entities()
+    const [er, dr] = await Promise.all([
+      payrollSgApi.entities(),
+      payrollSgApi.departments(),
+    ])
     entities.value = (er.data?.data || er.data || []) as any[]
+    departments.value = (dr.data?.data || dr.data || []) as any[]
   } catch (_) {}
 }
 
@@ -286,6 +291,7 @@ const fmt = (v: number) => v ? `SGD ${Number(v).toLocaleString(undefined, { mini
       country-code="sg"
       :api="payrollSgApi"
       :entities="entities"
+      :departments="departments"
       :entity-resolver="entityLabelById"
       @imported="onImported"
     />

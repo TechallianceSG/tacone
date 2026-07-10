@@ -134,8 +134,12 @@ def calc_salary(
     if actual_days >= full_days:
         full_attendance_bonus = float(emp.get("full_attendance_bonus", 200))
 
+    # ── Fixed Allowances ──
+    transport_allowance = float(emp.get("transport_allowance", 0))
+    bonus = float(emp.get("bonus", 0))
+
     # ── Gross Pay ──
-    gross_pay = attendance_pay + sick_leave_pay + full_attendance_bonus + other_additions
+    gross_pay = attendance_pay + sick_leave_pay + full_attendance_bonus + transport_allowance + bonus + other_additions
 
     # ── Social Insurance Base ──
     si_base = float(emp.get("social_insurance_base", monthly_base))
@@ -188,6 +192,8 @@ def calc_salary(
         "attendance_pay": attendance_pay,
         "sick_leave_pay": sick_leave_pay,
         "full_attendance_bonus": full_attendance_bonus,
+        "transport_allowance": transport_allowance,
+        "bonus": bonus,
         "other_additions": other_additions,
         "gross_pay": round(gross_pay, 2),
         # Deductions

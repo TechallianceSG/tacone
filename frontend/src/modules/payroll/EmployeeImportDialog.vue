@@ -41,7 +41,7 @@ const filteredList = computed(() => {
   if (importFilterEntity.value) result = result.filter((e: any) => e.entity_id === importFilterEntity.value)
   if (importFilterDept.value) {
     result = result.filter((e: any) =>
-      (e.department_name || e.department || '') === importFilterDept.value
+      e.department_id === importFilterDept.value
     )
   }
   if (importSearch.value) {
@@ -63,7 +63,15 @@ const entityLabel = (entityId: string) => {
   return entityId
 }
 
-const deptLabel = (row: any) => row.department_name || row.department || '-'
+const deptLabel = (row: any) => {
+  if (row.department_name || row.department) return row.department_name || row.department
+  const deptId = row.department_id
+  if (deptId && props.departments?.length) {
+    const d = props.departments.find((x: any) => x.department_id === deptId)
+    if (d) return d.department_name_en || d.department_name_ja || d.department_name || d.department_id
+  }
+  return '-'
+}
 
 const displayName = (row: any) => row.display_name || row.employee_name || ''
 
@@ -155,7 +163,7 @@ function onClose() {
           v-for="d in departments"
           :key="d.department_id"
           :label="d.department_name_en || d.department_name_ja || d.department_name || d.department_id"
-          :value="d.department_name_en || d.department_name_ja || d.department_name"
+          :value="d.department_id"
         />
       </el-select>
     </div>
@@ -200,3 +208,12 @@ function onClose() {
     </template>
   </el-dialog>
 </template>
+
+<style scoped>
+.fiori-filters {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+</style>

@@ -19,6 +19,8 @@ const records = ref<any[]>([])
 const entities = ref<any[]>([])
 
 // Dialogs
+const calcLoading = ref(false)
+const confirmLoading = ref(false)
 const editDialogVisible = ref(false)
 const editForm = ref<Record<string, any>>({})
 const editingRecordId = ref('')
@@ -43,32 +45,32 @@ const netTotal = computed(() => records.value.reduce((s, r) => s + Number(r.net_
 const employerCostTotal = computed(() => records.value.reduce((s, r) => s + Number(r.employer_cost_total || 0), 0))
 
 // ── Edit field groups ──
-const editFieldGroups = [
+const editFieldGroups = computed(() => [
   {
-    title: '出勤 / Attendance',
+    title: t('payroll.cn.attendance_label'),
     fields: [
-      { key: 'full_attendance_days', label: '满勤天数', min: 0, precision: 1 },
-      { key: 'actual_attendance_days', label: '出勤天数', min: 0, precision: 1 },
-      { key: 'personal_leave_days', label: '事假', min: 0, precision: 2 },
-      { key: 'annual_leave_days', label: '年假', min: 0, precision: 2 },
-      { key: 'sick_leave_days', label: '病假', min: 0, precision: 2 },
-      { key: 'other_leave_days', label: '其他假', min: 0, precision: 2 },
+      { key: 'full_attendance_days', label: t('payroll.cn.full_attendance_days'), min: 0, precision: 1 },
+      { key: 'actual_attendance_days', label: t('payroll.cn.attendance_days'), min: 0, precision: 1 },
+      { key: 'personal_leave_days', label: t('payroll.cn.personal_leave'), min: 0, precision: 2 },
+      { key: 'annual_leave_days', label: t('payroll.cn.annual_leave'), min: 0, precision: 2 },
+      { key: 'sick_leave_days', label: t('payroll.cn.sick_leave'), min: 0, precision: 2 },
+      { key: 'other_leave_days', label: t('payroll.cn.other_leave'), min: 0, precision: 2 },
     ],
   },
   {
-    title: '收入 / Earnings',
+    title: t('payroll.cn.total_earnings'),
     fields: [
-      { key: 'other_additions', label: '其他加项', min: 0, precision: 2 },
-      { key: 'full_attendance_bonus', label: '全勤奖', min: 0, precision: 2 },
+      { key: 'other_additions', label: t('payroll.cn.other_allowance'), min: 0, precision: 2 },
+      { key: 'full_attendance_bonus', label: t('payroll.cn.full_attendance_bonus'), min: 0, precision: 2 },
     ],
   },
   {
-    title: '扣除 / Deductions',
+    title: t('payroll.cn.total_deductions'),
     fields: [
-      { key: 'other_deductions', label: '其他扣款', min: 0, precision: 2 },
+      { key: 'other_deductions', label: t('payroll.cn.other_deduction'), min: 0, precision: 2 },
     ],
   },
-]
+])
 
 // ── Auto-compute totals in edit form ──
 watch(() => editForm.value, () => {
@@ -117,29 +119,35 @@ async function loadEntities() {
 }
 
 async function doCalculate() {
+  const isRecalc = batch.value.status === 'calculated'
   try {
-    await ElMessageBox.confirm('计算将覆盖所有当前数据，确定继续？', '确认计算', { type: 'warning' })
-    loading.value = true
+    await ElMessageBox.confirm(
+      isRecalc ? t('payroll.jp.recalculate_confirm_msg') : t('payroll.cn.calc_warning'),
+      isRecalc ? t('payroll.jp.recalculate') : t('payroll.cn.confirm_calc'),
+      { type: 'warning' }
+    )
+    calcLoading.value = true
     await payrollCnApi.calculateBatch(batchId.value)
-    ElMessage.success('计算完成')
+    ElMessage.success(isRecalc ? t('payroll.jp.recalculated') : t('payroll.cn.calc_completed'))
     loadBatch()
-  } catch (_) { } finally { loading.value = false }
+  } catch (_) { } finally { calcLoading.value = false }
 }
 
 async function doConfirm() {
   try {
-    await ElMessageBox.confirm('定稿后将生成工资单，确定继续？', '确认定稿', { type: 'warning' })
+    await ElMessageBox.confirm(t('payroll.cn.finalize_warning'), t('payroll.cn.confirm_finalize'), { type: 'warning' })
+    confirmLoading.value = true
     await payrollCnApi.confirmBatch(batchId.value)
-    ElMessage.success('已定稿')
+    ElMessage.success(t('payroll.cn.confirmed'))
     loadBatch()
-  } catch (_) {}
+  } catch (_) { } finally { confirmLoading.value = false }
 }
 
 async function doRollback() {
-  if (!rollbackReason.value.trim()) { ElMessage.warning('请输入回退原因'); return }
+  if (!rollbackReason.value.trim()) { ElMessage.warning(t('payroll.cn.rollback_reason_required')); return }
   try {
     await payrollCnApi.rollbackBatch(batchId.value, { reason: rollbackReason.value })
-    ElMessage.success('已回退')
+    ElMessage.success(t('payroll.cn.rolled_back'))
     rollbackDialogVisible.value = false
     rollbackReason.value = ''
     loadBatch()
@@ -148,18 +156,18 @@ async function doRollback() {
 
 async function doVoid() {
   try {
-    const { value: reason } = await ElMessageBox.prompt('请输入作废原因', '确认作废', { type: 'warning' })
+    const { value: reason } = await ElMessageBox.prompt(t('payroll.cn.rollback_reason_placeholder'), t('payroll.cn.confirm_void'), { type: 'warning' })
     await payrollCnApi.voidBatch(batchId.value, { reason })
-    ElMessage.success('已作废')
+    ElMessage.success(t('payroll.cn.voided'))
     loadBatch()
   } catch (_) {}
 }
 
 async function doDelete() {
   try {
-    await ElMessageBox.confirm('确定删除此批次吗？此操作不可撤销。', '确认删除', { type: 'warning' })
+    await ElMessageBox.confirm(t('payroll.cn.delete_warning'), t('payroll.cn.confirm_delete'), { type: 'warning' })
     await payrollCnApi.deleteBatch(batchId.value)
-    ElMessage.success('已删除')
+    ElMessage.success(t('payroll.cn.deleted'))
     router.push('/payroll/cn/batches')
   } catch (_) {}
 }
@@ -174,7 +182,7 @@ function openEditRecord(row: any) {
 async function saveEditRecord() {
   try {
     await payrollCnApi.editRecord(batchId.value, editingRecordId.value, editForm.value)
-    ElMessage.success('记录已更新')
+    ElMessage.success(t('payroll.cn.record_updated'))
     editDialogVisible.value = false
     loadBatch()
   } catch (e: any) { ElMessage.error(e?.response?.data?.error || 'Edit failed') }
@@ -183,7 +191,7 @@ async function saveEditRecord() {
 async function recalculateRecord(row: any) {
   try {
     await payrollCnApi.recalculateSingleRecord(batchId.value, row.record_id)
-    ElMessage.success('已重新计算')
+    ElMessage.success(t('payroll.cn.recalculated'))
     loadBatch()
   } catch (e: any) { ElMessage.error(e?.response?.data?.error || 'Recalculate failed') }
 }
@@ -218,24 +226,31 @@ onMounted(() => { loadEntities(); loadBatch() })
 </script>
 
 <template>
-  <div class="fiori-page" v-loading="loading">
+  <div class="page-container">
     <!-- Header -->
     <div class="page-header">
       <div class="header-left">
         <el-button link @click="router.push('/payroll/cn/batches')">
           ← {{ t('payroll.cn.batches') }}
         </el-button>
-        <h2>{{ t('payroll.cn.batch_detail') }}</h2>
-        <el-tag :type="statusConfig.type || 'info'" size="small">{{ t(statusConfig.label) }}</el-tag>
-        <span class="helper-text">{{ batch.batch_id }}</span>
+        <h3>{{ t('payroll.cn.batch_detail') }}</h3>
+        <el-tag v-if="batch.status" :type="(statusConfig.type || 'info') as any" size="default">
+          {{ t(statusConfig.label) }}
+        </el-tag>
+        <span class="helper-text">{{ batch.batch_id || '-' }}</span>
+        <span v-if="batch.rollback_reason" class="rollback-chip">↩ {{ batch.rollback_reason }}</span>
       </div>
       <div class="header-actions">
-        <el-button v-if="canCalculate" type="primary" @click="doCalculate">🧮 计算</el-button>
-        <el-button v-if="canConfirm" type="success" @click="doConfirm">✅ 定稿</el-button>
-        <el-button v-if="canRollback" type="warning" @click="rollbackDialogVisible = true">↩️ 回退</el-button>
-        <el-button v-if="canVoid" type="danger" plain @click="doVoid">🚫 作废</el-button>
-        <el-button @click="openAuditLogs">📋 审计日志</el-button>
-        <el-button v-if="canVoid" type="danger" link @click="doDelete">🗑️ 删除</el-button>
+        <el-button v-if="canCalculate" type="primary" :loading="calcLoading" @click="doCalculate">
+          {{ batch.status === 'calculated' ? t('payroll.jp.recalculate') : t('payroll.jp.calculate') }}
+        </el-button>
+        <el-button v-if="canConfirm" type="success" :loading="confirmLoading" @click="doConfirm">
+          {{ t('payroll.jp.confirm') }}
+        </el-button>
+        <el-button v-if="canRollback" type="warning" plain @click="rollbackDialogVisible = true">
+          {{ t('payroll.jp.rollback') }}
+        </el-button>
+        <el-button @click="openAuditLogs">{{ t('payroll.jp.audit_log') }}</el-button>
       </div>
     </div>
 
@@ -251,23 +266,23 @@ onMounted(() => { loadEntities(); loadBatch() })
     <!-- Summary Cards -->
     <div class="summary-row">
       <div class="summary-card">
-        <div class="sc-label">员工数</div>
+        <div class="sc-label">{{ t('payroll.cn.employee_count') }}</div>
         <div class="sc-value">{{ batch.employee_count || 0 }}</div>
       </div>
       <div class="summary-card">
-        <div class="sc-label">应发合计</div>
+        <div class="sc-label">{{ t('payroll.cn.gross_total') }}</div>
         <div class="sc-value">{{ fmtInt(grossTotal) }}</div>
       </div>
       <div class="summary-card">
-        <div class="sc-label">扣除合计</div>
+        <div class="sc-label">{{ t('payroll.cn.deduction_total') }}</div>
         <div class="sc-value" style="color:#dc2626">{{ fmtInt(deductionTotal) }}</div>
       </div>
       <div class="summary-card">
-        <div class="sc-label">实发合计</div>
+        <div class="sc-label">{{ t('payroll.cn.net_total') }}</div>
         <div class="sc-value" style="color:#059669">{{ fmtInt(netTotal) }}</div>
       </div>
       <div class="summary-card">
-        <div class="sc-label">雇主成本</div>
+        <div class="sc-label">{{ t('payroll.cn.employer_cost') }}</div>
         <div class="sc-value" style="color:#e65100">{{ fmtInt(employerCostTotal) }}</div>
       </div>
     </div>
@@ -275,10 +290,10 @@ onMounted(() => { loadEntities(); loadBatch() })
     <!-- Info -->
     <div class="info-row">
       <el-descriptions :column="4" size="small" border>
-        <el-descriptions-item label="工资月份">{{ batch.payroll_month }}</el-descriptions-item>
-        <el-descriptions-item label="法人实体">{{ entityLabel(batch.entity_id) }}</el-descriptions-item>
-        <el-descriptions-item label="标准工作天数">{{ batch.working_days_in_month || 22 }}</el-descriptions-item>
-        <el-descriptions-item label="创建人">{{ batch.created_by }}</el-descriptions-item>
+        <el-descriptions-item :label="t('field.payroll_month')">{{ batch.payroll_month }}</el-descriptions-item>
+        <el-descriptions-item :label="t('field.entity')">{{ entityLabel(batch.entity_id) }}</el-descriptions-item>
+        <el-descriptions-item :label="t('field.standard_work_days')">{{ batch.working_days_in_month || 22 }}</el-descriptions-item>
+        <el-descriptions-item :label="t('field.created_by')">{{ batch.created_by }}</el-descriptions-item>
       </el-descriptions>
     </div>
 
@@ -286,70 +301,70 @@ onMounted(() => { loadEntities(); loadBatch() })
     <div class="fiori-card" style="margin-top:16px">
       <el-table :data="records" border stripe size="small" style="width:100%">
         <el-table-column type="index" width="40" fixed="left" />
-        <el-table-column prop="employee_name" label="姓名" min-width="100" fixed="left" />
-        <el-table-column prop="employee_number" label="编号" min-width="90" />
+        <el-table-column prop="employee_name" :label="t('payroll.cn.col_name')" min-width="100" fixed="left" />
+        <el-table-column prop="employee_number" :label="t('payroll.cn.col_employee_no')" min-width="90" />
 
         <!-- Attendance -->
-        <el-table-column label="满勤天数" min-width="80" align="center">
+        <el-table-column :label="t('payroll.cn.full_attendance_days')" min-width="80" align="center">
           <template #default="{ row }">{{ row.full_attendance_days }}</template>
         </el-table-column>
-        <el-table-column label="出勤天数" min-width="80" align="center">
+        <el-table-column :label="t('payroll.cn.attendance_days')" min-width="80" align="center">
           <template #default="{ row }">{{ row.actual_attendance_days }}</template>
         </el-table-column>
-        <el-table-column label="事假" min-width="60" align="center">
+        <el-table-column :label="t('payroll.cn.personal_leave')" min-width="60" align="center">
           <template #default="{ row }">{{ row.personal_leave_days || 0 }}</template>
         </el-table-column>
-        <el-table-column label="年假" min-width="60" align="center">
+        <el-table-column :label="t('payroll.cn.annual_leave')" min-width="60" align="center">
           <template #default="{ row }">{{ row.annual_leave_days || 0 }}</template>
         </el-table-column>
-        <el-table-column label="病假" min-width="60" align="center">
+        <el-table-column :label="t('payroll.cn.sick_leave')" min-width="60" align="center">
           <template #default="{ row }">{{ row.sick_leave_days || 0 }}</template>
         </el-table-column>
 
         <!-- Earnings -->
-        <el-table-column label="基本工资" min-width="110" align="right">
+        <el-table-column :label="t('field.basic_salary')" min-width="110" align="right">
           <template #default="{ row }">{{ fmtCurrency(row.basic_salary) }}</template>
         </el-table-column>
-        <el-table-column label="职位津贴" min-width="110" align="right">
+        <el-table-column :label="t('field.position_allowance')" min-width="110" align="right">
           <template #default="{ row }">{{ fmtCurrency(row.position_allowance) }}</template>
         </el-table-column>
-        <el-table-column label="出勤工资" min-width="110" align="right">
+        <el-table-column :label="t('payroll.cn.attendance_salary')" min-width="110" align="right">
           <template #default="{ row }">{{ fmtCurrency(row.attendance_pay) }}</template>
         </el-table-column>
-        <el-table-column label="病假工资" min-width="100" align="right">
+        <el-table-column :label="t('payroll.cn.sick_leave_salary')" min-width="100" align="right">
           <template #default="{ row }">{{ fmtCurrency(row.sick_leave_pay) }}</template>
         </el-table-column>
-        <el-table-column label="全勤奖" min-width="80" align="right">
+        <el-table-column :label="t('payroll.cn.full_attendance_bonus')" min-width="80" align="right">
           <template #default="{ row }">{{ fmtCurrency(row.full_attendance_bonus) }}</template>
         </el-table-column>
-        <el-table-column label="其他加项" min-width="100" align="right">
+        <el-table-column :label="t('payroll.cn.other_allowance')" min-width="100" align="right">
           <template #default="{ row }">{{ fmtCurrency(row.other_additions) }}</template>
         </el-table-column>
 
         <!-- Deductions -->
-        <el-table-column label="社保(个人)" min-width="110" align="right">
+        <el-table-column :label="t('payroll.cn.social_insurance_employee')" min-width="110" align="right">
           <template #default="{ row }">{{ fmtCurrency(row.social_insurance) }}</template>
         </el-table-column>
-        <el-table-column label="公积金(个人)" min-width="110" align="right">
+        <el-table-column :label="t('payroll.cn.housing_fund_employee')" min-width="110" align="right">
           <template #default="{ row }">{{ fmtCurrency(row.housing_fund) }}</template>
         </el-table-column>
-        <el-table-column label="个税" min-width="90" align="right">
+        <el-table-column :label="t('payroll.cn.income_tax')" min-width="90" align="right">
           <template #default="{ row }">{{ fmtCurrency(row.iit) }}</template>
         </el-table-column>
-        <el-table-column label="其他扣款" min-width="100" align="right">
+        <el-table-column :label="t('payroll.cn.other_deduction')" min-width="100" align="right">
           <template #default="{ row }">{{ fmtCurrency(row.other_deductions) }}</template>
         </el-table-column>
 
         <!-- Totals -->
-        <el-table-column label="应发合计" min-width="110" align="right">
+        <el-table-column :label="t('payroll.cn.gross_total')" min-width="110" align="right">
           <template #default="{ row }">
             <strong>{{ fmtCurrency(row.gross_pay) }}</strong>
           </template>
         </el-table-column>
-        <el-table-column label="扣除合计" min-width="110" align="right">
+        <el-table-column :label="t('payroll.cn.deduction_total')" min-width="110" align="right">
           <template #default="{ row }">{{ fmtCurrency(row.deduction_total) }}</template>
         </el-table-column>
-        <el-table-column label="实发工资" min-width="120" align="right" fixed="right">
+        <el-table-column :label="t('payroll.cn.net_pay')" min-width="120" align="right" fixed="right">
           <template #default="{ row }">
             <el-tag :type="Number(row.net_pay) >= 0 ? 'success' : 'danger'" size="small">
               {{ fmtCurrency(row.net_pay) }}
@@ -358,27 +373,27 @@ onMounted(() => { loadEntities(); loadBatch() })
         </el-table-column>
 
         <!-- Employer -->
-        <el-table-column label="社保(单位)" min-width="110" align="right">
+        <el-table-column :label="t('payroll.cn.social_insurance_employer')" min-width="110" align="right">
           <template #default="{ row }">{{ fmtCurrency(row.employer_social_insurance) }}</template>
         </el-table-column>
-        <el-table-column label="公积金(单位)" min-width="110" align="right">
+        <el-table-column :label="t('payroll.cn.housing_fund_employer')" min-width="110" align="right">
           <template #default="{ row }">{{ fmtCurrency(row.employer_housing_fund) }}</template>
         </el-table-column>
 
         <!-- Manual edit indicator -->
         <el-table-column label="" width="30" align="center">
           <template #default="{ row }">
-            <el-tooltip v-if="row.manually_edited" content="已手动编辑" placement="top">
+            <el-tooltip v-if="row.manually_edited" :content="t('payroll.cn.manually_edited')" placement="top">
               <span style="color:#e65100">✏️</span>
             </el-tooltip>
           </template>
         </el-table-column>
 
         <!-- Actions -->
-        <el-table-column label="操作" min-width="130" fixed="right" align="center">
+        <el-table-column :label="t('payroll.cn.col_actions')" min-width="130" fixed="right" align="center">
           <template #default="{ row }">
-            <el-button v-if="canEditRecords" link type="primary" size="small" @click="openEditRecord(row)">编辑</el-button>
-            <el-button link type="success" size="small" @click="recalculateRecord(row)">重算</el-button>
+            <el-button v-if="canEditRecords" link type="primary" size="small" @click="openEditRecord(row)">{{ t('payroll.cn.edit') }}</el-button>
+            <el-button link type="success" size="small" @click="recalculateRecord(row)">{{ t('payroll.cn.recalc') }}</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -386,7 +401,7 @@ onMounted(() => { loadEntities(); loadBatch() })
     <div class="helper-text" style="margin-top:8px">{{ records.length }} record(s) total</div>
 
     <!-- Edit Record Dialog -->
-    <el-dialog v-model="editDialogVisible" :title="`编辑记录 — ${editForm.employee_name}`" width="700px">
+    <el-dialog v-model="editDialogVisible" :title="t('payroll.jp.edit_record_title', { name: editForm.employee_name })" width="700px">
       <div v-for="group in editFieldGroups" :key="group.title" style="margin-bottom:16px">
         <h4 style="margin:0 0 8px;color:#1d2a3a;font-size:.95rem">{{ group.title }}</h4>
         <el-row :gutter="12">
@@ -400,29 +415,29 @@ onMounted(() => { loadEntities(); loadBatch() })
       <!-- Totals (read-only) -->
       <div style="background:#f9fafb;padding:12px 16px;border-radius:8px;margin-top:8px">
         <el-row :gutter="12">
-          <el-col :span="8"><span style="color:#6b7280;font-size:.85rem">应发合计:</span> <strong>{{ fmtCurrency(editForm.gross_pay) }}</strong></el-col>
-          <el-col :span="8"><span style="color:#6b7280;font-size:.85rem">扣除合计:</span> <strong style="color:#dc2626">{{ fmtCurrency(editForm.deduction_total) }}</strong></el-col>
-          <el-col :span="8"><span style="color:#6b7280;font-size:.85rem">实发工资:</span> <strong style="color:#059669">{{ fmtCurrency(editForm.net_pay) }}</strong></el-col>
+          <el-col :span="8"><span style="color:#6b7280;font-size:.85rem">{{ t('payroll.cn.gross_total_label') }}</span> <strong>{{ fmtCurrency(editForm.gross_pay) }}</strong></el-col>
+          <el-col :span="8"><span style="color:#6b7280;font-size:.85rem">{{ t('payroll.cn.deduction_total_label') }}</span> <strong style="color:#dc2626">{{ fmtCurrency(editForm.deduction_total) }}</strong></el-col>
+          <el-col :span="8"><span style="color:#6b7280;font-size:.85rem">{{ t('payroll.cn.net_pay_label') }}</span> <strong style="color:#059669">{{ fmtCurrency(editForm.net_pay) }}</strong></el-col>
         </el-row>
       </div>
       <template #footer>
-        <el-button @click="editDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="saveEditRecord">保存</el-button>
+        <el-button @click="editDialogVisible = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" @click="saveEditRecord">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
 
     <!-- Rollback Dialog -->
-    <el-dialog v-model="rollbackDialogVisible" title="回退批次" width="450px">
-      <el-input v-model="rollbackReason" type="textarea" :rows="3" placeholder="请输入回退原因..." />
+    <el-dialog v-model="rollbackDialogVisible" :title="t('payroll.cn.rollback_batch')" width="450px">
+      <el-input v-model="rollbackReason" type="textarea" :rows="3" :placeholder="t('payroll.cn.rollback_reason_placeholder')" />
       <template #footer>
-        <el-button @click="rollbackDialogVisible = false">取消</el-button>
-        <el-button type="warning" @click="doRollback" :disabled="!rollbackReason.trim()">确认回退</el-button>
+        <el-button @click="rollbackDialogVisible = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="warning" @click="doRollback" :disabled="!rollbackReason.trim()">{{ t('payroll.cn.confirm_rollback') }}</el-button>
       </template>
     </el-dialog>
 
     <!-- Audit Log Dialog -->
-    <el-dialog v-model="auditLogDialogVisible" title="审计日志" width="650px">
-      <div v-if="!auditLogs.length" class="helper-text">暂无审计记录</div>
+    <el-dialog v-model="auditLogDialogVisible" :title="t('payroll.cn.audit_log')" width="650px">
+      <div v-if="!auditLogs.length" class="helper-text">{{ t('payroll.cn.no_audit_logs') }}</div>
       <el-timeline v-else>
         <el-timeline-item
           v-for="log in auditLogs" :key="log.id"

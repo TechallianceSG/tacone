@@ -82,9 +82,9 @@ async function sendAll() {
   }
   try {
     await ElMessageBox.confirm(
-      `确认发送 ${count} 封工资单邮件？已发送过的将自动跳过。`,
-      '一键发送全部',
-      { confirmButtonText: '发送', cancelButtonText: '取消', type: 'info' }
+      t('payroll.payslip.confirm_send_n', { n: count }),
+      t('payroll.payslip.send_all_title'),
+      { confirmButtonText: t('payroll.payslip.send'), cancelButtonText: t('common.cancel'), type: 'info' }
     )
   } catch { return }
 
@@ -214,19 +214,19 @@ onMounted(async () => {
       <el-date-picker v-model="filterMonth" type="month" format="YYYY-MM" value-format="YYYY-MM" :placeholder="t('field.payroll_month')" style="width:160px" />
       <el-button type="primary" @click="applyFilters">{{ t('action.filter') }}</el-button>
       <el-button @click="clearFilters">{{ t('action.clear') }}</el-button>
-      <el-button text type="info" @click="openLogDialog">📋 发送日志</el-button>
+      <el-button text type="info" @click="openLogDialog">{{ t('payroll.payslip.close') }}</el-button>
     </div>
 
     <!-- Batch Action Bar -->
     <div class="batch-bar" :class="{ 'batch-disabled': !smtpConfigured }">
       <div class="batch-left">
-        <span class="batch-count">{{ unsentCount }} 封待发送</span>
-        <span v-if="!smtpConfigured" style="font-size:.78rem;color:#e65100;">⚠️ 前往<router-link :to="`${baseRoute}/email-settings`" style="color:#1B6CB2;">邮件设置</router-link>配置SMTP后即可发送</span>
+        <span class="batch-count">{{ t('payroll.payslip.pending_count', { count: unsentCount }) }}</span>
+        <span v-if="!smtpConfigured" style="font-size:.78rem;color:#e65100;">{{ t('payroll.payslip.smtp_notice', { url: `${baseRoute}/email-settings` }) }}</span>
       </div>
       <div class="batch-actions">
-        <el-tooltip :content="!smtpConfigured ? '请先在邮件设置中配置SMTP' : ''" placement="top">
+        <el-tooltip :content="!smtpConfigured ? t('payroll.payslip.needs_smtp_tooltip') : ''" placement="top">
           <el-button type="primary" :disabled="!unsentCount || !smtpConfigured" @click="sendAll">
-            📨 一键发送全部{{ unsentCount ? `（${unsentCount}封）` : '' }}
+            {{ unsentCount ? t('payroll.payslip.send_all_n', { n: unsentCount }) : t('payroll.payslip.send_all') }}
           </el-button>
         </el-tooltip>
       </div>
@@ -286,27 +286,27 @@ onMounted(async () => {
     </div>
 
     <!-- ═══ Email Logs Dialog ═══ -->
-    <el-dialog v-model="logDialog" title="📋 邮件发送日志" width="900px" top="3vh" destroy-on-close>
+    <el-dialog v-model="logDialog" :title="t('payroll.payslip.send_log')" width="900px" top="3vh" destroy-on-close>
       <div v-loading="logLoading" style="min-height:200px;">
         <template v-if="logPaged.length">
           <el-table :data="logPaged" border stripe size="small" style="width:100%">
-            <el-table-column prop="sent_at" label="发送时间" min-width="160">
+            <el-table-column prop="sent_at" :label="t('payroll.payslip.sent_at')" min-width="160">
               <template #default="{row}">{{ row.sent_at?.slice(0, 19) || '—' }}</template>
             </el-table-column>
-            <el-table-column prop="employee_name" label="员工" min-width="120" show-overflow-tooltip />
-            <el-table-column prop="recipient_email" label="收件人" min-width="180" show-overflow-tooltip />
-            <el-table-column prop="status" label="状态" min-width="70" align="center">
+            <el-table-column prop="employee_name" :label="t('payroll.payslip.employee')" min-width="120" show-overflow-tooltip />
+            <el-table-column prop="recipient_email" :label="t('payroll.payslip.recipient')" min-width="180" show-overflow-tooltip />
+            <el-table-column prop="status" :label="t('common.status')" min-width="70" align="center">
               <template #default="{row}">
-                <el-tag size="small" :type="row.status==='sent'?'success':'danger'">{{ row.status==='sent'?'✅ 成功':'❌ 失败' }}</el-tag>
+                <el-tag size="small" :type="row.status==='sent'?'success':'danger'">{{ row.status==='sent'?t('payroll.payslip.success'):t('payroll.payslip.failed') }}</el-tag>
               </template>
             </el-table-column>
-            <el-table-column prop="sent_by" label="操作人" min-width="100" />
-            <el-table-column prop="error_message" label="失败原因" min-width="180" show-overflow-tooltip>
+            <el-table-column prop="sent_by" :label="t('payroll.payslip.operator')" min-width="100" />
+            <el-table-column prop="error_message" :label="t('payroll.payslip.error_reason')" min-width="180" show-overflow-tooltip>
               <template #default="{row}"><span :style="{color:row.error_message?'#dc2626':'#9ca3af'}">{{ row.error_message || '—' }}</span></template>
             </el-table-column>
           </el-table>
           <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;padding:0 4px">
-            <span class="helper-text">{{ emailLogs.length }} 条记录</span>
+            <span class="helper-text">{{ t('payroll.payslip.records_count', { count: emailLogs.length }) }}</span>
             <el-pagination
               v-model:current-page="logPage"
               v-model:page-size="logPageSize"
@@ -317,9 +317,9 @@ onMounted(async () => {
             />
           </div>
         </template>
-        <div v-else style="text-align:center;padding:40px;color:#9ca3af;">暂无发送记录</div>
+        <div v-else style="text-align:center;padding:40px;color:#9ca3af;">{{ t('payroll.payslip.no_logs') }}</div>
       </div>
-      <template #footer><el-button @click="logDialog = false">关闭</el-button></template>
+      <template #footer><el-button @click="logDialog = false">{{ t('payroll.payslip.close') }}</el-button></template>
     </el-dialog>
 
     <!-- ═══ Send Progress Dialog ═══ -->

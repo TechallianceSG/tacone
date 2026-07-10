@@ -186,65 +186,64 @@ async def importable_employees(user: dict = Depends(get_current_user)):
 async def import_salary_employees(request: Request, user: dict = Depends(get_current_user)):
     _check_access(user, "tacaipay_cn.manage")
     body = await request.json()
-    employee_ids = body.get("employee_ids", [])
-    emp_rows = _db.load_table("emp_employees") or []
-    salary_rows = _db.load_table(f"{PREFIX}_salary_master") or []
     imported = 0
-    for eid in employee_ids:
-        emp = next((e for e in emp_rows if e.get("employee_id") == eid), None)
+    emp_rows = _db.load_table("emp_employees") or []
+    for eid in body.get("employee_ids", []):
+        if str(eid) in {str(r.get("employee_id", "")) for r in (_db.load_table(f"{PREFIX}_salary_master") or [])}:
+            continue
+        emp = next((e for e in emp_rows if str(e.get("employee_id")) == str(eid)), None)
         if not emp:
             continue
         profile = emp.get("profile") or {}
-        empl = emp.get("employment") or {}
+        employment = emp.get("employment") or {}
+        name = profile.get("name", {})
         payroll = emp.get("payroll") or {}
-        sm = {
-            "id": _next_id(salary_rows + [{"id": f"SM-{i}"} for i in range(imported)], "id", "SM-"),
-            "employee_id": eid,
-            "employee_number": emp.get("employee_number", ""),
-            "employee_name": profile.get("name", {}).get("display_name", ""),
-            "entity_id": empl.get("entity_id", ""),
-            "department_id": empl.get("department_id", ""),
+        record = {
+            "employee_id": str(emp.get("employee_id", "")),
+            "employee_number": str(emp.get("employee_number", "")),
+            "employee_name": name.get("display_name", f"{name.get('family_name','')} {name.get('given_name','')}".strip()),
+            "email": profile.get("email", ""),
+            "entity_id": employment.get("entity_id", ""),
+            "department_id": employment.get("department_id", ""),
             "salary_type": payroll.get("salary_type", "monthly"),
             "basic_salary": payroll.get("basic_salary", 0),
             "position_allowance": payroll.get("position_allowance", 0),
-            "status": "active",
-            "created_at": _now(),
-            "updated_at": _now(),
+            "transport_allowance": 0,
+            "bonus": 0,
+            "status": "active", "source": "employeeadmin",
+            "created_at": _now(), "updated_at": _now(),
         }
-        salary_rows.append(sm)
+        _db.insert_record(f"{PREFIX}_salary_master", record)
         imported += 1
-    _db.save_table(f"{PREFIX}_salary_master", salary_rows)
     return success_response({"imported": imported})
 
 
 @router.get("/api/payroll/cn/employees/{emp_id}")
 async def get_salary_employee(emp_id: str, user: dict = Depends(get_current_user)):
     _check_access(user)
-    rows = _db.load_table(f"{PREFIX}_salary_master") or []
-    for r in rows:
-        if str(r.get("id") or r.get("employee_id", "")) == emp_id:
-            return success_response(r)
-    raise HTTPException(status_code=404, detail="Not found")
+    rows = _db.load_table(f"{PREFIX}_salary_master", {"employee_id": emp_id})
+    if not rows:
+        raise HTTPException(status_code=404, detail="Not found")
+    return success_response(rows[0])
 
 
 @router.post("/api/payroll/cn/employees")
 async def save_salary_employee(request: Request, user: dict = Depends(get_current_user)):
     _check_access(user, "tacaipay_cn.manage")
     body = await request.json()
-    rows = _db.load_table(f"{PREFIX}_salary_master") or []
     emp_id = body.get("id") or body.get("employee_id")
     if emp_id:
-        for i, r in enumerate(rows):
-            if str(r.get("id") or r.get("employee_id", "")) == str(emp_id):
-                r.update({k: v for k, v in body.items() if k not in ("id", "employee_id")})
-                rows[i] = r
-                _db.save_table(f"{PREFIX}_salary_master", rows)
-                return success_response(r)
-    new_id = _next_id(rows, "id", "SM-")
-    body["id"] = new_id
+        existing = _db.load_table(f"{PREFIX}_salary_master", {"employee_id": str(emp_id)})
+        if existing:
+            updates = {k: v for k, v in body.items() if k not in ("id", "employee_id", "created_at")}
+            updates["updated_at"] = _now()
+            _db.update_record(f"{PREFIX}_salary_master", "employee_id", str(emp_id), updates)
+            updated = _db.load_table(f"{PREFIX}_salary_master", {"employee_id": str(emp_id)})
+            return success_response(updated[0] if updated else body)
+    body["employee_id"] = str(emp_id) if emp_id else str(body.get("employee_id", ""))
     body["created_at"] = _now()
-    rows.append(body)
-    _db.save_table(f"{PREFIX}_salary_master", rows)
+    body["updated_at"] = _now()
+    _db.insert_record(f"{PREFIX}_salary_master", body)
     return success_response(body)
 
 
@@ -253,27 +252,22 @@ async def save_salary_employee(request: Request, user: dict = Depends(get_curren
 @router.post("/api/payroll/cn/employees/{emp_id}/deactivate")
 async def deactivate_employee(emp_id: str, request: Request, user: dict = Depends(get_current_user)):
     _check_access(user, "tacaipay_cn.manage")
-    rows = _db.load_table(f"{PREFIX}_salary_master") or []
-    for r in rows:
-        if str(r.get("id") or r.get("employee_id", "")) == emp_id:
-            r["status"] = "inactive"
-            r["updated_at"] = _now()
-            _db.save_table(f"{PREFIX}_salary_master", rows)
-            return success_response(r)
-    raise HTTPException(status_code=404, detail="Not found")
+    body = await request.json()
+    updates = {"status": "inactive", "updated_at": _now()}
+    ok = _db.update_record(f"{PREFIX}_salary_master", "employee_id", emp_id, updates)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Not found")
+    return success_response({"employee_id": emp_id, **updates})
 
 
 @router.post("/api/payroll/cn/employees/{emp_id}/activate")
 async def activate_employee(emp_id: str, user: dict = Depends(get_current_user)):
     _check_access(user, "tacaipay_cn.manage")
-    rows = _db.load_table(f"{PREFIX}_salary_master") or []
-    for r in rows:
-        if str(r.get("id") or r.get("employee_id", "")) == emp_id:
-            r["status"] = "active"
-            r["updated_at"] = _now()
-            _db.save_table(f"{PREFIX}_salary_master", rows)
-            return success_response(r)
-    raise HTTPException(status_code=404, detail="Not found")
+    updates = {"status": "active", "updated_at": _now()}
+    ok = _db.update_record(f"{PREFIX}_salary_master", "employee_id", emp_id, updates)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Not found")
+    return success_response({"employee_id": emp_id, **updates})
 
 
 @router.get("/api/payroll/cn/employees/{emp_id}/calc-preview")

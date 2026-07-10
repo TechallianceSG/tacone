@@ -336,13 +336,13 @@ onMounted(load)
           <template #default="{row}"><strong>{{ fmt(row.gross_pay) }}</strong></template>
         </el-table-column>
         <!-- SG Contributions (info only, not deducted from pay) -->
-        <el-table-column label="CPF (EE)" width="90" align="right">
+        <el-table-column :label="t('payroll.sg.cpf_ee')" width="90" align="right">
           <template #default="{row}">{{ row.salary_type !== 'daily' ? fmt(row.cpf_employee) : '—' }}</template>
         </el-table-column>
-        <el-table-column label="CPF (ER)" width="90" align="right">
+        <el-table-column :label="t('payroll.sg.cpf_er')" width="90" align="right">
           <template #default="{row}">{{ row.salary_type !== 'daily' ? fmt(row.cpf_employer) : '—' }}</template>
         </el-table-column>
-        <el-table-column label="SDL" width="80" align="right">
+        <el-table-column :label="t('payroll.sg.sdl')" width="80" align="right">
           <template #default="{row}">{{ row.salary_type !== 'daily' ? fmt(row.sdl) : '—' }}</template>
         </el-table-column>
         <!-- Net (equals Gross for SG — no paycheck deductions) -->
@@ -376,7 +376,7 @@ onMounted(load)
     <el-dialog v-model="editDialog" :title="t('action.edit') + ' — ' + (editRecord?.employee_name || '')" width="750px" destroy-on-close top="2vh">
       <el-alert :title="t('payroll.jp.edit_manual_warning')" type="warning" :closable="false" show-icon style="margin-bottom:16px" />
       <div v-for="group in editFieldGroups" :key="group.title" class="edit-section">
-        <div class="edit-section-title">{{ t(group.title) }}<span v-if="group.title === 'payroll.jp.section_totals'" class="auto-badge">auto</span></div>
+        <div class="edit-section-title">{{ t(group.title) }}<span v-if="group.title === 'payroll.jp.section_totals'" class="auto-badge">{{ t('payroll.sg.auto_badge') }}</span></div>
         <el-row :gutter="12">
           <el-col :span="8" v-for="f in group.fields" :key="f.key">
             <el-form-item :label="t(f.label)" size="small">
@@ -412,7 +412,7 @@ onMounted(load)
             <div class="audit-body">
               <div class="audit-head">
                 <el-tag size="small" :color="sgActionLabel(log.action).color" effect="dark" style="color:#fff">
-                  {{ sgActionLabel(log.action).label }}
+                  {{ t(sgActionLabel(log.action).label) }}
                 </el-tag>
                 <span class="audit-user">{{ log.user_name }}</span>
                 <span class="audit-time">{{ (log.created_at || '').replace('T', ' ').substring(0, 19) }}</span>
@@ -420,9 +420,9 @@ onMounted(load)
               <div class="audit-summary">{{ parseSgAuditValue(log.after_value) || parseSgAuditValue(log.before_value) || '—' }}</div>
               <!-- Expanded detail -->
               <div v-if="expandedAudit.has(idx)" class="audit-expand">
-                <div v-if="log.before_value" class="audit-json-label">Before:</div>
+                <div v-if="log.before_value" class="audit-json-label">{{ t('governance.before') }}:</div>
                 <pre v-if="log.before_value" class="audit-json">{{ typeof log.before_value === 'string' ? log.before_value : JSON.stringify(log.before_value, null, 2) }}</pre>
-                <div v-if="log.after_value" class="audit-json-label">After:</div>
+                <div v-if="log.after_value" class="audit-json-label">{{ t('governance.after') }}:</div>
                 <pre v-if="log.after_value" class="audit-json">{{ typeof log.after_value === 'string' ? log.after_value : JSON.stringify(log.after_value, null, 2) }}</pre>
               </div>
             </div>

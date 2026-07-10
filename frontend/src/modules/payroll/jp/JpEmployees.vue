@@ -135,7 +135,7 @@ onMounted(() => { load(); loadItemDefs(); loadDropdowns(); loadOptions([CAT.SALA
 
     <!-- Filters -->
     <div class="fiori-filters">
-      <el-input v-model="searchText" placeholder="搜索员工编号、姓名…" clearable style="width:220px" @keyup.enter="applyFilter" @clear="applyFilter" />
+      <el-input v-model="searchText" :placeholder="t('field.search_employee_placeholder')" clearable style="width:220px" @keyup.enter="applyFilter" @clear="applyFilter" />
       <el-select v-model="filterEntity" :placeholder="t('field.entity_id')" clearable style="width:260px" @change="applyFilter">
         <el-option v-for="e in entities" :key="e.entity_id" :label="entityLabelById(e.entity_id)" :value="e.entity_id" />
       </el-select>
@@ -302,9 +302,9 @@ onMounted(() => { load(); loadItemDefs(); loadDropdowns(); loadOptions([CAT.SALA
       </template>
       <div class="drawer-body" v-if="drawerRecord">
         <!-- Card 1: Basic Info (synced from Employee Admin) -->
-        <div class="fi-card"><div class="fi-card-head"><span>📋</span> {{ t('payroll.jp.tab_basic') }}<span class="sync-badge">从員工管理同步</span></div>
+        <div class="fi-card"><div class="fi-card-head"><span>📋</span> {{ t('payroll.jp.tab_basic') }}<span class="sync-badge">{{ t('payroll.jp.sync_from_employee_admin') }}</span></div>
           <el-row :gutter="16">
-            <el-col :span="12"><label>{{ t('field.profile__date_of_birth') }}</label><el-input :model-value="drawerForm.date_of_birth || '—'" size="small" disabled><template #suffix><span style="color:#9ca3af;font-size:11px;">同步</span></template></el-input></el-col>
+            <el-col :span="12"><label>{{ t('field.profile__date_of_birth') }}</label><el-input :model-value="drawerForm.date_of_birth || '—'" size="small" disabled><template #suffix><span style="color:#9ca3af;font-size:11px;">{{ t('payroll.jp.sync_from_employee_admin') }}</span></template></el-input></el-col>
             <el-col :span="12"><label>{{ t('field.email') }}</label><el-input v-model="drawerForm.email" size="small" disabled /></el-col>
             <el-col :span="12"><label>{{ t('field.department') }}</label><el-input :model-value="drawerForm.department_label || '—'" size="small" disabled /></el-col>
             <el-col :span="12"><label>{{ t('field.team') }}</label><el-input :model-value="drawerForm.team_label || '—'" size="small" disabled /></el-col>

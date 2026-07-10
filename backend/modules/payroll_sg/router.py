@@ -243,10 +243,14 @@ async def sg_importable_employees(user: dict = Depends(get_current_user)):
     except Exception:
         emp_rows = []
     existing = {str(r.get("employee_id", "")) for r in (_db.load_table(f"{PREFIX}_salary_master") or [])}
-    result = [{"employee_id": e.get("employee_id"), "employee_number": e.get("employee_number"),
-               "display_name": (e.get("profile") or {}).get("name", {}).get("display_name", ""),
-               "entity_id": (e.get("employment") or {}).get("entity_id", "")}
-              for e in emp_rows if e.get("employee_id") not in existing and not (e.get("metadata") or {}).get("deleted")]
+    result = []
+    for e in emp_rows:
+        if not (e.get("metadata") or {}).get("deleted") and e.get("employee_id") not in existing:
+            result.append({"employee_id": e.get("employee_id"),
+                           "employee_number": e.get("employee_number"),
+                           "display_name": (e.get("profile") or {}).get("name", {}).get("display_name", ""),
+                           "entity_id": (e.get("employment") or {}).get("entity_id", ""),
+                           "department_id": (e.get("employment") or {}).get("department_id", "")})
     return success_response(result)
 
 
